@@ -259,7 +259,6 @@ export default function DashboardPage() {
 function AdminPanel({ user, onDataUpdated }) {
   const [users, setUsers] = useState([]);
   const [newEmail, setNewEmail] = useState("");
-  const [newPass, setNewPass] = useState("");
   const [newRole, setNewRole] = useState("viewer");
   const [addError, setAddError] = useState("");
   const [adding, setAdding] = useState(false);
@@ -277,18 +276,18 @@ function AdminPanel({ user, onDataUpdated }) {
   }
 
   async function addUser() {
-    if (!newEmail || !newPass) { setAddError("Fill in email and password"); return; }
-    if (newPass.length < 6) { setAddError("Password must be at least 6 characters"); return; }
+    if (!newEmail) { setAddError("Enter an email address"); return; }
     setAdding(true); setAddError("");
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ email: newEmail, password: newPass, role: newRole }),
+      body: JSON.stringify({ email: newEmail, role: newRole }),
     });
     const result = await res.json();
     if (result.error) { setAddError(result.error); setAdding(false); return; }
-    setNewEmail(""); setNewPass(""); setNewRole("viewer");
+    setAddError(""); setNewEmail(""); setNewRole("viewer");
+    alert("Invite sent to " + newEmail + ". They will receive an email to set their password.");
     loadUsers(); setAdding(false);
   }
 
@@ -358,8 +357,6 @@ function AdminPanel({ user, onDataUpdated }) {
           <div className="flex gap-2 mb-3 flex-wrap">
             <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@company.com"
               className="flex-1 min-w-[160px] px-3 py-1.5 border border-gray-200 rounded-md text-sm" />
-            <input type="text" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="Password"
-              className="w-32 px-3 py-1.5 border border-gray-200 rounded-md text-sm" />
             <select value={newRole} onChange={e => setNewRole(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-md text-sm">
               <option value="viewer">Viewer</option><option value="admin">Admin</option>
             </select>

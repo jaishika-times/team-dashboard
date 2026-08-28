@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-// Admin client with service role key (server-side only)
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,7 +9,6 @@ function getAdminClient() {
   );
 }
 
-// Verify the requesting user is an admin
 async function verifyAdmin(request) {
   const authHeader = request.headers.get("authorization");
   if (!authHeader) return false;
@@ -27,30 +25,29 @@ export async function POST(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { email, password, role } = await request.json();
-  if (!email || !password || !role) {
+  const { email, role } = await request.json();
+  if (!email || !role) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
   const admin = getAdminClient();
 
-  // Create user in Supabase Auth
-  const { data, error } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true, // Skip email verification
+  // Send invite email - user will set their own password
+  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+    data: { role: role },
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || request.headers.get("origin")}/login`,
   });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  // The trigger auto-creates a profile, but update role if needed
-  if (role === "admin") {
+  // Update role if admin (trigger creates as viewer by default)
+  if (role === "admin" && data?.user?.id) {
     await admin.from("profiles").update({ role: "admin" }).eq("id", data.user.id);
   }
 
-  return NextResponse.json({ success: true, userId: data.user.id });
+  return NextResponse.json({ success: true, userId: data?.user?.id });
 }
 
 export async function DELETE(request) {
