@@ -421,25 +421,12 @@ function AdminPanel({ user, onDataUpdated }) {
           </div>
         </div>
 
-        {/* Google Sheets Sync */}
-        <div className="bg-gray-50 rounded-lg p-4 mt-3">
-          <h3 className="text-sm font-medium mb-3">Sync from Google Sheets</h3>
-          <p className="text-xs text-gray-400 mb-3">Pull data directly from your linked Google Sheets. Requires Google service account setup.</p>
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={() => syncFromSheets("productivity")} disabled={syncing}
-              className="px-4 py-1.5 bg-white border border-gray-200 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50">
-              {syncing === "productivity" ? "Syncing..." : "Sync productivity"}
-            </button>
-            <button onClick={() => syncFromSheets("attendance")} disabled={syncing}
-              className="px-4 py-1.5 bg-white border border-gray-200 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50">
-              {syncing === "attendance" ? "Syncing..." : "Sync attendance"}
-            </button>
-            <a href="/report" target="_blank"
-              className="px-4 py-1.5 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 inline-block">
-              Monthly report
-            </a>
-          </div>
-          {syncMsg && <p className="text-xs mt-2 text-gray-500">{syncMsg}</p>}
+        {/* Report */}
+        <div className="mt-3">
+          <a href="/report" target="_blank"
+            className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 inline-block">
+            Monthly report
+          </a>
         </div>
       </div>
     </details>
