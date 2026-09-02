@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { parseProductivity, parseAttendance } from "@/lib/parser";
+import { parseProductivity, parseAttendanceAuto } from "@/lib/parser";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
 
@@ -321,7 +321,7 @@ function AdminPanel({ user, onDataUpdated }) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const result = parseAttendance(evt.target.result, file.name);
+        const result = parseAttendanceAuto(evt.target.result, file.name);
         setPendingAtt(result);
         setAttStatus({ ok: true, msg: `${result.count} records parsed (${result.monthLabel})` });
       } catch (err) { setAttStatus({ ok: false, msg: err.message }); }
