@@ -267,6 +267,8 @@ function AdminPanel({ user, onDataUpdated }) {
   const [recording, setRecording] = useState(false);
   const [pendingProd, setPendingProd] = useState(null);
   const [pendingAtt, setPendingAtt] = useState(null);
+  const [syncing, setSyncing] = useState(null);
+  const [syncMsg, setSyncMsg] = useState("");
 
   useEffect(() => { loadUsers(); }, []);
 
@@ -347,6 +349,20 @@ function AdminPanel({ user, onDataUpdated }) {
     setRecording(false); onDataUpdated();
   }
 
+  async function syncFromSheets(type) {
+    setSyncing(type); setSyncMsg("");
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/sheets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
+      body: JSON.stringify({ type }),
+    });
+    const result = await res.json();
+    if (result.error) setSyncMsg("Error: " + result.error);
+    else setSyncMsg(type === "productivity" ? "Synced " + result.days + " days" : "Synced " + result.records + " records (" + result.month + ")");
+    setSyncing(null); onDataUpdated();
+  }
+
   return (
     <details className="mt-4 mb-2">
       <summary className="text-sm font-medium text-gray-400 cursor-pointer hover:text-gray-600">Admin panel</summary>
@@ -403,6 +419,27 @@ function AdminPanel({ user, onDataUpdated }) {
               className="mt-2 w-full py-2 bg-gray-900 text-white text-sm font-medium rounded-lg disabled:opacity-50">
               {recording ? "Recording..." : "Record attendance data"}</button>}
           </div>
+        </div>
+
+        {/* Google Sheets Sync */}
+        <div className="bg-gray-50 rounded-lg p-4 mt-3">
+          <h3 className="text-sm font-medium mb-3">Sync from Google Sheets</h3>
+          <p className="text-xs text-gray-400 mb-3">Pull data directly from your linked Google Sheets. Requires Google service account setup.</p>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => syncFromSheets("productivity")} disabled={syncing}
+              className="px-4 py-1.5 bg-white border border-gray-200 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50">
+              {syncing === "productivity" ? "Syncing..." : "Sync productivity"}
+            </button>
+            <button onClick={() => syncFromSheets("attendance")} disabled={syncing}
+              className="px-4 py-1.5 bg-white border border-gray-200 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50">
+              {syncing === "attendance" ? "Syncing..." : "Sync attendance"}
+            </button>
+            <a href="/report" target="_blank"
+              className="px-4 py-1.5 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 inline-block">
+              Monthly report
+            </a>
+          </div>
+          {syncMsg && <p className="text-xs mt-2 text-gray-500">{syncMsg}</p>}
         </div>
       </div>
     </details>
