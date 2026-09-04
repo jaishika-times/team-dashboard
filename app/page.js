@@ -230,46 +230,7 @@ export default function DashboardPage() {
                     })}
                   </div>
 
-                  {/* Member details by team */}
-                  <div className="space-y-6">
-                    {TEAMS.filter(t => allMembers.some(m => m.team === t)).map(team => {
-                      const members = allMembers.filter(m => m.team === team);
-                      const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
-                      return (
-                        <div key={team}>
-                          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-                            <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[team] || "📋"}</div>
-                            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex-1">{team}</span>
-                            {th > 0 && <span className="text-sm font-semibold">{th.toFixed(1)} hrs</span>}
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {members.map(({ name }) => {
-                              const data = dayData[name];
-                              return (
-                                <div key={name} className="bg-gray-50 rounded-xl p-4 min-h-[70px] border border-gray-100">
-                                  <div className="flex justify-between items-center mb-2">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{name[0]}</div>
-                                      <span className="text-sm font-medium">{name}</span>
-                                    </div>
-                                    {data?.leave ? <span className="text-xs text-red-500 font-medium px-2 py-0.5 bg-red-50 rounded-md border border-red-100">{data.leave}</span>
-                                      : data?.hours > 0 ? <span className="text-xl font-semibold text-blue-500">{data.hours.toFixed(1)}h</span> : null}
-                                  </div>
-                                  {data?.tasks?.length > 0 ? data.tasks.map((t, i) => (
-                                    <div key={i} className="flex gap-2 py-1.5 border-b border-gray-100 last:border-0 text-xs">
-                                      <span className="font-medium min-w-[80px] max-w-[120px] shrink-0 text-gray-700">{t.project}</span>
-                                      <span className="flex-1 text-gray-400">{t.desc}</span>
-                                      <span className="font-medium text-blue-500 min-w-[35px] text-right shrink-0">{t.hrs > 0 ? t.hrs + "h" : ""}</span>
-                                    </div>
-                                  )) : !data?.leave && <p className="text-xs text-gray-300 italic">No tasks logged</p>}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+
                 </>
               ) : isAdmin ? <InlineUpload type="prod" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📊" text="No data yet" />}
             </>
