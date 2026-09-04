@@ -88,7 +88,6 @@ export default function DashboardPage() {
     { id: "overview", icon: "◻", label: "Overview" },
     { id: "productivity", icon: "◈", label: "Productivity" },
     { id: "attendance", icon: "◷", label: "Attendance" },
-    { id: "report", icon: "◩", label: "Report" },
   ];
   if (isAdmin) navItems.push({ id: "admin", icon: "◎", label: "Admin" });
 
@@ -104,7 +103,7 @@ export default function DashboardPage() {
         </div>
         <nav className="flex-1 px-2 space-y-1">
           {navItems.map(item => (
-            <button key={item.id} onClick={() => { setPage(item.id); setSelectedTeam(null); if (item.id === "report") window.open("/report", "_blank"); }}
+            <button key={item.id} onClick={() => { setPage(item.id); setSelectedTeam(null); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${page === item.id ? "bg-white/10 text-white" : "text-gray-400 hover:text-white hover:bg-white/5"}`}>
               <span className="text-base">{item.icon}</span>
               {sideOpen && <span>{item.label}</span>}
@@ -133,24 +132,9 @@ export default function DashboardPage() {
           {/* ===== OVERVIEW ===== */}
           {page === "overview" && (
             <>
-              <h1 className="text-xl font-semibold mb-1">Overview</h1>
-              <p className="text-sm text-gray-400 mb-6">Team performance at a glance</p>
+              <h1 className="text-xl font-semibold mb-6">Overview</h1>
 
-              {/* Summary boxes */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                {[
-                  { label: "Team members", value: totalMembers, sub: "tracked", color: "#6366f1" },
-                  { label: "Days recorded", value: totalDates, sub: "productivity", color: "#3b82f6" },
-                  { label: "Late arrivals", value: totalLate, sub: curAtt ? "this month" : "no data", color: "#ef4444" },
-                  { label: "Short hours", value: totalShort, sub: curAtt ? "this month" : "no data", color: "#f59e0b" },
-                ].map((card, i) => (
-                  <div key={i} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                    <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-2">{card.label}</p>
-                    <p className="text-3xl font-semibold" style={{ color: card.color }}>{card.value}</p>
-                    <p className="text-xs text-gray-300 mt-1">{card.sub}</p>
-                  </div>
-                ))}
-              </div>
+
 
               {/* Team cards */}
               {Object.keys(teamStats).length > 0 && (
@@ -184,38 +168,7 @@ export default function DashboardPage() {
                 </>
               )}
 
-              {/* Attendance snapshot */}
-              {curAtt && (
-                <>
-                  <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Attendance - {attIndex[0]?.label}</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {curAtt.late?.slice(0, 5).length > 0 && (
-                      <div className="bg-red-50 border border-red-100 rounded-xl p-4">
-                        <p className="text-xs font-semibold text-red-400 uppercase mb-2">Most late arrivals</p>
-                        {curAtt.late.slice(0, 5).map((e, i) => (
-                          <div key={i} className="flex justify-between text-sm py-1"><span className="text-gray-600">{e.name}</span><span className="font-semibold text-red-500">{e.count}x</span></div>
-                        ))}
-                      </div>
-                    )}
-                    {curAtt.short?.slice(0, 5).length > 0 && (
-                      <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                        <p className="text-xs font-semibold text-amber-500 uppercase mb-2">Most short hours</p>
-                        {curAtt.short.slice(0, 5).map((e, i) => (
-                          <div key={i} className="flex justify-between text-sm py-1"><span className="text-gray-600">{e.name}</span><span className="font-semibold text-amber-500">{e.count}x</span></div>
-                        ))}
-                      </div>
-                    )}
-                    {curAtt.sle?.slice(0, 5).length > 0 && (
-                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                        <p className="text-xs font-semibold text-blue-400 uppercase mb-2">Leave usage (SL/EL)</p>
-                        {curAtt.sle.slice(0, 5).map((e, i) => (
-                          <div key={i} className="flex justify-between text-sm py-1"><span className="text-gray-600">{e.name}</span><span className="font-semibold text-blue-500">{e.sl + e.el}d</span></div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
+
 
               {!prodData && !curAtt && (
                 <div className="text-center py-16 text-gray-300">
@@ -522,8 +475,7 @@ function AdminPanel({ user, onDataUpdated }) {
 
       {/* Actions */}
       <div className="flex gap-2 flex-wrap">
-        <a href="/report" target="_blank" className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 inline-block">Monthly report</a>
-        <button onClick={() => clearData("prod")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear productivity</button>
+<button onClick={() => clearData("prod")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear productivity</button>
         <button onClick={() => clearData("att")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear attendance</button>
       </div>
     </>
