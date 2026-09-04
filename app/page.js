@@ -524,3 +524,593 @@ export default function DashboardPage() {
                       {selEmpTasks.every(t => t.entry_status === "leave") ? (
                         <p className="text-amber-600 font-medium text-sm">{selEmpTasks[0]?.leave_label || "On leave"}</p>
                       ) : selEmpTasks.every(t => t.entry_status === "no_tasks") ? (
+                        <p className="text-gray-400 text-sm">No tasks today</p>
+                      ) : (
+                        <>
+                          {selEmpTasks.some(t => t.entry_status === "unparsed") && (
+                            <div className="mb-3 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-3 py-2">
+                              Some entries below couldn't be fully parsed — shown as raw text.
+                            </div>
+                          )}
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-gray-400 border-b border-gray-100">
+                                <th className="py-2 pr-2 text-xs uppercase tracking-wide">Task Name</th>
+                                <th className="py-2 pr-2 text-xs uppercase tracking-wide">Description</th>
+                                <th className="py-2 text-right text-xs uppercase tracking-wide">Hours</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selEmpTasks.map(t => (
+                                <tr key={t.id} className="border-b border-gray-50 last:border-0">
+                                  <td className="py-2 pr-2 align-top">{t.entry_status === "unparsed" ? <span className="text-amber-600">raw:</span> : t.task_name}</td>
+                                  <td className="py-2 pr-2 align-top">{t.entry_status === "unparsed" ? t.task_name : t.task_description}</td>
+                                  <td className="py-2 text-right align-top">{t.hours_spent ?? "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="font-semibold border-t border-gray-200">
+                                <td className="py-2" colSpan={2}>Total Hours Spent</td>
+                                <td className="py-2 text-right">{empTotal(selEmpTasks).toFixed(2)}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* ===== ATTENDANCE ===== */}
+          {page === "attendance" && (
+            <>
+              <h1 className="text-xl font-semibold mb-1">Attendance</h1>
+              <p className="text-sm text-gray-400 mb-5">Clock-in analysis and leave tracking</p>
+
+              {attIndex.length > 0 ? (
+                <>
+                  <div className="flex gap-3 items-end flex-wrap mb-5">
+                    {isAdmin && <SmallUpload type="att" onRecorded={loadData} userId={user.id} />}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wide">Month</label>
+                      <select value={attMonth} onChange={e => setAttMonth(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        {attIndex.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {curAtt && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                      {[
+                        { label: "Late clock-ins", value: curAtt.late?.length || 0, sub: "After 9:45 AM", key: "late", color: "#ef4444", bg: "bg-red-50 border-red-100" },
+                        { label: "Short hours", value: curAtt.short?.length || 0, sub: "Below 7.5 hrs", key: "short", color: "#f59e0b", bg: "bg-amber-50 border-amber-100" },
+                        { label: "SL / EL", value: curAtt.sle?.length || 0, sub: "Sick + emergency", key: "sle", color: "#6366f1", bg: "bg-indigo-50 border-indigo-100" },
+                        { label: "Weekly view", value: Object.keys(curAtt.weekly || {}).length || "--", sub: "Weeks recorded", key: "weekly", color: "#3b82f6", bg: "bg-blue-50 border-blue-100" },
+                      ].map(m => (
+                        <div key={m.key} onClick={() => { setModal(m.key); if (m.key === "weekly") setAttWeek(Object.keys(curAtt.weekly)[0] || ""); }}
+                          className={`rounded-xl p-4 cursor-pointer border transition-all hover:shadow-sm ${m.bg}`}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: m.color }}>{m.label}</p>
+                          <p className="text-3xl font-semibold" style={{ color: m.color }}>{m.value}</p>
+                          <p className="text-xs text-gray-400 mt-1">{m.sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : isAdmin ? <InlineUpload type="att" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📅" text="No data yet" />}
+            </>
+          )}
+
+          {/* ===== WEEKLY KPI ===== */}
+          {page === "kpi" && (
+            <>
+              <h1 className="text-xl font-semibold mb-1">Weekly KPI</h1>
+              <p className="text-sm text-gray-400 mb-5">Team performance by week</p>
+
+              {kpiData ? (() => {
+                // Build month and week lists from data
+                const monthsSet = new Set();
+                const weeksMap = {};
+                kpiData.entries.forEach(e => {
+                  if (e.month) monthsSet.add(e.month);
+                  const mKey = e.month || "";
+                  if (!weeksMap[mKey]) weeksMap[mKey] = new Set();
+                  if (e.week) weeksMap[mKey].add(e.week);
+                });
+                const months = Array.from(monthsSet);
+                const selMonth = kpiPeriod.split("|")[0] || months[months.length - 1] || "";
+                const weeksForMonth = Array.from(weeksMap[selMonth] || []).sort((a,b) => parseFloat(a) - parseFloat(b));
+                const selWeek = kpiPeriod.split("|")[1] || weeksForMonth[weeksForMonth.length - 1] || "";
+                
+                // Filter entries for selected month + week
+                const filtered = kpiData.entries.filter(e => e.month === selMonth && String(e.week) === String(selWeek));
+                const byTeam = {};
+                filtered.forEach(e => {
+                  const t = e.team || "Other";
+                  if (!byTeam[t]) byTeam[t] = [];
+                  byTeam[t].push(e);
+                });
+
+                return (
+                  <>
+                    <div className="flex gap-3 items-end flex-wrap mb-6">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">Month</label>
+                        <select value={selMonth} onChange={e => { const w = Array.from(weeksMap[e.target.value] || []); setKpiPeriod(e.target.value + "|" + (w[w.length-1] || "")); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                          {months.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">Week</label>
+                        <select value={selWeek} onChange={e => setKpiPeriod(selMonth + "|" + e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                          {weeksForMonth.map(w => <option key={w} value={w}>W{w}</option>)}
+                        </select>
+                      </div>
+                      {isAdmin && <SmallUpload type="kpi" onRecorded={loadData} userId={user.id} />}
+                    </div>
+
+                    {filtered.length > 0 ? (
+                      <>
+                        {/* Team cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
+                          {TEAMS.filter(t => byTeam[t]).map(team => {
+                            const members = byTeam[team];
+                            const avgPct = members.filter(m => m.kpiPct !== null).reduce((s, m) => s + m.kpiPct, 0) / (members.filter(m => m.kpiPct !== null).length || 1);
+                            const avgRound = Math.round(avgPct * 100);
+                            const color = avgRound >= 95 ? "#16a34a" : avgRound < 85 ? "#dc2626" : "#d97706";
+                            const isSelected = selectedTeam === team;
+                            return (
+                              <div key={team} onClick={() => setSelectedTeam(isSelected ? null : team)}
+                                className={`rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-sm ${isSelected ? "border-gray-300 shadow-sm" : "border-gray-100"}`} style={{ background: "#fff" }}>
+                                <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
+                                <div className="p-3.5">
+                                  <div className="flex items-center gap-2.5 mb-2">
+                                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
+                                    <div>
+                                      <p className="text-sm font-bold">{team}</p>
+                                      <p className="text-[11px] text-gray-400">{members.length} members</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                                    <span className="text-lg font-bold" style={{ color }}>{avgRound}%</span>
+                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${avgRound >= 95 ? "bg-green-50 text-green-600" : avgRound < 85 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>
+                                      {avgRound >= 95 ? "On Target" : avgRound < 85 ? "Behind" : "Slightly Behind"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Member details for selected team */}
+                        {selectedTeam && byTeam[selectedTeam] && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-4">
+                              <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedTeam] || "📋"}</div>
+                              <span className="text-sm font-semibold">{selectedTeam} team</span>
+                              <button onClick={() => setSelectedTeam(null)} className="ml-2 text-xs text-gray-400 hover:text-gray-600">Close</button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {byTeam[selectedTeam].map((e, i) => {
+                                const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
+                                const isGood = pct !== null && pct >= 95;
+                                const isBad = pct !== null && pct < 85;
+                                const color = isGood ? "#16a34a" : isBad ? "#dc2626" : "#d97706";
+                                return (
+                                  <div key={i} className="bg-white rounded-xl p-5 border border-gray-100">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: TEAM_COLORS[selectedTeam] || "#888" }}>{e.employee?.[0]}</div>
+                                        <div>
+                                          <p className="text-base font-semibold">{e.employee}</p>
+                                          <p className="text-xs text-gray-400">{e.kpiType}</p>
+                                        </div>
+                                      </div>
+                                      {pct !== null && <p className="text-3xl font-bold" style={{ color }}>{pct}%</p>}
+                                    </div>
+                                    {pct !== null && (
+                                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+                                        <div className="h-full rounded-full" style={{ width: Math.min(pct, 100) + "%", background: color }} />
+                                      </div>
+                                    )}
+                                    <div className="space-y-2 text-sm">
+                                      <div className="flex justify-between py-1.5 border-b border-gray-50">
+                                        <span className="text-gray-400">Target</span>
+                                        <span className="font-medium">{e.target || "..."}</span>
+                                      </div>
+                                      <div className="flex justify-between py-1.5 border-b border-gray-50">
+                                        <span className="text-gray-400">Actual</span>
+                                        <span className="font-medium">{e.actual || "..."}</span>
+                                      </div>
+                                      {e.notes && (
+                                        <div className="flex justify-between py-1.5 border-b border-gray-50">
+                                          <span className="text-gray-400">Notes</span>
+                                          <span className="text-gray-500 text-xs text-right max-w-[200px]">{e.notes}</span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between py-1.5">
+                                        <span className="text-gray-400">Status</span>
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status ? e.status.replace(/[🟢🟡🔴]/g, "").trim() : (isGood ? "On Target" : isBad ? "Behind" : "Slightly Behind")}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : <p className="text-sm text-gray-400 text-center py-8">No data for {selMonth} W{selWeek}</p>}
+                  </>
+                );
+              })() : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
+
+              {isAdmin && <PasteArea onRecorded={loadData} userId={user.id} />}
+            </>
+          )}
+
+          {/* ===== ADMIN ===== */}
+          {page === "admin" && isAdmin && <AdminPanel user={user} onDataUpdated={loadData} />}
+        </div>
+      </div>
+
+      {/* ATTENDANCE MODALS */}
+      {modal && curAtt && (
+        <div onClick={() => setModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-5 max-w-[860px] w-[92%] max-h-[82vh] overflow-y-auto shadow-xl">
+            <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-100">
+              <h3 className="text-base font-semibold">
+                {modal === "late" && "Late clock-ins (after 9:45 AM)"}{modal === "short" && "Short hours (below 7.5 hrs)"}{modal === "sle" && "SL / EL usage"}{modal === "weekly" && "Weekly attendance"}
+              </h3>
+              <button onClick={() => setModal(null)} className="text-xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">&times;</button>
+            </div>
+            {modal === "weekly" && (
+              <div className="flex gap-2 items-center mb-3">
+                <span className="text-xs text-gray-400">Week:</span>
+                <select value={attWeek} onChange={e => setAttWeek(e.target.value)} className="px-2 py-1 border border-gray-200 rounded-lg text-sm">
+                  {Object.keys(curAtt.weekly).map(w => <option key={w} value={w}>{w.replace("w", "Week ")}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="overflow-x-auto rounded-lg border border-gray-100">
+              <table className="w-full text-sm">
+                {modal === "late" && <><thead><tr className="bg-gray-50"><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>Count</th></tr></thead><tbody>{curAtt.late.map((e, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td><td className={tdC}>{e.name}</td><td className={tdCR + " font-semibold"}>{e.count}</td></tr>)}</tbody></>}
+                {modal === "short" && <><thead><tr className="bg-gray-50"><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>Count</th></tr></thead><tbody>{curAtt.short.map((e, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td><td className={tdC}>{e.name}</td><td className={tdCR + " font-semibold"}>{e.count}</td></tr>)}</tbody></>}
+                {modal === "sle" && <><thead><tr className="bg-gray-50"><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>SL</th><th className={thCR}>EL</th></tr></thead><tbody>{curAtt.sle.map((e, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td><td className={tdC}>{e.name}</td><td className={tdCR + " font-semibold"}>{e.sl}</td><td className={tdCR + " font-semibold"}>{e.el}</td></tr>)}</tbody></>}
+                {modal === "weekly" && <><thead><tr className="bg-gray-50">{["Date","Name","Clock In","Clock Out","Hours","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead><tbody>{(curAtt.weekly[attWeek] || []).map((r, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC}>{r.date}</td><td className={tdC}>{r.name}</td><td className={tdC}>{r.ci}</td><td className={tdC}>{r.co}</td><td className={tdC}>{r.hrs}</td><td className={tdC}>{r.rm && <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}</td></tr>)}</tbody></>}
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const thC = "px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide";
+const thCR = thC + " text-right";
+const tdC = "px-3 py-2";
+const tdCR = tdC + " text-right";
+
+// ===== ADMIN PANEL =====
+function AdminPanel({ user, onDataUpdated }) {
+  const [users, setUsers] = useState([]);
+  const [prodStatus, setProdStatus] = useState(null);
+  const [attStatus, setAttStatus] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [pendingProd, setPendingProd] = useState(null);
+  const [pendingAtt, setPendingAtt] = useState(null);
+
+  useEffect(() => { loadUsers(); }, []);
+
+  async function loadUsers() {
+    const { data } = await supabase.from("profiles").select("*").order("created_at");
+    if (data) setUsers(data);
+  }
+
+  async function updateRole(userId, newRole) {
+    await supabase.from("profiles").update({ role: newRole }).eq("id", userId);
+    loadUsers();
+  }
+
+  async function removeUser(email) {
+    await supabase.from("profiles").delete().eq("email", email.toLowerCase());
+    loadUsers();
+  }
+
+  function handleProdFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try { const result = await parseProductivity(evt.target.result, file.name); setPendingProd(result); setProdStatus({ ok: true, msg: `${result.dates.length} days from ${file.name}` }); }
+      catch (err) { setProdStatus({ ok: false, msg: err.message }); }
+    }; reader.readAsArrayBuffer(file);
+  }
+
+  function handleAttFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try { const result = await parseAttendanceAuto(evt.target.result, file.name); setPendingAtt(result); setAttStatus({ ok: true, msg: `${result.count} records (${result.monthLabel})` }); }
+      catch (err) { setAttStatus({ ok: false, msg: err.message }); }
+    }; reader.readAsArrayBuffer(file);
+  }
+
+  async function recordProd() {
+    if (!pendingProd) return; setRecording(true);
+    await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    await supabase.from("productivity_records").insert({ data: pendingProd.data, dates: pendingProd.dates, members: pendingProd.members, uploaded_by: user.id });
+    setPendingProd(null); setProdStatus({ ok: true, msg: "Recorded" }); setRecording(false); onDataUpdated();
+  }
+
+  async function recordAtt() {
+    if (!pendingAtt) return; setRecording(true);
+    await supabase.from("attendance_records").upsert({ month_key: pendingAtt.monthKey, month_label: pendingAtt.monthLabel, data: pendingAtt.data, uploaded_by: user.id }, { onConflict: "month_key" });
+    setPendingAtt(null); setAttStatus({ ok: true, msg: "Recorded" }); setRecording(false); onDataUpdated();
+  }
+
+
+
+  return (
+    <>
+      <h1 className="text-xl font-semibold mb-1">Admin</h1>
+      <p className="text-sm text-gray-400 mb-6">Manage team access and upload data</p>
+
+      {/* Users */}
+      <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 mb-5">
+        <h3 className="text-sm font-semibold mb-1">Team access</h3>
+        <p className="text-xs text-gray-400 mb-4">People sign in with Google. Set their role to approve access.</p>
+        <div className="space-y-1.5">
+          {users.map(u => (
+            <div key={u.id} className="flex justify-between items-center px-3 py-2 bg-white rounded-lg text-sm border border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-semibold">{u.email?.[0]?.toUpperCase()}</div>
+                <span className="text-sm">{u.email}</span>
+                {u.role === "pending" && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium border border-amber-200">needs approval</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <select value={u.role} onChange={e => updateRole(u.id, e.target.value)}
+                  className={`text-xs font-medium px-2 py-1 rounded-md border-0 cursor-pointer ${u.role === "admin" ? "bg-blue-50 text-blue-600" : u.role === "pending" ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-500"}`}>
+                  <option value="pending">Pending</option><option value="viewer">Viewer</option><option value="admin">Admin</option>
+                </select>
+                {u.id !== user.id && <button onClick={() => removeUser(u.email)} className="text-xs text-red-400 hover:text-red-600">Remove</button>}
+              </div>
+            </div>
+          ))}
+          {users.length === 0 && <p className="text-sm text-gray-300 text-center py-4">No users yet. Share your dashboard URL for people to sign in.</p>}
+        </div>
+      </div>
+
+      {/* Uploads */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+        <div>
+          <label className="block cursor-pointer">
+            <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${prodStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
+              <div className={`text-xl mb-1 ${prodStatus?.ok ? "text-green-500" : "text-gray-300"}`}>{prodStatus?.ok ? "✓" : "📊"}</div>
+              <div className={`text-sm font-medium ${prodStatus?.ok ? "text-green-600" : "text-gray-500"}`}>{prodStatus?.msg || "Upload productivity file"}</div>
+              <div className="text-xs text-gray-400 mt-1">Excel, CSV, PDF, ODS</div>
+            </div>
+            <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleProdFile} className="hidden" />
+          </label>
+          {pendingProd && <button onClick={recordProd} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">Record</button>}
+        </div>
+        <div>
+          <label className="block cursor-pointer">
+            <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${attStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
+              <div className={`text-xl mb-1 ${attStatus?.ok ? "text-green-500" : "text-gray-300"}`}>{attStatus?.ok ? "✓" : "📅"}</div>
+              <div className={`text-sm font-medium ${attStatus?.ok ? "text-green-600" : "text-gray-500"}`}>{attStatus?.msg || "Upload attendance file"}</div>
+              <div className="text-xs text-gray-400 mt-1">Excel, CSV, PDF, ODS</div>
+            </div>
+            <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleAttFile} className="hidden" />
+          </label>
+          {pendingAtt && <button onClick={recordAtt} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">Record</button>}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 flex-wrap">
+<button onClick={() => clearData("prod")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear productivity</button>
+        <button onClick={() => clearData("att")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear attendance</button>
+      </div>
+    </>
+  );
+}
+
+// Pending approvals banner
+function PendingBanner({ onGoToAdmin }) {
+  const [pending, setPending] = useState([]);
+  useEffect(() => {
+    supabase.from("profiles").select("email").eq("role", "pending").then(({ data }) => {
+      if (data) setPending(data);
+    });
+  }, []);
+  if (!pending.length) return null;
+  return (
+    <div onClick={onGoToAdmin} className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer hover:bg-amber-100 transition-all">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">👤</span>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">{pending.length} pending approval{pending.length > 1 ? "s" : ""}</p>
+            <p className="text-xs text-amber-600">{pending.map(p => p.email).join(", ")}</p>
+          </div>
+        </div>
+        <span className="text-xs text-amber-500 font-medium">Go to Admin &rarr;</span>
+      </div>
+    </div>
+  );
+}
+
+// Inline upload for empty states
+function InlineUpload({ type, onRecorded, userId }) {
+  const [status, setStatus] = useState(null);
+  const [pending, setPending] = useState(null);
+  const [recording, setRecording] = useState(false);
+
+  function handleFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        if (type === "prod") {
+          const result = await parseProductivity(evt.target.result, file.name);
+          setPending(result); setStatus({ ok: true, msg: result.dates.length + " days from " + file.name });
+        } else if (type === "kpi") {
+          const result = parseWeeklyKPI(evt.target.result, file.name);
+          setPending(result); setStatus({ ok: true, msg: result.count + " entries from " + file.name });
+        } else {
+          const result = await parseAttendanceAuto(evt.target.result, file.name);
+          setPending(result); setStatus({ ok: true, msg: result.count + " records (" + result.monthLabel + ")" });
+        }
+      } catch (err) { setStatus({ ok: false, msg: err.message }); }
+    }; reader.readAsArrayBuffer(file);
+  }
+
+  async function record() {
+    if (!pending) return; setRecording(true);
+    if (type === "prod") {
+      await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
+    } else if (type === "kpi") {
+      await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries }, uploaded_by: userId });
+    } else {
+      await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
+    }
+    setPending(null); setRecording(false); onRecorded();
+  }
+
+  return (
+    <div className="text-center py-12">
+      <div className="text-4xl mb-3">{type === "prod" ? "📊" : "📅"}</div>
+      <p className="text-gray-400 mb-4">No {type === "prod" ? "productivity" : type === "kpi" ? "weekly KPI" : "attendance"} data yet</p>
+      <label className="inline-block cursor-pointer">
+        <div className={`px-6 py-3 rounded-xl text-sm font-medium transition-all ${status?.ok ? "bg-green-50 text-green-600 border border-green-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}>
+          {status?.ok ? "✓ " + status.msg : "Upload " + (type === "prod" ? "productivity" : type === "kpi" ? "weekly KPI" : "attendance") + " file"}
+        </div>
+        <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleFile} className="hidden" />
+      </label>
+      {status?.ok === false && <p className="text-xs text-red-500 mt-2">{status.msg}</p>}
+      {pending && <button onClick={record} disabled={recording} className="mt-3 px-6 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50 block mx-auto">{recording ? "Recording..." : "Record"}</button>}
+    </div>
+  );
+}
+
+// Small upload button for when data already exists
+function SmallUpload({ type, onRecorded, userId }) {
+  const [pending, setPending] = useState(null);
+  const [recording, setRecording] = useState(false);
+
+  function handleFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        if (type === "prod") {
+          const result = await parseProductivity(evt.target.result, file.name);
+          setPending(result);
+        } else if (type === "kpi") {
+          const result = parseWeeklyKPI(evt.target.result, file.name);
+          setPending(result);
+        } else {
+          const result = await parseAttendanceAuto(evt.target.result, file.name);
+          setPending(result);
+        }
+      } catch (err) { alert("Error: " + err.message); }
+    }; reader.readAsArrayBuffer(file);
+  }
+
+  async function record() {
+    if (!pending) return; setRecording(true);
+    if (type === "prod") {
+      await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
+    } else if (type === "kpi") {
+      await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries }, uploaded_by: userId });
+    } else {
+      await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
+    }
+    setPending(null); setRecording(false); onRecorded();
+  }
+
+  return (
+    <div className="flex items-center gap-2 ml-auto">
+      {pending ? (
+        <button onClick={record} disabled={recording} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg disabled:opacity-50">
+          {recording ? "..." : "Record"}
+        </button>
+      ) : null}
+      <label className="cursor-pointer">
+        <div className="px-3 py-1.5 bg-gray-100 text-gray-500 text-xs font-medium rounded-lg hover:bg-gray-200 transition-all">
+          {pending ? "✓ Ready" : "Upload"}
+        </div>
+        <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleFile} className="hidden" />
+      </label>
+    </div>
+  );
+}
+
+// Paste data area for quick entry
+function PasteArea({ onRecorded, userId }) {
+  const [text, setText] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [open, setOpen] = useState(false);
+
+  async function handleRecord() {
+    if (!text.trim()) return;
+    setRecording(true); setMsg("");
+    try {
+      const entries = parsePastedCSV(text);
+      // Store as a simple weekly KPI update
+      const grouped = {};
+      const period = "Pasted " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      grouped[period] = { month: "", week: "", teams: {} };
+      entries.forEach(e => {
+        const team = e.team || "Other";
+        if (!grouped[period].teams[team]) grouped[period].teams[team] = [];
+        grouped[period].teams[team].push({
+          employee: e.employee, team, kpiType: "", target: e.target,
+          actual: e.completed || e.produced || "", kpiPct: parseFloat(e.progress) || null,
+          notes: "", status: parseFloat(e.progress) >= 0.9 ? "On Target" : parseFloat(e.progress) >= 0.7 ? "Slightly Behind" : "Behind",
+        });
+      });
+      await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("weekly_kpi").insert({ data: { entries, grouped, periods: Object.keys(grouped) }, uploaded_by: userId });
+      setText(""); setMsg("Recorded " + entries.length + " entries");
+      onRecorded();
+    } catch (err) { setMsg("Error: " + err.message); }
+    setRecording(false);
+  }
+
+  return (
+    <div className="mt-8 border-t border-gray-100 pt-6">
+      <button onClick={() => setOpen(!open)} className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 mb-3">
+        {open ? "▾" : "▸"} Quick data entry (paste CSV)
+      </button>
+      {open && (
+        <>
+          <p className="text-xs text-gray-400 mb-2">Paste CSV or tab-separated data. First row should be headers (Team, Name, Target, Completed, Progress).</p>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={6} placeholder={"Team,Name,Total Target/ Task,Estimated Time,Time Produced,Completed,Progress\nContent,Jeremiah,2 videos,—,—,2 videos,0.7\nVideo,Nic,6 videos/shoots,—,—,5 videos,0.9"}
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-400 resize-y" />
+          <div className="flex items-center gap-3 mt-2">
+            <button onClick={handleRecord} disabled={recording || !text.trim()}
+              className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg disabled:opacity-50">
+              {recording ? "Recording..." : "Record"}
+            </button>
+            {msg && <span className={`text-xs ${msg.startsWith("Error") ? "text-red-500" : "text-green-500"}`}>{msg}</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ icon, text }) {
+  return <div className="text-center py-16 text-gray-300"><div className="text-4xl mb-3">{icon}</div><p className="text-gray-400">{text}</p></div>;
+}
