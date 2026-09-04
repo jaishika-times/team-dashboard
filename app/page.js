@@ -33,6 +33,7 @@ export default function DashboardPage() {
     if (!session) { router.push("/login"); return; }
     setUser(session.user);
     const { data: prof } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
+    if (!prof || prof.role === "pending") { router.push("/login"); return; }
     setProfile(prof);
     await loadData();
     setLoading(false);
@@ -258,7 +259,6 @@ export default function DashboardPage() {
 // ========== ADMIN PANEL ==========
 function AdminPanel({ user, onDataUpdated }) {
   const [users, setUsers] = useState([]);
-  const [allowed, setAllowed] = useState([]);
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState("viewer");
   const [addError, setAddError] = useState("");
@@ -276,8 +276,7 @@ function AdminPanel({ user, onDataUpdated }) {
   async function loadUsers() {
     const { data } = await supabase.from("profiles").select("*").order("created_at");
     if (data) setUsers(data);
-    const { data: a } = await supabase.from("allowed_emails").select("*").order("created_at");
-    if (a) setAllowed(a);
+
   }
 
   async function addUser() {
@@ -373,32 +372,25 @@ function AdminPanel({ user, onDataUpdated }) {
         {/* User Management */}
         <div className="bg-gray-50 rounded-lg p-4">
           <h3 className="text-sm font-medium mb-3">Manage access</h3>
-          <div className="flex gap-2 mb-3 flex-wrap">
-            <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@company.com"
-              className="flex-1 min-w-[160px] px-3 py-1.5 border border-gray-200 rounded-md text-sm" />
-            <select value={newRole} onChange={e => setNewRole(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-md text-sm">
-              <option value="viewer">Viewer</option><option value="admin">Admin</option>
-            </select>
-            <button onClick={addUser} disabled={adding}
-              className="px-4 py-1.5 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 disabled:opacity-50">Add</button>
-          </div>
-          {addError && <p className="text-xs text-red-600 mb-2">{addError}</p>}
+          <p className="text-xs text-gray-400 mb-3">People sign in with Google. Approve them by changing their role from Pending to Viewer or Admin.</p>
           <div className="space-y-1">
-            {allowed.map(a => {
-              const hasSignedIn = users.some(u => u.email === a.email);
-              return (
-                <div key={a.email} className="flex justify-between items-center px-2 py-1.5 bg-white rounded text-sm">
-                  <div className="flex items-center gap-2">
-                    <span>{a.email}</span>
-                    {hasSignedIn ? <span className="text-[10px] text-green-500">active</span> : <span className="text-[10px] text-gray-300">pending</span>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${a.role === "admin" ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{a.role}</span>
-                    <button onClick={() => removeUser(a.email)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                  </div>
+            {users.map(u => (
+              <div key={u.id} className="flex justify-between items-center px-2 py-1.5 bg-white rounded text-sm">
+                <div className="flex items-center gap-2">
+                  <span>{u.email}</span>
+                  {u.role === "pending" && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium">needs approval</span>}
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-2">
+                  <select value={u.role} onChange={e => updateRole(u.id, e.target.value)}
+                    className={`text-xs font-medium px-2 py-1 rounded border-0 ${u.role === "admin" ? "bg-blue-50 text-blue-600" : u.role === "pending" ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-500"}`}>
+                    <option value="pending">Pending</option>
+                    <option value="viewer">Viewer</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  {u.id !== user.id && <button onClick={() => removeUser(u.email)} className="text-xs text-red-500 hover:text-red-700">Remove</button>}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
