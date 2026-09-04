@@ -46,7 +46,7 @@ export default function DashboardPage() {
     const { data: prodRows } = await supabase.from("productivity_records").select("*").order("uploaded_at", { ascending: false }).limit(1);
     if (prodRows?.length) { const r = prodRows[0]; setProdData({ data: r.data, dates: r.dates, members: r.members }); setDate(r.dates?.[0] || ""); }
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
-    if (kpiRows?.length) { const k = kpiRows[0].data; setKpiData(k); if (k.periods?.length) setKpiPeriod(k.periods[0]); }
+    if (kpiRows?.length) { setKpiData(kpiRows[0].data); }
     const { data: attRows } = await supabase.from("attendance_records").select("*").order("month_key", { ascending: false });
     if (attRows?.length) { setAttIndex(attRows.map(r => ({ key: r.month_key, label: r.month_label }))); const map = {}; attRows.forEach(r => { map[r.month_key] = r.data; }); setAttData(map); setAttMonth(attRows[0].month_key); }
   }
@@ -193,71 +193,25 @@ export default function DashboardPage() {
 
               {prodData ? (
                 <>
-                  {!selectedTeam ? (
-                    <>
-                      <div className="flex gap-3 items-end flex-wrap mb-5">
-                        {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                        {TEAMS.filter(t => teams.has(t)).map(team => {
-                          const members = allMembers.filter(m => m.team === team);
-                          const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
-                          const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
-                          return (
-                            <div key={team} onClick={() => setSelectedTeam(team)}
-                              className="group bg-white border border-gray-100 rounded-2xl p-5 cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all">
-                              <div className="flex items-center gap-3 mb-3">
-                                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-xl group-hover:scale-110 transition-transform`}>
-                                  {TEAM_ICONS[team] || "📋"}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-bold">{team}</p>
-                                  <p className="text-xs text-gray-400">{members.length} members</p>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-100">
-                                <div><p className="text-lg font-bold">{taskCount}</p><p className="text-[10px] text-gray-400">Tasks today</p></div>
-                                <div><p className="text-lg font-bold">{th > 0 ? th.toFixed(1) : "—"}</p><p className="text-[10px] text-gray-400">Hours today</p></div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex gap-3 items-end flex-wrap mb-5">
-                        <button onClick={() => setSelectedTeam(null)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">← All teams</button>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedTeam] || "📋"}</div>
-                          <span className="text-sm font-semibold">{selectedTeam} team</span>
-                        </div>
-                        <div className="flex flex-col gap-1 ml-4">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
-                          <select value={date} onChange={e => setDate(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
-                            {prodData.dates.map(d => { const dt = new Date(d + "T00:00:00"); return <option key={d} value={d}>{dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</option>; })}
-                          </select>
-                        </div>
-                        <div className="flex border border-gray-200 rounded-lg overflow-hidden ml-auto">
-                          {["daily", "summary"].map(v => (
-                            <button key={v} onClick={() => setView(v)} className={`px-4 py-1.5 text-xs font-medium ${view === v ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-600"}`}>
-                              {v.charAt(0).toUpperCase() + v.slice(1)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                  <div className="flex gap-3 items-end flex-wrap mb-5">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
+                      <select value={date} onChange={e => setDate(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        {prodData.dates.map(d => { const dt = new Date(d + "T00:00:00"); return <option key={d} value={d}>{dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</option>; })}
+                      </select>
+                    </div>
+                    {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
+                  </div>
 
-                  {view === "daily" ? (
-                    TEAMS.map(team => {
-                      if (team !== selectedTeam) return null;
+                  <div className="space-y-6">
+                    {TEAMS.filter(t => allMembers.some(m => m.team === t)).map(team => {
                       const members = allMembers.filter(m => m.team === team);
-                      if (!members.length) return null;
                       const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
                       return (
-                        <div key={team} className="mb-6">
+                        <div key={team}>
                           <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm" style={{ background: (TEAM_COLORS[team] || "#888") + "15" }}>{TEAM_ICONS[team] || "📋"}</div>
-                            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex-1">{team} team</span>
+                            <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[team] || "📋"}</div>
+                            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex-1">{team}</span>
                             {th > 0 && <span className="text-sm font-semibold">{th.toFixed(1)} hrs</span>}
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -266,7 +220,10 @@ export default function DashboardPage() {
                               return (
                                 <div key={name} className="bg-gray-50 rounded-xl p-4 min-h-[70px] border border-gray-100">
                                   <div className="flex justify-between items-center mb-2">
-                                    <span className="text-sm font-medium">{name}</span>
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{name[0]}</div>
+                                      <span className="text-sm font-medium">{name}</span>
+                                    </div>
                                     {data?.leave ? <span className="text-xs text-red-500 font-medium px-2 py-0.5 bg-red-50 rounded-md border border-red-100">{data.leave}</span>
                                       : data?.hours > 0 ? <span className="text-xl font-semibold text-blue-500">{data.hours.toFixed(1)}h</span> : null}
                                   </div>
@@ -283,30 +240,8 @@ export default function DashboardPage() {
                           </div>
                         </div>
                       );
-                    })
-                  ) : (
-                    <div className="overflow-x-auto rounded-xl border border-gray-100">
-                      <table className="w-full text-sm">
-                        <thead><tr className="bg-gray-50">{["#","Member","Team","Days","Tasks","Hours","Avg/day","Leave"].map((h, i) => (
-                          <th key={h} className={`px-3 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${i > 2 ? "text-right" : "text-left"}`}>{h}</th>
-                        ))}</tr></thead>
-                        <tbody>{Object.entries(summaryStats).filter(([, s]) => !selectedTeam || s.team === selectedTeam).sort((a, b) => b[1].totalHours - a[1].totalHours).map(([name, s], i) => (
-                          <tr key={name} className="hover:bg-gray-50 border-t border-gray-50">
-                            <td className="px-3 py-2 font-semibold text-gray-300">{i + 1}</td>
-                            <td className="px-3 py-2 font-medium">{name}</td>
-                            <td className="px-3 py-2"><span className="text-xs px-2 py-0.5 rounded-md text-white" style={{ background: TEAM_COLORS[s.team] || "#888" }}>{s.team}</span></td>
-                            <td className="px-3 py-2 text-right">{s.daysWorked}</td>
-                            <td className="px-3 py-2 text-right">{s.totalTasks}</td>
-                            <td className="px-3 py-2 text-right font-semibold">{s.totalHours.toFixed(1)}</td>
-                            <td className="px-3 py-2 text-right">{s.daysWorked > 0 ? (s.totalHours / s.daysWorked).toFixed(1) : "--"}</td>
-                            <td className="px-3 py-2 text-right">{s.daysLeave || "-"}</td>
-                          </tr>
-                        ))}</tbody>
-                      </table>
-                    </div>
-                  )}
-                    </>
-                  )}
+                    })}
+                  </div>
                 </>
               ) : isAdmin ? <InlineUpload type="prod" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📊" text="No data yet" />}
             </>
@@ -675,7 +610,7 @@ function InlineUpload({ type, onRecorded, userId }) {
       await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
     } else if (type === "kpi") {
       await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries, grouped: pending.grouped, periods: pending.periods }, uploaded_by: userId });
+      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries }, uploaded_by: userId });
     } else {
       await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
     }
@@ -729,7 +664,7 @@ function SmallUpload({ type, onRecorded, userId }) {
       await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
     } else if (type === "kpi") {
       await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries, grouped: pending.grouped, periods: pending.periods }, uploaded_by: userId });
+      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries }, uploaded_by: userId });
     } else {
       await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
     }
