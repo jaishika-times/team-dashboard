@@ -178,7 +178,19 @@ export default function DashboardPage() {
 
             return (
               <>
-                <h1 className="text-xl font-semibold mb-6">Overview</h1>
+                <div className="flex items-center justify-between mb-6">
+                  <h1 className="text-xl font-semibold">Overview</h1>
+                  {isAdmin && (
+                    <div className="flex gap-2">
+                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: companies[0] || "", department: "" }); }}
+                        className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800">+ Add</button>
+                      <button onClick={() => setEmpModal("edit-pick")}
+                        className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Edit</button>
+                      <button onClick={() => setEmpModal("remove-pick")}
+                        className="px-3 py-1.5 bg-white text-red-500 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50">Remove</button>
+                    </div>
+                  )}
+                </div>
                 {isAdmin && <PendingBanner onGoToAdmin={() => setPage("admin")} />}
 
                 {/* Breadcrumb */}
@@ -290,31 +302,110 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* Add/Edit Modal */}
+                {/* Add/Edit/Remove Modal */}
                 {empModal && (
                   <div onClick={() => setEmpModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[400px] max-w-[92%] shadow-xl">
-                      <h3 className="text-base font-semibold mb-4">{empModal === "add" ? "Add employee" : "Edit employee"}</h3>
-                      <div className="space-y-3">
-                        <input value={empForm.name} onChange={e => setEmpForm({ ...empForm, name: e.target.value })} placeholder="Full name"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <select value={empForm.company} onChange={e => setEmpForm({ ...empForm, company: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                          <option value="">Select company</option>
-                          {companies.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <input value={empForm.department} onChange={e => setEmpForm({ ...empForm, department: e.target.value })} placeholder="Department"
-                          list="dept-list" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <datalist id="dept-list">
-                          {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
-                        </datalist>
-                      </div>
-                      <div className="flex gap-2 mt-4">
-                        <button onClick={saveEmployee} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">
-                          {empModal === "add" ? "Add" : "Save"}
-                        </button>
-                        <button onClick={() => setEmpModal(null)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
-                      </div>
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[460px] max-w-[92%] max-h-[80vh] overflow-y-auto shadow-xl">
+
+                      {/* ADD form */}
+                      {empModal === "add" && (
+                        <>
+                          <h3 className="text-base font-semibold mb-4">Add employee</h3>
+                          <div className="space-y-3">
+                            <input value={empForm.name} onChange={e => setEmpForm({ ...empForm, name: e.target.value })} placeholder="Full name" autoFocus
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            <select value={empForm.company} onChange={e => setEmpForm({ ...empForm, company: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                              <option value="">Select company</option>
+                              {companies.map(c => <option key={c} value={c}>{c}</option>)}
+                              <option value="__new">+ New company</option>
+                            </select>
+                            {empForm.company === "__new" && (
+                              <input onChange={e => setEmpForm({ ...empForm, company: e.target.value })} placeholder="New company name"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            )}
+                            <input value={empForm.department} onChange={e => setEmpForm({ ...empForm, department: e.target.value })} placeholder="Department"
+                              list="dept-list" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            <datalist id="dept-list">
+                              {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
+                            </datalist>
+                          </div>
+                          <div className="flex gap-2 mt-4">
+                            <button onClick={saveEmployee} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Add</button>
+                            <button onClick={() => setEmpModal(null)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* EDIT: pick employee first */}
+                      {empModal === "edit-pick" && (
+                        <>
+                          <h3 className="text-base font-semibold mb-4">Select employee to edit</h3>
+                          <input id="emp-search" placeholder="Search by name..." onChange={e => document.querySelectorAll("[data-emp-row]").forEach(el => { el.style.display = el.dataset.empRow.toLowerCase().includes(e.target.value.toLowerCase()) ? "" : "none"; })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3" />
+                          <div className="space-y-1 max-h-[50vh] overflow-y-auto">
+                            {employees.map(emp => (
+                              <div key={emp.id} data-emp-row={emp.name}
+                                onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department }); }}
+                                className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-50 text-sm">
+                                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: COMP_COLORS[emp.company] || "#888" }}>{emp.name[0]}</div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium truncate">{emp.name}</p>
+                                  <p className="text-[11px] text-gray-400">{emp.company} / {emp.department}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* EDIT form (after picking) */}
+                      {empModal && empModal !== "add" && empModal !== "edit-pick" && empModal !== "remove-pick" && (
+                        <>
+                          <h3 className="text-base font-semibold mb-4">Edit employee</h3>
+                          <div className="space-y-3">
+                            <input value={empForm.name} onChange={e => setEmpForm({ ...empForm, name: e.target.value })} placeholder="Full name"
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            <select value={empForm.company} onChange={e => setEmpForm({ ...empForm, company: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                              {companies.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <input value={empForm.department} onChange={e => setEmpForm({ ...empForm, department: e.target.value })} placeholder="Department"
+                              list="dept-list2" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            <datalist id="dept-list2">
+                              {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
+                            </datalist>
+                          </div>
+                          <div className="flex gap-2 mt-4">
+                            <button onClick={saveEmployee} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Save</button>
+                            <button onClick={() => setEmpModal(null)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* REMOVE: pick employee */}
+                      {empModal === "remove-pick" && (
+                        <>
+                          <h3 className="text-base font-semibold mb-4">Select employee to remove</h3>
+                          <input placeholder="Search by name..." onChange={e => document.querySelectorAll("[data-rem-row]").forEach(el => { el.style.display = el.dataset.remRow.toLowerCase().includes(e.target.value.toLowerCase()) ? "" : "none"; })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3" />
+                          <div className="space-y-1 max-h-[50vh] overflow-y-auto">
+                            {employees.map(emp => (
+                              <div key={emp.id} data-rem-row={emp.name}
+                                className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-red-50 text-sm">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: COMP_COLORS[emp.company] || "#888" }}>{emp.name[0]}</div>
+                                  <div>
+                                    <p className="font-medium">{emp.name}</p>
+                                    <p className="text-[11px] text-gray-400">{emp.company} / {emp.department}</p>
+                                  </div>
+                                </div>
+                                <button onClick={() => deleteEmployee(emp.id)} className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-100">Remove</button>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
