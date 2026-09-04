@@ -324,48 +324,97 @@ export default function DashboardPage() {
                     </div>
 
                     {filtered.length > 0 ? (
-                      <div className="space-y-6">
-                        {TEAMS.filter(t => byTeam[t]).map(team => (
-                          <div key={team}>
-                            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-                              <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[team] || "📋"}</div>
-                              <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{team}</span>
+                      <>
+                        {/* Team cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
+                          {TEAMS.filter(t => byTeam[t]).map(team => {
+                            const members = byTeam[team];
+                            const avgPct = members.filter(m => m.kpiPct !== null).reduce((s, m) => s + m.kpiPct, 0) / (members.filter(m => m.kpiPct !== null).length || 1);
+                            const avgRound = Math.round(avgPct * 100);
+                            const color = avgRound >= 95 ? "#16a34a" : avgRound < 85 ? "#dc2626" : "#d97706";
+                            const isSelected = selectedTeam === team;
+                            return (
+                              <div key={team} onClick={() => setSelectedTeam(isSelected ? null : team)}
+                                className={`rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-sm ${isSelected ? "border-gray-300 shadow-sm" : "border-gray-100"}`} style={{ background: "#fff" }}>
+                                <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
+                                <div className="p-3.5">
+                                  <div className="flex items-center gap-2.5 mb-2">
+                                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
+                                    <div>
+                                      <p className="text-sm font-bold">{team}</p>
+                                      <p className="text-[11px] text-gray-400">{members.length} members</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                                    <span className="text-lg font-bold" style={{ color }}>{avgRound}%</span>
+                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${avgRound >= 95 ? "bg-green-50 text-green-600" : avgRound < 85 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>
+                                      {avgRound >= 95 ? "On Target" : avgRound < 85 ? "Behind" : "Slightly Behind"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Member details for selected team */}
+                        {selectedTeam && byTeam[selectedTeam] && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-4">
+                              <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedTeam] || "📋"}</div>
+                              <span className="text-sm font-semibold">{selectedTeam} team</span>
+                              <button onClick={() => setSelectedTeam(null)} className="ml-2 text-xs text-gray-400 hover:text-gray-600">Close</button>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {byTeam[team].map((e, i) => {
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {byTeam[selectedTeam].map((e, i) => {
                                 const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
                                 const isGood = pct !== null && pct >= 95;
                                 const isBad = pct !== null && pct < 85;
                                 const color = isGood ? "#16a34a" : isBad ? "#dc2626" : "#d97706";
                                 return (
-                                  <div key={i} className="bg-white rounded-xl p-4 border border-gray-100 hover:shadow-sm transition-all">
+                                  <div key={i} className="bg-white rounded-xl p-5 border border-gray-100">
                                     <div className="flex justify-between items-center mb-3">
-                                      <div className="flex items-center gap-2.5">
-                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{e.employee?.[0]}</div>
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: TEAM_COLORS[selectedTeam] || "#888" }}>{e.employee?.[0]}</div>
                                         <div>
-                                          <p className="text-sm font-semibold">{e.employee}</p>
-                                          <p className="text-[11px] text-gray-400">{e.kpiType}</p>
+                                          <p className="text-base font-semibold">{e.employee}</p>
+                                          <p className="text-xs text-gray-400">{e.kpiType}</p>
                                         </div>
                                       </div>
-                                      {pct !== null && <p className="text-2xl font-bold" style={{ color }}>{pct}%</p>}
+                                      {pct !== null && <p className="text-3xl font-bold" style={{ color }}>{pct}%</p>}
                                     </div>
                                     {pct !== null && (
-                                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
+                                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
                                         <div className="h-full rounded-full" style={{ width: Math.min(pct, 100) + "%", background: color }} />
                                       </div>
                                     )}
-                                    <div className="flex justify-between text-[11px] text-gray-400">
-                                      <span>Target: {e.target}</span>
-                                      <span>Actual: {e.actual || "..."}</span>
+                                    <div className="space-y-2 text-sm">
+                                      <div className="flex justify-between py-1.5 border-b border-gray-50">
+                                        <span className="text-gray-400">Target</span>
+                                        <span className="font-medium">{e.target || "..."}</span>
+                                      </div>
+                                      <div className="flex justify-between py-1.5 border-b border-gray-50">
+                                        <span className="text-gray-400">Actual</span>
+                                        <span className="font-medium">{e.actual || "..."}</span>
+                                      </div>
+                                      {e.notes && (
+                                        <div className="flex justify-between py-1.5 border-b border-gray-50">
+                                          <span className="text-gray-400">Notes</span>
+                                          <span className="text-gray-500 text-xs text-right max-w-[200px]">{e.notes}</span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between py-1.5">
+                                        <span className="text-gray-400">Status</span>
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status ? e.status.replace(/[🟢🟡🔴]/g, "").trim() : (isGood ? "On Target" : isBad ? "Behind" : "Slightly Behind")}</span>
+                                      </div>
                                     </div>
-                                    {e.status && <div className={`mt-2 text-[11px] font-medium px-2 py-0.5 rounded inline-block ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status.replace(/[🟢🟡🔴]/g, "").trim()}</div>}
                                   </div>
                                 );
                               })}
                             </div>
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </>
                     ) : <p className="text-sm text-gray-400 text-center py-8">No data for {selMonth} W{selWeek}</p>}
                   </>
                 );
