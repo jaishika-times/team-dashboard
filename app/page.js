@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { parseProductivity, parseAttendanceAuto } from "@/lib/parser";
+import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV } from "@/lib/parser";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
 const TEAM_COLORS = {Design:"#6366f1",Video:"#3b82f6",Content:"#10b981",Social:"#f59e0b",CSE:"#ef4444",Sales:"#8b5cf6",Knowledge:"#06b6d4",Finance:"#ec4899"};
@@ -26,6 +26,8 @@ export default function DashboardPage() {
   const [modal, setModal] = useState(null);
   const [attWeek, setAttWeek] = useState("");
   const [selectedTeam, setSelectedTeam] = useState(null);
+  const [kpiData, setKpiData] = useState(null);
+  const [kpiPeriod, setKpiPeriod] = useState("");
 
   useEffect(() => { init(); }, []);
 
@@ -43,6 +45,8 @@ export default function DashboardPage() {
   async function loadData() {
     const { data: prodRows } = await supabase.from("productivity_records").select("*").order("uploaded_at", { ascending: false }).limit(1);
     if (prodRows?.length) { const r = prodRows[0]; setProdData({ data: r.data, dates: r.dates, members: r.members }); setDate(r.dates?.[0] || ""); }
+    const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
+    if (kpiRows?.length) { const k = kpiRows[0].data; setKpiData(k); if (k.periods?.length) setKpiPeriod(k.periods[0]); }
     const { data: attRows } = await supabase.from("attendance_records").select("*").order("month_key", { ascending: false });
     if (attRows?.length) { setAttIndex(attRows.map(r => ({ key: r.month_key, label: r.month_label }))); const map = {}; attRows.forEach(r => { map[r.month_key] = r.data; }); setAttData(map); setAttMonth(attRows[0].month_key); }
   }
@@ -90,6 +94,7 @@ export default function DashboardPage() {
     { id: "overview", icon: "◻", label: "Overview" },
     { id: "productivity", icon: "◈", label: "Productivity" },
     { id: "attendance", icon: "◷", label: "Attendance" },
+    { id: "kpi", icon: "◆", label: "Weekly KPI" },
   ];
   const pendingCount = isAdmin ? 0 : 0; // calculated below
   if (isAdmin) navItems.push({ id: "admin", icon: "◎", label: "Admin" });
@@ -334,6 +339,77 @@ export default function DashboardPage() {
             </>
           )}
 
+          {/* ===== WEEKLY KPI ===== */}
+          {page === "kpi" && (
+            <>
+              <h1 className="text-xl font-semibold mb-1">Weekly KPI</h1>
+              <p className="text-sm text-gray-400 mb-5">Team performance by week</p>
+
+              {kpiData ? (
+                <>
+                  <div className="flex gap-3 items-end flex-wrap mb-5">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wide">Period</label>
+                      <select value={kpiPeriod} onChange={e => setKpiPeriod(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        {kpiData.periods.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    {isAdmin && <SmallUpload type="kpi" onRecorded={loadData} userId={user.id} />}
+                  </div>
+
+                  {kpiData.grouped[kpiPeriod] && (
+                    <div className="space-y-6">
+                      {TEAMS.filter(t => kpiData.grouped[kpiPeriod].teams[t]).map(team => (
+                        <div key={team}>
+                          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm" style={{ background: (TEAM_COLORS[team] || "#888") + "15" }}>{TEAM_ICONS[team] || "📋"}</div>
+                            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{team}</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {kpiData.grouped[kpiPeriod].teams[team].map((e, i) => {
+                              const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
+                              const statusColor = e.status.includes("🟢") || e.status.includes("On Target") ? "#16a34a" : e.status.includes("🔴") || e.status.includes("Behind") ? "#dc2626" : "#d97706";
+                              const statusBg = e.status.includes("🟢") || e.status.includes("On Target") ? "bg-green-50 border-green-100" : e.status.includes("🔴") || e.status.includes("Behind") ? "bg-red-50 border-red-100" : "bg-amber-50 border-amber-100";
+                              return (
+                                <div key={i} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                  <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                      <p className="text-sm font-semibold">{e.employee}</p>
+                                      <p className="text-xs text-gray-400">{e.kpiType}</p>
+                                    </div>
+                                    {pct !== null && (
+                                      <div className="text-right">
+                                        <p className="text-2xl font-bold" style={{ color: statusColor }}>{pct}%</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {pct !== null && (
+                                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden mb-3">
+                                      <div className="h-full rounded-full transition-all" style={{ width: Math.min(pct, 100) + "%", background: statusColor }} />
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between text-xs text-gray-400">
+                                    <span>Target: {e.target}</span>
+                                    <span>Actual: {e.actual || "—"}</span>
+                                  </div>
+                                  {e.notes && <p className="text-xs text-gray-400 mt-2 italic">{e.notes}</p>}
+                                  {e.status && <div className={`mt-2 text-xs font-medium px-2 py-1 rounded-md border inline-block ${statusBg}`}>{e.status.replace(/[🟢🟡🔴]/g, "").trim()}</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
+
+              {/* Paste data area */}
+              {isAdmin && <PasteArea onRecorded={loadData} userId={user.id} />}
+            </>
+          )}
+
           {/* ===== ADMIN ===== */}
           {page === "admin" && isAdmin && <AdminPanel user={user} onDataUpdated={loadData} />}
         </div>
@@ -540,6 +616,9 @@ function InlineUpload({ type, onRecorded, userId }) {
         if (type === "prod") {
           const result = await parseProductivity(evt.target.result, file.name);
           setPending(result); setStatus({ ok: true, msg: result.dates.length + " days from " + file.name });
+        } else if (type === "kpi") {
+          const result = parseWeeklyKPI(evt.target.result, file.name);
+          setPending(result); setStatus({ ok: true, msg: result.count + " entries from " + file.name });
         } else {
           const result = await parseAttendanceAuto(evt.target.result, file.name);
           setPending(result); setStatus({ ok: true, msg: result.count + " records (" + result.monthLabel + ")" });
@@ -553,6 +632,9 @@ function InlineUpload({ type, onRecorded, userId }) {
     if (type === "prod") {
       await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
+    } else if (type === "kpi") {
+      await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries, grouped: pending.grouped, periods: pending.periods }, uploaded_by: userId });
     } else {
       await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
     }
@@ -588,6 +670,9 @@ function SmallUpload({ type, onRecorded, userId }) {
         if (type === "prod") {
           const result = await parseProductivity(evt.target.result, file.name);
           setPending(result);
+        } else if (type === "kpi") {
+          const result = parseWeeklyKPI(evt.target.result, file.name);
+          setPending(result);
         } else {
           const result = await parseAttendanceAuto(evt.target.result, file.name);
           setPending(result);
@@ -601,6 +686,9 @@ function SmallUpload({ type, onRecorded, userId }) {
     if (type === "prod") {
       await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
+    } else if (type === "kpi") {
+      await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries, grouped: pending.grouped, periods: pending.periods }, uploaded_by: userId });
     } else {
       await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
     }
@@ -620,6 +708,62 @@ function SmallUpload({ type, onRecorded, userId }) {
         </div>
         <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleFile} className="hidden" />
       </label>
+    </div>
+  );
+}
+
+// Paste data area for quick entry
+function PasteArea({ onRecorded, userId }) {
+  const [text, setText] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [open, setOpen] = useState(false);
+
+  async function handleRecord() {
+    if (!text.trim()) return;
+    setRecording(true); setMsg("");
+    try {
+      const entries = parsePastedCSV(text);
+      // Store as a simple weekly KPI update
+      const grouped = {};
+      const period = "Pasted " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      grouped[period] = { month: "", week: "", teams: {} };
+      entries.forEach(e => {
+        const team = e.team || "Other";
+        if (!grouped[period].teams[team]) grouped[period].teams[team] = [];
+        grouped[period].teams[team].push({
+          employee: e.employee, team, kpiType: "", target: e.target,
+          actual: e.completed || e.produced || "", kpiPct: parseFloat(e.progress) || null,
+          notes: "", status: parseFloat(e.progress) >= 0.9 ? "On Target" : parseFloat(e.progress) >= 0.7 ? "Slightly Behind" : "Behind",
+        });
+      });
+      await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("weekly_kpi").insert({ data: { entries, grouped, periods: Object.keys(grouped) }, uploaded_by: userId });
+      setText(""); setMsg("Recorded " + entries.length + " entries");
+      onRecorded();
+    } catch (err) { setMsg("Error: " + err.message); }
+    setRecording(false);
+  }
+
+  return (
+    <div className="mt-8 border-t border-gray-100 pt-6">
+      <button onClick={() => setOpen(!open)} className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 mb-3">
+        {open ? "▾" : "▸"} Quick data entry (paste CSV)
+      </button>
+      {open && (
+        <>
+          <p className="text-xs text-gray-400 mb-2">Paste CSV or tab-separated data. First row should be headers (Team, Name, Target, Completed, Progress).</p>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={6} placeholder={"Team,Name,Total Target/ Task,Estimated Time,Time Produced,Completed,Progress\nContent,Jeremiah,2 videos,—,—,2 videos,0.7\nVideo,Nic,6 videos/shoots,—,—,5 videos,0.9"}
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-400 resize-y" />
+          <div className="flex items-center gap-3 mt-2">
+            <button onClick={handleRecord} disabled={recording || !text.trim()}
+              className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg disabled:opacity-50">
+              {recording ? "Recording..." : "Record"}
+            </button>
+            {msg && <span className={`text-xs ${msg.startsWith("Error") ? "text-red-500" : "text-green-500"}`}>{msg}</span>}
+          </div>
+        </>
+      )}
     </div>
   );
 }
