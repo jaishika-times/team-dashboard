@@ -193,6 +193,7 @@ export default function DashboardPage() {
               {prodData ? (
                 <>
                   <div className="flex gap-3 items-end flex-wrap mb-5">
+                    {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
                       <select value={date} onChange={e => setDate(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
@@ -274,7 +275,7 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </>
-              ) : <EmptyState icon="📊" text={isAdmin ? "Upload data from Admin panel" : "No data yet"} />}
+              ) : isAdmin ? <InlineUpload type="prod" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📊" text="No data yet" />}
             </>
           )}
 
@@ -286,11 +287,14 @@ export default function DashboardPage() {
 
               {attIndex.length > 0 ? (
                 <>
-                  <div className="mb-5">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wide block mb-1">Month</label>
-                    <select value={attMonth} onChange={e => setAttMonth(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
-                      {attIndex.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
-                    </select>
+                  <div className="flex gap-3 items-end flex-wrap mb-5">
+                    {isAdmin && <SmallUpload type="att" onRecorded={loadData} userId={user.id} />}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wide">Month</label>
+                      <select value={attMonth} onChange={e => setAttMonth(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        {attIndex.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
+                      </select>
+                    </div>
                   </div>
                   {curAtt && (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -310,7 +314,7 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </>
-              ) : <EmptyState icon="📅" text={isAdmin ? "Upload data from Admin panel" : "No data yet"} />}
+              ) : isAdmin ? <InlineUpload type="att" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📅" text="No data yet" />}
             </>
           )}
 
@@ -502,6 +506,104 @@ function PendingBanner({ onGoToAdmin }) {
         </div>
         <span className="text-xs text-amber-500 font-medium">Go to Admin &rarr;</span>
       </div>
+    </div>
+  );
+}
+
+// Inline upload for empty states
+function InlineUpload({ type, onRecorded, userId }) {
+  const [status, setStatus] = useState(null);
+  const [pending, setPending] = useState(null);
+  const [recording, setRecording] = useState(false);
+
+  function handleFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        if (type === "prod") {
+          const result = await parseProductivity(evt.target.result, file.name);
+          setPending(result); setStatus({ ok: true, msg: result.dates.length + " days from " + file.name });
+        } else {
+          const result = await parseAttendanceAuto(evt.target.result, file.name);
+          setPending(result); setStatus({ ok: true, msg: result.count + " records (" + result.monthLabel + ")" });
+        }
+      } catch (err) { setStatus({ ok: false, msg: err.message }); }
+    }; reader.readAsArrayBuffer(file);
+  }
+
+  async function record() {
+    if (!pending) return; setRecording(true);
+    if (type === "prod") {
+      await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
+    } else {
+      await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
+    }
+    setPending(null); setRecording(false); onRecorded();
+  }
+
+  return (
+    <div className="text-center py-12">
+      <div className="text-4xl mb-3">{type === "prod" ? "📊" : "📅"}</div>
+      <p className="text-gray-400 mb-4">No {type === "prod" ? "productivity" : "attendance"} data yet</p>
+      <label className="inline-block cursor-pointer">
+        <div className={`px-6 py-3 rounded-xl text-sm font-medium transition-all ${status?.ok ? "bg-green-50 text-green-600 border border-green-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}>
+          {status?.ok ? "✓ " + status.msg : "Upload " + (type === "prod" ? "productivity" : "attendance") + " file"}
+        </div>
+        <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleFile} className="hidden" />
+      </label>
+      {status?.ok === false && <p className="text-xs text-red-500 mt-2">{status.msg}</p>}
+      {pending && <button onClick={record} disabled={recording} className="mt-3 px-6 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50 block mx-auto">{recording ? "Recording..." : "Record"}</button>}
+    </div>
+  );
+}
+
+// Small upload button for when data already exists
+function SmallUpload({ type, onRecorded, userId }) {
+  const [pending, setPending] = useState(null);
+  const [recording, setRecording] = useState(false);
+
+  function handleFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        if (type === "prod") {
+          const result = await parseProductivity(evt.target.result, file.name);
+          setPending(result);
+        } else {
+          const result = await parseAttendanceAuto(evt.target.result, file.name);
+          setPending(result);
+        }
+      } catch (err) { alert("Error: " + err.message); }
+    }; reader.readAsArrayBuffer(file);
+  }
+
+  async function record() {
+    if (!pending) return; setRecording(true);
+    if (type === "prod") {
+      await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("productivity_records").insert({ data: pending.data, dates: pending.dates, members: pending.members, uploaded_by: userId });
+    } else {
+      await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
+    }
+    setPending(null); setRecording(false); onRecorded();
+  }
+
+  return (
+    <div className="flex items-center gap-2 ml-auto">
+      {pending ? (
+        <button onClick={record} disabled={recording} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg disabled:opacity-50">
+          {recording ? "..." : "Record"}
+        </button>
+      ) : null}
+      <label className="cursor-pointer">
+        <div className="px-3 py-1.5 bg-gray-100 text-gray-500 text-xs font-medium rounded-lg hover:bg-gray-200 transition-all">
+          {pending ? "✓ Ready" : "Upload"}
+        </div>
+        <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleFile} className="hidden" />
+      </label>
     </div>
   );
 }
