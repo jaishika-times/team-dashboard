@@ -156,7 +156,7 @@ export default function DashboardPage() {
                       const s = teamStats[team];
                       const avgHrs = s.members.size > 0 ? (s.hours / (s.members.size * Math.max(totalDates, 1))).toFixed(1) : "0";
                       return (
-                        <div key={team} onClick={() => { setPage("productivity"); setTeamFilter(team); }}
+                        <div key={team} onClick={() => { setPage("productivity"); setSelectedTeam(team); }}
                           className="group relative rounded-2xl cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
                           style={{ background: "#fff", border: "1px solid #f0f0f0" }}>
                           {/* Gradient top bar */}
@@ -213,33 +213,63 @@ export default function DashboardPage() {
 
               {prodData ? (
                 <>
-                  <div className="flex gap-3 items-end flex-wrap mb-5">
-                    {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
-                      <select value={date} onChange={e => setDate(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
-                        {prodData.dates.map(d => { const dt = new Date(d + "T00:00:00"); return <option key={d} value={d}>{dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</option>; })}
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wide">Team</label>
-                      <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
-                        <option value="all">All teams</option>
-                        {TEAMS.filter(t => teams.has(t)).map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex border border-gray-200 rounded-lg overflow-hidden ml-auto">
-                      {["daily", "summary"].map(v => (
-                        <button key={v} onClick={() => setView(v)} className={`px-4 py-1.5 text-xs font-medium ${view === v ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-600"}`}>
-                          {v.charAt(0).toUpperCase() + v.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {!selectedTeam ? (
+                    <>
+                      <div className="flex gap-3 items-end flex-wrap mb-5">
+                        {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                        {TEAMS.filter(t => teams.has(t)).map(team => {
+                          const members = allMembers.filter(m => m.team === team);
+                          const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
+                          const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
+                          return (
+                            <div key={team} onClick={() => setSelectedTeam(team)}
+                              className="group bg-white border border-gray-100 rounded-2xl p-5 cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all">
+                              <div className="flex items-center gap-3 mb-3">
+                                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-xl group-hover:scale-110 transition-transform`}>
+                                  {TEAM_ICONS[team] || "📋"}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-bold">{team}</p>
+                                  <p className="text-xs text-gray-400">{members.length} members</p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-100">
+                                <div><p className="text-lg font-bold">{taskCount}</p><p className="text-[10px] text-gray-400">Tasks today</p></div>
+                                <div><p className="text-lg font-bold">{th > 0 ? th.toFixed(1) : "—"}</p><p className="text-[10px] text-gray-400">Hours today</p></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex gap-3 items-end flex-wrap mb-5">
+                        <button onClick={() => setSelectedTeam(null)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">← All teams</button>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedTeam] || "📋"}</div>
+                          <span className="text-sm font-semibold">{selectedTeam} team</span>
+                        </div>
+                        <div className="flex flex-col gap-1 ml-4">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
+                          <select value={date} onChange={e => setDate(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                            {prodData.dates.map(d => { const dt = new Date(d + "T00:00:00"); return <option key={d} value={d}>{dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</option>; })}
+                          </select>
+                        </div>
+                        <div className="flex border border-gray-200 rounded-lg overflow-hidden ml-auto">
+                          {["daily", "summary"].map(v => (
+                            <button key={v} onClick={() => setView(v)} className={`px-4 py-1.5 text-xs font-medium ${view === v ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-600"}`}>
+                              {v.charAt(0).toUpperCase() + v.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
                   {view === "daily" ? (
                     TEAMS.map(team => {
-                      if (teamFilter !== "all" && team !== teamFilter) return null;
+                      if (team !== selectedTeam) return null;
                       const members = allMembers.filter(m => m.team === team);
                       if (!members.length) return null;
                       const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
@@ -280,7 +310,7 @@ export default function DashboardPage() {
                         <thead><tr className="bg-gray-50">{["#","Member","Team","Days","Tasks","Hours","Avg/day","Leave"].map((h, i) => (
                           <th key={h} className={`px-3 py-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide ${i > 2 ? "text-right" : "text-left"}`}>{h}</th>
                         ))}</tr></thead>
-                        <tbody>{Object.entries(summaryStats).filter(([, s]) => teamFilter === "all" || s.team === teamFilter).sort((a, b) => b[1].totalHours - a[1].totalHours).map(([name, s], i) => (
+                        <tbody>{Object.entries(summaryStats).filter(([, s]) => !selectedTeam || s.team === selectedTeam).sort((a, b) => b[1].totalHours - a[1].totalHours).map(([name, s], i) => (
                           <tr key={name} className="hover:bg-gray-50 border-t border-gray-50">
                             <td className="px-3 py-2 font-semibold text-gray-300">{i + 1}</td>
                             <td className="px-3 py-2 font-medium">{name}</td>
@@ -294,6 +324,9 @@ export default function DashboardPage() {
                         ))}</tbody>
                       </table>
                     </div>
+                  )}
+                </>
+                    </>
                   )}
                 </>
               ) : isAdmin ? <InlineUpload type="prod" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📊" text="No data yet" />}
@@ -644,10 +677,10 @@ function InlineUpload({ type, onRecorded, userId }) {
   return (
     <div className="text-center py-12">
       <div className="text-4xl mb-3">{type === "prod" ? "📊" : "📅"}</div>
-      <p className="text-gray-400 mb-4">No {type === "prod" ? "productivity" : "attendance"} data yet</p>
+      <p className="text-gray-400 mb-4">No {type === "prod" ? "productivity" : type === "kpi" ? "weekly KPI" : "attendance"} data yet</p>
       <label className="inline-block cursor-pointer">
         <div className={`px-6 py-3 rounded-xl text-sm font-medium transition-all ${status?.ok ? "bg-green-50 text-green-600 border border-green-200" : "bg-gray-900 text-white hover:bg-gray-800"}`}>
-          {status?.ok ? "✓ " + status.msg : "Upload " + (type === "prod" ? "productivity" : "attendance") + " file"}
+          {status?.ok ? "✓ " + status.msg : "Upload " + (type === "prod" ? "productivity" : type === "kpi" ? "weekly KPI" : "attendance") + " file"}
         </div>
         <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleFile} className="hidden" />
       </label>
