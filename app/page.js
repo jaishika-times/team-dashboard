@@ -203,6 +203,34 @@ export default function DashboardPage() {
                     {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
                   </div>
 
+                  {/* Team summary cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
+                    {TEAMS.filter(t => allMembers.some(m => m.team === t)).map(team => {
+                      const members = allMembers.filter(m => m.team === team);
+                      const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
+                      const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
+                      return (
+                        <div key={team} className="rounded-xl overflow-hidden border border-gray-100 bg-white">
+                          <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
+                          <div className="p-3.5">
+                            <div className="flex items-center gap-2.5 mb-2">
+                              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
+                              <div>
+                                <p className="text-sm font-bold">{team}</p>
+                                <p className="text-[11px] text-gray-400">{members.length} members</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-4 pt-2 border-t border-gray-50">
+                              <div><span className="text-lg font-bold">{taskCount}</span><span className="text-[10px] text-gray-400 ml-1">tasks</span></div>
+                              <div><span className="text-lg font-bold">{th > 0 ? th.toFixed(1) : "0"}</span><span className="text-[10px] text-gray-400 ml-1">hrs</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Member details by team */}
                   <div className="space-y-6">
                     {TEAMS.filter(t => allMembers.some(m => m.team === t)).map(team => {
                       const members = allMembers.filter(m => m.team === team);
