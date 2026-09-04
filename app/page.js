@@ -382,8 +382,8 @@ function AdminPanel({ user, onDataUpdated }) {
   function handleProdFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      try { const result = parseProductivity(evt.target.result); setPendingProd(result); setProdStatus({ ok: true, msg: `${result.dates.length} days from ${file.name}` }); }
+    reader.onload = async (evt) => {
+      try { const result = await parseProductivity(evt.target.result, file.name); setPendingProd(result); setProdStatus({ ok: true, msg: `${result.dates.length} days from ${file.name}` }); }
       catch (err) { setProdStatus({ ok: false, msg: err.message }); }
     }; reader.readAsArrayBuffer(file);
   }
@@ -391,8 +391,8 @@ function AdminPanel({ user, onDataUpdated }) {
   function handleAttFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      try { const result = parseAttendanceAuto(evt.target.result, file.name); setPendingAtt(result); setAttStatus({ ok: true, msg: `${result.count} records (${result.monthLabel})` }); }
+    reader.onload = async (evt) => {
+      try { const result = await parseAttendanceAuto(evt.target.result, file.name); setPendingAtt(result); setAttStatus({ ok: true, msg: `${result.count} records (${result.monthLabel})` }); }
       catch (err) { setAttStatus({ ok: false, msg: err.message }); }
     }; reader.readAsArrayBuffer(file);
   }
@@ -454,9 +454,9 @@ function AdminPanel({ user, onDataUpdated }) {
             <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${prodStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
               <div className={`text-xl mb-1 ${prodStatus?.ok ? "text-green-500" : "text-gray-300"}`}>{prodStatus?.ok ? "✓" : "📊"}</div>
               <div className={`text-sm font-medium ${prodStatus?.ok ? "text-green-600" : "text-gray-500"}`}>{prodStatus?.msg || "Upload productivity file"}</div>
-              <div className="text-xs text-gray-400 mt-1">XLSX, XLS, CSV</div>
+              <div className="text-xs text-gray-400 mt-1">Excel, CSV, PDF, ODS</div>
             </div>
-            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleProdFile} className="hidden" />
+            <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleProdFile} className="hidden" />
           </label>
           {pendingProd && <button onClick={recordProd} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">Record</button>}
         </div>
@@ -465,9 +465,9 @@ function AdminPanel({ user, onDataUpdated }) {
             <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${attStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
               <div className={`text-xl mb-1 ${attStatus?.ok ? "text-green-500" : "text-gray-300"}`}>{attStatus?.ok ? "✓" : "📅"}</div>
               <div className={`text-sm font-medium ${attStatus?.ok ? "text-green-600" : "text-gray-500"}`}>{attStatus?.msg || "Upload attendance file"}</div>
-              <div className="text-xs text-gray-400 mt-1">XLSX, XLS, CSV</div>
+              <div className="text-xs text-gray-400 mt-1">Excel, CSV, PDF, ODS</div>
             </div>
-            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleAttFile} className="hidden" />
+            <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleAttFile} className="hidden" />
           </label>
           {pendingAtt && <button onClick={recordAtt} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">Record</button>}
         </div>

@@ -13,7 +13,8 @@
     "react-dom": "^18.3.0",
     "@supabase/supabase-js": "^2.45.0",
     "xlsx": "^0.18.5",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "pdfjs-dist": "^4.4.0"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.0",
