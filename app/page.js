@@ -141,61 +141,41 @@ export default function DashboardPage() {
           {page === "overview" && (
             <>
               <h1 className="text-xl font-semibold mb-6">Overview</h1>
-
-              {/* Pending approvals banner */}
               {isAdmin && <PendingBanner onGoToAdmin={() => setPage("admin")} />}
 
-
-
-              {/* Team cards */}
-              {Object.keys(teamStats).length > 0 && (
-                <>
-                  <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Teams</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
-                    {TEAMS.filter(t => teamStats[t]).map(team => {
-                      const s = teamStats[team];
-                      const avgHrs = s.members.size > 0 ? (s.hours / (s.members.size * Math.max(totalDates, 1))).toFixed(1) : "0";
-                      return (
-                        <div key={team} onClick={() => { setPage("productivity"); setSelectedTeam(team); }}
-                          className="group relative rounded-2xl cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
-                          style={{ background: "#fff", border: "1px solid #f0f0f0" }}>
-                          {/* Gradient top bar */}
-                          <div className={`h-1.5 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
-                          <div className="p-5">
-                            <div className="flex items-center gap-4 mb-5">
-                              <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-2xl shadow-sm group-hover:scale-110 transition-transform duration-300`}>
-                                {TEAM_ICONS[team] || "📋"}
-                              </div>
-                              <div>
-                                <p className="text-base font-bold text-gray-900">{team}</p>
-                                <p className="text-xs text-gray-400">{s.members.size} member{s.members.size !== 1 ? "s" : ""}</p>
-                              </div>
+              {allMembers.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {TEAMS.filter(t => allMembers.some(m => m.team === t)).map(team => {
+                    const members = allMembers.filter(m => m.team === team);
+                    return (
+                      <div key={team} className="rounded-2xl overflow-hidden border border-gray-100" style={{ background: "#fff" }}>
+                        <div className={`h-1.5 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
+                        <div className="p-5">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-lg`}>
+                              {TEAM_ICONS[team] || "📋"}
                             </div>
-                            <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-100">
-                              <div className="text-center">
-                                <p className="text-xl font-bold text-gray-900">{s.hours.toFixed(0)}</p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">Hours</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="text-xl font-bold text-gray-900">{s.tasks}</p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">Tasks</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="text-xl font-bold text-gray-900">{avgHrs}</p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">Avg/day</p>
-                              </div>
+                            <div>
+                              <p className="text-sm font-bold">{team}</p>
+                              <p className="text-xs text-gray-400">{members.length} member{members.length !== 1 ? "s" : ""}</p>
                             </div>
                           </div>
+                          <div className="space-y-2 pt-3 border-t border-gray-100">
+                            {members.map(m => (
+                              <div key={m.name} className="flex items-center gap-2.5 py-1">
+                                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>
+                                  {m.name[0]}
+                                </div>
+                                <span className="text-sm text-gray-700">{m.name}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-
-
-              {!prodData && !curAtt && (
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
                 <div className="text-center py-16 text-gray-300">
                   <p className="text-4xl mb-3">📊</p>
                   <p className="text-lg font-medium text-gray-400">No data yet</p>
@@ -377,67 +357,96 @@ export default function DashboardPage() {
               <h1 className="text-xl font-semibold mb-1">Weekly KPI</h1>
               <p className="text-sm text-gray-400 mb-5">Team performance by week</p>
 
-              {kpiData ? (
-                <>
-                  <div className="flex gap-3 items-end flex-wrap mb-5">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wide">Period</label>
-                      <select value={kpiPeriod} onChange={e => setKpiPeriod(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
-                        {kpiData.periods.map(p => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                    </div>
-                    {isAdmin && <SmallUpload type="kpi" onRecorded={loadData} userId={user.id} />}
-                  </div>
+              {kpiData ? (() => {
+                // Build month and week lists from data
+                const monthsSet = new Set();
+                const weeksMap = {};
+                kpiData.entries.forEach(e => {
+                  if (e.month) monthsSet.add(e.month);
+                  const mKey = e.month || "";
+                  if (!weeksMap[mKey]) weeksMap[mKey] = new Set();
+                  if (e.week) weeksMap[mKey].add(e.week);
+                });
+                const months = Array.from(monthsSet);
+                const selMonth = kpiPeriod.split("|")[0] || months[months.length - 1] || "";
+                const weeksForMonth = Array.from(weeksMap[selMonth] || []).sort((a,b) => parseFloat(a) - parseFloat(b));
+                const selWeek = kpiPeriod.split("|")[1] || weeksForMonth[weeksForMonth.length - 1] || "";
+                
+                // Filter entries for selected month + week
+                const filtered = kpiData.entries.filter(e => e.month === selMonth && String(e.week) === String(selWeek));
+                const byTeam = {};
+                filtered.forEach(e => {
+                  const t = e.team || "Other";
+                  if (!byTeam[t]) byTeam[t] = [];
+                  byTeam[t].push(e);
+                });
 
-                  {kpiData.grouped[kpiPeriod] && (
-                    <div className="space-y-6">
-                      {TEAMS.filter(t => kpiData.grouped[kpiPeriod].teams[t]).map(team => (
-                        <div key={team}>
-                          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm" style={{ background: (TEAM_COLORS[team] || "#888") + "15" }}>{TEAM_ICONS[team] || "📋"}</div>
-                            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{team}</span>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {kpiData.grouped[kpiPeriod].teams[team].map((e, i) => {
-                              const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
-                              const statusColor = e.status.includes("🟢") || e.status.includes("On Target") ? "#16a34a" : e.status.includes("🔴") || e.status.includes("Behind") ? "#dc2626" : "#d97706";
-                              const statusBg = e.status.includes("🟢") || e.status.includes("On Target") ? "bg-green-50 border-green-100" : e.status.includes("🔴") || e.status.includes("Behind") ? "bg-red-50 border-red-100" : "bg-amber-50 border-amber-100";
-                              return (
-                                <div key={i} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                                  <div className="flex justify-between items-start mb-3">
-                                    <div>
-                                      <p className="text-sm font-semibold">{e.employee}</p>
-                                      <p className="text-xs text-gray-400">{e.kpiType}</p>
+                return (
+                  <>
+                    <div className="flex gap-3 items-end flex-wrap mb-6">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">Month</label>
+                        <select value={selMonth} onChange={e => { const w = Array.from(weeksMap[e.target.value] || []); setKpiPeriod(e.target.value + "|" + (w[w.length-1] || "")); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                          {months.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">Week</label>
+                        <select value={selWeek} onChange={e => setKpiPeriod(selMonth + "|" + e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                          {weeksForMonth.map(w => <option key={w} value={w}>W{w}</option>)}
+                        </select>
+                      </div>
+                      {isAdmin && <SmallUpload type="kpi" onRecorded={loadData} userId={user.id} />}
+                    </div>
+
+                    {filtered.length > 0 ? (
+                      <div className="space-y-6">
+                        {TEAMS.filter(t => byTeam[t]).map(team => (
+                          <div key={team}>
+                            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+                              <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[team] || "📋"}</div>
+                              <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{team}</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {byTeam[team].map((e, i) => {
+                                const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
+                                const isGood = pct !== null && pct >= 95;
+                                const isBad = pct !== null && pct < 85;
+                                const color = isGood ? "#16a34a" : isBad ? "#dc2626" : "#d97706";
+                                return (
+                                  <div key={i} className="bg-white rounded-xl p-4 border border-gray-100 hover:shadow-sm transition-all">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{e.employee?.[0]}</div>
+                                        <div>
+                                          <p className="text-sm font-semibold">{e.employee}</p>
+                                          <p className="text-[11px] text-gray-400">{e.kpiType}</p>
+                                        </div>
+                                      </div>
+                                      {pct !== null && <p className="text-2xl font-bold" style={{ color }}>{pct}%</p>}
                                     </div>
                                     {pct !== null && (
-                                      <div className="text-right">
-                                        <p className="text-2xl font-bold" style={{ color: statusColor }}>{pct}%</p>
+                                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
+                                        <div className="h-full rounded-full" style={{ width: Math.min(pct, 100) + "%", background: color }} />
                                       </div>
                                     )}
-                                  </div>
-                                  {pct !== null && (
-                                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden mb-3">
-                                      <div className="h-full rounded-full transition-all" style={{ width: Math.min(pct, 100) + "%", background: statusColor }} />
+                                    <div className="flex justify-between text-[11px] text-gray-400">
+                                      <span>Target: {e.target}</span>
+                                      <span>Actual: {e.actual || "..."}</span>
                                     </div>
-                                  )}
-                                  <div className="flex justify-between text-xs text-gray-400">
-                                    <span>Target: {e.target}</span>
-                                    <span>Actual: {e.actual || "—"}</span>
+                                    {e.status && <div className={`mt-2 text-[11px] font-medium px-2 py-0.5 rounded inline-block ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status.replace(/[🟢🟡🔴]/g, "").trim()}</div>}
                                   </div>
-                                  {e.notes && <p className="text-xs text-gray-400 mt-2 italic">{e.notes}</p>}
-                                  {e.status && <div className={`mt-2 text-xs font-medium px-2 py-1 rounded-md border inline-block ${statusBg}`}>{e.status.replace(/[🟢🟡🔴]/g, "").trim()}</div>}
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
+                        ))}
+                      </div>
+                    ) : <p className="text-sm text-gray-400 text-center py-8">No data for {selMonth} W{selWeek}</p>}
+                  </>
+                );
+              })() : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
 
-              {/* Paste data area */}
               {isAdmin && <PasteArea onRecorded={loadData} userId={user.id} />}
             </>
           )}
