@@ -6,6 +6,8 @@ import { parseProductivity, parseAttendanceAuto } from "@/lib/parser";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
 const TEAM_COLORS = {Design:"#6366f1",Video:"#3b82f6",Content:"#10b981",Social:"#f59e0b",CSE:"#ef4444",Sales:"#8b5cf6",Knowledge:"#06b6d4",Finance:"#ec4899"};
+const TEAM_ICONS = {Design:"🎨",Video:"🎬",Content:"✍️",Social:"📱",CSE:"🛠️",Sales:"💼",Knowledge:"📚",Finance:"💰"};
+const TEAM_GRADIENTS = {Design:"from-indigo-500 to-purple-600",Video:"from-blue-500 to-cyan-500",Content:"from-emerald-500 to-teal-500",Social:"from-amber-400 to-orange-500",CSE:"from-red-500 to-rose-500",Sales:"from-violet-500 to-purple-500",Knowledge:"from-cyan-500 to-blue-500",Finance:"from-pink-500 to-rose-500"};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -144,26 +146,40 @@ export default function DashboardPage() {
               {Object.keys(teamStats).length > 0 && (
                 <>
                   <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Teams</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
                     {TEAMS.filter(t => teamStats[t]).map(team => {
                       const s = teamStats[team];
                       const avgHrs = s.members.size > 0 ? (s.hours / (s.members.size * Math.max(totalDates, 1))).toFixed(1) : "0";
                       return (
                         <div key={team} onClick={() => { setPage("productivity"); setTeamFilter(team); }}
-                          className="bg-white border border-gray-100 rounded-xl p-5 cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all">
-                          <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-semibold" style={{ background: TEAM_COLORS[team] || "#888" }}>
-                              {team[0]}
+                          className="group relative rounded-2xl cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
+                          style={{ background: "#fff", border: "1px solid #f0f0f0" }}>
+                          {/* Gradient top bar */}
+                          <div className={`h-1.5 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
+                          <div className="p-5">
+                            <div className="flex items-center gap-4 mb-5">
+                              <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-2xl shadow-sm group-hover:scale-110 transition-transform duration-300`}>
+                                {TEAM_ICONS[team] || "📋"}
+                              </div>
+                              <div>
+                                <p className="text-base font-bold text-gray-900">{team}</p>
+                                <p className="text-xs text-gray-400">{s.members.size} member{s.members.size !== 1 ? "s" : ""}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-semibold">{team}</p>
-                              <p className="text-xs text-gray-400">{s.members.size} members</p>
+                            <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-100">
+                              <div className="text-center">
+                                <p className="text-xl font-bold text-gray-900">{s.hours.toFixed(0)}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Hours</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xl font-bold text-gray-900">{s.tasks}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Tasks</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xl font-bold text-gray-900">{avgHrs}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Avg/day</p>
+                              </div>
                             </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div><p className="text-lg font-semibold">{s.hours.toFixed(0)}</p><p className="text-[10px] text-gray-400">Total hrs</p></div>
-                            <div><p className="text-lg font-semibold">{s.tasks}</p><p className="text-[10px] text-gray-400">Tasks</p></div>
-                            <div><p className="text-lg font-semibold">{avgHrs}</p><p className="text-[10px] text-gray-400">Avg hrs/day</p></div>
                           </div>
                         </div>
                       );
@@ -225,7 +241,7 @@ export default function DashboardPage() {
                       return (
                         <div key={team} className="mb-6">
                           <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-                            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] font-bold" style={{ background: TEAM_COLORS[team] || "#888" }}>{team[0]}</div>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm" style={{ background: (TEAM_COLORS[team] || "#888") + "15" }}>{TEAM_ICONS[team] || "📋"}</div>
                             <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex-1">{team} team</span>
                             {th > 0 && <span className="text-sm font-semibold">{th.toFixed(1)} hrs</span>}
                           </div>
