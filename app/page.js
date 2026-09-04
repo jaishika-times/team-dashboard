@@ -26,6 +26,11 @@ export default function DashboardPage() {
   const [modal, setModal] = useState(null);
   const [attWeek, setAttWeek] = useState("");
   const [selectedTeam, setSelectedTeam] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [selCompany, setSelCompany] = useState(null);
+  const [selDept, setSelDept] = useState(null);
+  const [empModal, setEmpModal] = useState(null);
+  const [empForm, setEmpForm] = useState({ name: "", company: "", department: "" });
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
 
@@ -45,6 +50,8 @@ export default function DashboardPage() {
   async function loadData() {
     const { data: prodRows } = await supabase.from("productivity_records").select("*").order("uploaded_at", { ascending: false }).limit(1);
     if (prodRows?.length) { const r = prodRows[0]; setProdData({ data: r.data, dates: r.dates, members: r.members }); setDate(r.dates?.[0] || ""); }
+    const { data: empRows } = await supabase.from("employees").select("*").order("name");
+    if (empRows) setEmployees(empRows);
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
     if (kpiRows?.length) { setKpiData(kpiRows[0].data); }
     const { data: attRows } = await supabase.from("attendance_records").select("*").order("month_key", { ascending: false });
@@ -138,52 +145,182 @@ export default function DashboardPage() {
         <div className="max-w-6xl mx-auto px-6 py-6">
 
           {/* ===== OVERVIEW ===== */}
-          {page === "overview" && (
-            <>
-              <h1 className="text-xl font-semibold mb-6">Overview</h1>
-              {isAdmin && <PendingBanner onGoToAdmin={() => setPage("admin")} />}
+          {page === "overview" && (() => {
+            const COMP_COLORS = {"Xcalibur Digital":"#6366f1","Times Media":"#3b82f6","Edunexa AI Sdn Bhd":"#10b981"};
+            const COMP_ICONS = {"Xcalibur Digital":"⚡","Times Media":"📰","Edunexa AI Sdn Bhd":"🎓"};
+            const DEPT_ICONS_MAP = {"Design":"🎨","Video":"🎬","Content":"✍️","Social Media":"📱","Sales":"💼","Operations":"⚙️","Account Manager":"🤝","SEO and Website":"🔍","Knowledge Base and Product":"📚"};
+            const companies = [...new Set(employees.map(e => e.company))];
+            const deptsByCompany = {};
+            employees.forEach(e => {
+              if (!deptsByCompany[e.company]) deptsByCompany[e.company] = {};
+              if (!deptsByCompany[e.company][e.department]) deptsByCompany[e.company][e.department] = [];
+              deptsByCompany[e.company][e.department].push(e);
+            });
 
-              {allMembers.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {TEAMS.filter(t => allMembers.some(m => m.team === t)).map(team => {
-                    const members = allMembers.filter(m => m.team === team);
-                    return (
-                      <div key={team} className="rounded-2xl overflow-hidden border border-gray-100" style={{ background: "#fff" }}>
-                        <div className={`h-1.5 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
-                        <div className="p-5">
-                          <div className="flex items-center gap-3 mb-4">
-                            <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-lg`}>
-                              {TEAM_ICONS[team] || "📋"}
+            async function saveEmployee() {
+              if (!empForm.name || !empForm.company || !empForm.department) return;
+              if (empModal === "add") {
+                await supabase.from("employees").insert({ name: empForm.name, company: empForm.company, department: empForm.department });
+              } else {
+                await supabase.from("employees").update({ name: empForm.name, company: empForm.company, department: empForm.department }).eq("id", empModal);
+              }
+              setEmpModal(null); setEmpForm({ name: "", company: "", department: "" });
+              const { data } = await supabase.from("employees").select("*").order("name");
+              if (data) setEmployees(data);
+            }
+
+            async function deleteEmployee(id) {
+              if (!confirm("Remove this employee?")) return;
+              await supabase.from("employees").delete().eq("id", id);
+              const { data } = await supabase.from("employees").select("*").order("name");
+              if (data) setEmployees(data);
+            }
+
+            return (
+              <>
+                <h1 className="text-xl font-semibold mb-6">Overview</h1>
+                {isAdmin && <PendingBanner onGoToAdmin={() => setPage("admin")} />}
+
+                {/* Breadcrumb */}
+                {(selCompany || selDept) && (
+                  <div className="flex items-center gap-2 text-sm mb-5">
+                    <button onClick={() => { setSelCompany(null); setSelDept(null); }} className="text-gray-400 hover:text-gray-600">All Companies</button>
+                    {selCompany && <><span className="text-gray-300">/</span><button onClick={() => setSelDept(null)} className={selDept ? "text-gray-400 hover:text-gray-600" : "text-gray-900 font-medium"}>{selCompany}</button></>}
+                    {selDept && <><span className="text-gray-300">/</span><span className="text-gray-900 font-medium">{selDept}</span></>}
+                  </div>
+                )}
+
+                {/* Level 1: Company cards */}
+                {!selCompany && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {companies.map(company => {
+                      const depts = Object.keys(deptsByCompany[company] || {});
+                      const count = employees.filter(e => e.company === company).length;
+                      return (
+                        <div key={company} onClick={() => setSelCompany(company)}
+                          className="group rounded-2xl overflow-hidden border border-gray-100 cursor-pointer hover:shadow-lg hover:-translate-y-1 transition-all bg-white">
+                          <div className="h-2" style={{ background: COMP_COLORS[company] || "#888" }} />
+                          <div className="p-6">
+                            <div className="flex items-center gap-4 mb-4">
+                              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform" style={{ background: (COMP_COLORS[company] || "#888") + "15" }}>
+                                {COMP_ICONS[company] || "🏢"}
+                              </div>
+                              <div>
+                                <p className="text-base font-bold">{company}</p>
+                                <p className="text-xs text-gray-400">{count} employees, {depts.length} departments</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 pt-3 border-t border-gray-100">
+                              {depts.map(d => (
+                                <span key={d} className="text-[11px] px-2 py-1 bg-gray-50 text-gray-500 rounded-lg">{d}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Level 2: Department cards */}
+                {selCompany && !selDept && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {Object.entries(deptsByCompany[selCompany] || {}).map(([dept, members]) => (
+                        <div key={dept} onClick={() => setSelDept(dept)}
+                          className="rounded-xl border border-gray-100 p-5 cursor-pointer hover:shadow-sm hover:border-gray-200 transition-all bg-white">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ background: (COMP_COLORS[selCompany] || "#888") + "15" }}>
+                              {DEPT_ICONS_MAP[dept] || "📋"}
                             </div>
                             <div>
-                              <p className="text-sm font-bold">{team}</p>
+                              <p className="text-sm font-bold">{dept}</p>
                               <p className="text-xs text-gray-400">{members.length} member{members.length !== 1 ? "s" : ""}</p>
                             </div>
                           </div>
-                          <div className="space-y-2 pt-3 border-t border-gray-100">
-                            {members.map(m => (
-                              <div key={m.name} className="flex items-center gap-2.5 py-1">
-                                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>
-                                  {m.name[0]}
-                                </div>
-                                <span className="text-sm text-gray-700">{m.name}</span>
-                              </div>
+                          <div className="flex -space-x-2 pt-2">
+                            {members.slice(0, 6).map((m, i) => (
+                              <div key={i} className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold text-white border-2 border-white" style={{ background: COMP_COLORS[selCompany] || "#888" }}>{m.name[0]}</div>
                             ))}
+                            {members.length > 6 && <div className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold bg-gray-100 text-gray-500 border-2 border-white">+{members.length - 6}</div>}
                           </div>
                         </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Level 3: Employee list */}
+                {selCompany && selDept && (
+                  <>
+                    {isAdmin && (
+                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: selCompany, department: selDept }); }}
+                        className="mb-4 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800">
+                        + Add employee
+                      </button>
+                    )}
+                    <div className="space-y-2">
+                      {(deptsByCompany[selCompany]?.[selDept] || []).map(emp => (
+                        <div key={emp.id} className="flex items-center justify-between px-4 py-3 bg-white rounded-xl border border-gray-100 hover:border-gray-200 transition-all">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: COMP_COLORS[selCompany] || "#888" }}>{emp.name[0]}</div>
+                            <div>
+                              <p className="text-sm font-semibold">{emp.name}</p>
+                              <p className="text-xs text-gray-400">{emp.department}</p>
+                            </div>
+                          </div>
+                          {isAdmin && (
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department }); }}
+                                className="text-xs text-blue-500 hover:text-blue-700">Edit</button>
+                              <button onClick={() => deleteEmployee(emp.id)}
+                                className="text-xs text-red-400 hover:text-red-600">Remove</button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {employees.length === 0 && (
+                  <div className="text-center py-16 text-gray-300">
+                    <p className="text-4xl mb-3">👥</p>
+                    <p className="text-gray-400">No employees added yet</p>
+                  </div>
+                )}
+
+                {/* Add/Edit Modal */}
+                {empModal && (
+                  <div onClick={() => setEmpModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[400px] max-w-[92%] shadow-xl">
+                      <h3 className="text-base font-semibold mb-4">{empModal === "add" ? "Add employee" : "Edit employee"}</h3>
+                      <div className="space-y-3">
+                        <input value={empForm.name} onChange={e => setEmpForm({ ...empForm, name: e.target.value })} placeholder="Full name"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <select value={empForm.company} onChange={e => setEmpForm({ ...empForm, company: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                          <option value="">Select company</option>
+                          {companies.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <input value={empForm.department} onChange={e => setEmpForm({ ...empForm, department: e.target.value })} placeholder="Department"
+                          list="dept-list" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <datalist id="dept-list">
+                          {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
+                        </datalist>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-16 text-gray-300">
-                  <p className="text-4xl mb-3">📊</p>
-                  <p className="text-lg font-medium text-gray-400">No data yet</p>
-                  <p className="text-sm text-gray-300">{isAdmin ? "Go to Admin to upload your Excel files" : "Ask an admin to upload data"}</p>
-                </div>
-              )}
-            </>
-          )}
+                      <div className="flex gap-2 mt-4">
+                        <button onClick={saveEmployee} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">
+                          {empModal === "add" ? "Add" : "Save"}
+                        </button>
+                        <button onClick={() => setEmpModal(null)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {/* ===== PRODUCTIVITY ===== */}
           {page === "productivity" && (
