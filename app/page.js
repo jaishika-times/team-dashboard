@@ -351,6 +351,19 @@ function AdminPanel({ user, onDataUpdated }) {
     setRecording(false); onDataUpdated();
   }
 
+  async function clearData(type) {
+    const label = type === "prod" ? "productivity" : "attendance";
+    if (!confirm("Clear all " + label + " data? This cannot be undone.")) return;
+    if (type === "prod") {
+      await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      setProdStatus(null);
+    } else {
+      await supabase.from("attendance_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      setAttStatus(null);
+    }
+    onDataUpdated();
+  }
+
   async function syncFromSheets(type) {
     setSyncing(type); setSyncMsg("");
     const { data: { session } } = await supabase.auth.getSession();
@@ -422,12 +435,20 @@ function AdminPanel({ user, onDataUpdated }) {
           </div>
         </div>
 
-        {/* Report */}
-        <div className="mt-3">
+        {/* Report + Clear */}
+        <div className="mt-3 flex gap-2 flex-wrap items-center">
           <a href="/report" target="_blank"
             className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 inline-block">
             Monthly report
           </a>
+          <button onClick={() => clearData("prod")}
+            className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
+            Clear productivity data
+          </button>
+          <button onClick={() => clearData("att")}
+            className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
+            Clear attendance data
+          </button>
         </div>
       </div>
     </details>
