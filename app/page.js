@@ -89,6 +89,7 @@ export default function DashboardPage() {
     { id: "productivity", icon: "◈", label: "Productivity" },
     { id: "attendance", icon: "◷", label: "Attendance" },
   ];
+  const pendingCount = isAdmin ? 0 : 0; // calculated below
   if (isAdmin) navItems.push({ id: "admin", icon: "◎", label: "Admin" });
 
   return (
@@ -133,6 +134,9 @@ export default function DashboardPage() {
           {page === "overview" && (
             <>
               <h1 className="text-xl font-semibold mb-6">Overview</h1>
+
+              {/* Pending approvals banner */}
+              {isAdmin && <PendingBanner onGoToAdmin={() => setPage("admin")} />}
 
 
 
@@ -410,12 +414,7 @@ function AdminPanel({ user, onDataUpdated }) {
     setPendingAtt(null); setAttStatus({ ok: true, msg: "Recorded" }); setRecording(false); onDataUpdated();
   }
 
-  async function clearData(type) {
-    if (!confirm("Clear all " + (type === "prod" ? "productivity" : "attendance") + " data?")) return;
-    if (type === "prod") { await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000"); setProdStatus(null); }
-    else { await supabase.from("attendance_records").delete().neq("id", "00000000-0000-0000-0000-000000000000"); setAttStatus(null); }
-    onDataUpdated();
-  }
+
 
   return (
     <>
@@ -479,6 +478,96 @@ function AdminPanel({ user, onDataUpdated }) {
         <button onClick={() => clearData("att")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear attendance</button>
       </div>
     </>
+  );
+}
+
+// Pending approvals banner
+function PendingBanner({ onGoToAdmin }) {
+  const [pending, setPending] = useState([]);
+  useEffect(() => {
+    supabase.from("profiles").select("email").eq("role", "pending").then(({ data }) => {
+      if (data) setPending(data);
+    });
+  }, []);
+  if (!pending.length) return null;
+  return (
+    <div onClick={onGoToAdmin} className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer hover:bg-amber-100 transition-all">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">👤</span>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">{pending.length} pending approval{pending.length > 1 ? "s" : ""}</p>
+            <p className="text-xs text-amber-600">{pending.map(p => p.email).join(", ")}</p>
+          </div>
+        </div>
+        <span className="text-xs text-amber-500 font-medium">Go to Admin &rarr;</span>
+      </div>
+    </div>
+  );
+}
+
+// Recorded data management - selective delete
+function RecordedData({ onDataUpdated }) {
+  const [prodRecords, setProdRecords] = useState([]);
+  const [attRecords, setAttRecords] = useState([]);
+
+  useEffect(() => { loadRecords(); }, []);
+
+  async function loadRecords() {
+    const { data: p } = await supabase.from("productivity_records").select("id, uploaded_at, dates").order("uploaded_at", { ascending: false });
+    if (p) setProdRecords(p);
+    const { data: a } = await supabase.from("attendance_records").select("id, month_key, month_label, uploaded_at").order("month_key", { ascending: false });
+    if (a) setAttRecords(a);
+  }
+
+  async function deleteProd(id) {
+    if (!confirm("Delete this productivity record?")) return;
+    await supabase.from("productivity_records").delete().eq("id", id);
+    loadRecords(); onDataUpdated();
+  }
+
+  async function deleteAtt(id, label) {
+    if (!confirm("Delete attendance data for " + label + "?")) return;
+    await supabase.from("attendance_records").delete().eq("id", id);
+    loadRecords(); onDataUpdated();
+  }
+
+  if (!prodRecords.length && !attRecords.length) return null;
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
+      <h3 className="text-sm font-semibold mb-3">Recorded data</h3>
+
+      {prodRecords.length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Productivity</p>
+          {prodRecords.map(r => (
+            <div key={r.id} className="flex justify-between items-center px-3 py-2 bg-white rounded-lg text-sm mb-1 border border-gray-100">
+              <div>
+                <span className="font-medium">{r.dates?.length || 0} days</span>
+                <span className="text-xs text-gray-400 ml-2">uploaded {new Date(r.uploaded_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+              </div>
+              <button onClick={() => deleteProd(r.id)} className="text-xs text-red-400 hover:text-red-600">Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {attRecords.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Attendance</p>
+          {attRecords.map(r => (
+            <div key={r.id} className="flex justify-between items-center px-3 py-2 bg-white rounded-lg text-sm mb-1 border border-gray-100">
+              <div>
+                <span className="font-medium">{r.month_label}</span>
+                <span className="text-xs text-gray-400 ml-2">uploaded {new Date(r.uploaded_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+              </div>
+              <button onClick={() => deleteAtt(r.id, r.month_label)} className="text-xs text-red-400 hover:text-red-600">Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
