@@ -4,101 +4,85 @@ import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState("checking"); // "checking", "login", "set-password"
-  const router = useRouter();
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Set up auth listener FIRST to catch invite token exchange
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log("Auth event:", event);
-        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-          // Check if user needs to set password (invited user)
-          if (session) {
-            const { data: profile } = await supabase
-              .from("profiles")
-              .select("role")
-              .eq("id", session.user.id)
-              .single();
-
-            // If user was invited, they need to set a password
-            const isInvite =
-              window.location.hash.includes("type=invite") ||
-              window.location.hash.includes("type=recovery") ||
-              window.location.hash.includes("type=signup") ||
-              event === "PASSWORD_RECOVERY";
-
-            if (isInvite) {
-              setMode("set-password");
-              return;
-            }
-
-            // Otherwise normal sign in
-            router.push("/");
-          }
-        }
+    checkAuth();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        await handlePostSignIn(session);
       }
-    );
-
-    // Then check for existing session (not from invite)
-    setTimeout(async () => {
-      // Give the auth listener time to process any tokens in the URL
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && mode === "checking") {
-        // Already logged in, check if this is a redirect from invite
-        const hash = window.location.hash;
-        if (hash && (hash.includes("type=invite") || hash.includes("type=signup") || hash.includes("type=recovery"))) {
-          setMode("set-password");
-        } else {
-          router.push("/");
-        }
-      } else if (mode === "checking") {
-        setMode("login");
-      }
-    }, 1000);
-
+    });
     return () => subscription.unsubscribe();
   }, []);
 
-  async function handleLogin(e) {
-    e.preventDefault();
-    if (!email || !password) { setError("Fill in both fields"); return; }
-    setLoading(true); setError("");
+  const router = useRouter();
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (signInError) {
-      setError("Wrong email or password. Ask an admin if you need access.");
-      setLoading(false);
-      return;
+  async function checkAuth() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const ok = await handlePostSignIn(session);
+      if (ok) return;
     }
+    setChecking(false);
+  }
+
+  async function handlePostSignIn(session) {
+    const email = session.user.email?.toLowerCase();
+
+    // Check if user is authorized
+    const { data: allowed } = await supabase
+      .from("allowed_emails")
+      .select("role")
+      .eq("email", email)
+      .single();
+
+    // Also check if they already have a profile (existing admin)
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", session.user.id)
+      .single();
+
+    if (!allowed && !profile) {
+      // Not authorized
+      await supabase.auth.signOut();
+      setError("Access not authorized. Ask an admin to add your email.");
+      setChecking(false);
+      return false;
+    }
+
+    // If allowed but no profile yet, create one
+    if (allowed && !profile) {
+      await supabase.from("profiles").upsert({
+        id: session.user.id,
+        email: email,
+        role: allowed.role,
+      }, { onConflict: "id" });
+    }
+
     router.push("/");
+    return true;
   }
 
-  async function handleSetPassword(e) {
-    e.preventDefault();
-    if (!newPassword || newPassword.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
+  async function signInWithGoogle() {
+    setLoading(true);
+    setError("");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin + "/login",
+      },
+    });
+    if (error) {
+      setError(error.message);
+      setLoading(false);
     }
-    setLoading(true); setError("");
-
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) { setError(error.message); setLoading(false); return; }
-
-    setSuccess("Password set! Redirecting...");
-    setTimeout(() => router.push("/"), 1500);
   }
 
-  if (mode === "checking") {
+  if (checking) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "-apple-system, sans-serif" }}>
         <p style={{ color: "#aaa", fontSize: 14 }}>Loading...</p>
@@ -108,64 +92,28 @@ export default function LoginPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 360 }}>
+      <div style={{ width: "100%", maxWidth: 360, textAlign: "center" }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Team Dashboard</h1>
-        <p style={{ fontSize: 13, color: "#999", marginBottom: 28 }}>
-          {mode === "set-password"
-            ? "Welcome! Set your password to complete setup"
-            : "Sign in with your credentials"}
-        </p>
+        <p style={{ fontSize: 13, color: "#999", marginBottom: 28 }}>Sign in with your company Google account</p>
 
-        {mode === "set-password" ? (
-          <form onSubmit={handleSetPassword}>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Choose a password (min 6 characters)"
-              autoFocus
-              style={{ width: "100%", padding: "10px 12px", border: "1px solid #ddd", borderRadius: 8, fontSize: 14, marginBottom: 12, outline: "none" }}
-            />
-            {error && <p style={{ fontSize: 12, color: "#dc2626", marginBottom: 10 }}>{error}</p>}
-            {success && <p style={{ fontSize: 12, color: "#16a34a", marginBottom: 10 }}>{success}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ width: "100%", padding: "10px 0", background: "#111", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: "pointer", opacity: loading ? 0.6 : 1 }}
-            >
-              {loading ? "Saving..." : "Set password & sign in"}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleLogin}>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
-              autoFocus
-              style={{ width: "100%", padding: "10px 12px", border: "1px solid #ddd", borderRadius: 8, fontSize: 14, marginBottom: 12, outline: "none" }}
-            />
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              style={{ width: "100%", padding: "10px 12px", border: "1px solid #ddd", borderRadius: 8, fontSize: 14, marginBottom: 12, outline: "none" }}
-            />
-            {error && <p style={{ fontSize: 12, color: "#dc2626", marginBottom: 10 }}>{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ width: "100%", padding: "10px 0", background: "#111", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: "pointer", opacity: loading ? 0.6 : 1 }}
-            >
-              {loading ? "Signing in..." : "Sign in"}
-            </button>
-          </form>
-        )}
+        {error && <p style={{ fontSize: 12, color: "#dc2626", marginBottom: 16, background: "#fef2f2", padding: "8px 12px", borderRadius: 8 }}>{error}</p>}
 
-        <p style={{ fontSize: 11, color: "#bbb", marginTop: 16, textAlign: "center" }}>
-          Don't have access? Ask your admin to invite you.
+        <button
+          onClick={signInWithGoogle}
+          disabled={loading}
+          style={{
+            width: "100%", padding: "12px 0", background: "#fff", color: "#333",
+            border: "1px solid #ddd", borderRadius: 8, fontSize: 14, fontWeight: 500,
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18"><path d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z" fill="#4285F4"/><path d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z" fill="#34A853"/><path d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z" fill="#FBBC05"/><path d="M8.98 3.58c1.16 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.9z" fill="#EA4335"/></svg>
+          {loading ? "Redirecting..." : "Continue with Google"}
+        </button>
+
+        <p style={{ fontSize: 11, color: "#ccc", marginTop: 20 }}>
+          Only pre-authorized emails can access this dashboard
         </p>
       </div>
     </div>

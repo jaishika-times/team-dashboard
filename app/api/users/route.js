@@ -2,11 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 async function verifyAdmin(request) {
@@ -27,27 +23,23 @@ export async function POST(request) {
 
   const { email, role } = await request.json();
   if (!email || !role) {
-    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+    return NextResponse.json({ error: "Missing email or role" }, { status: 400 });
   }
 
   const admin = getAdminClient();
+  const emailLower = email.trim().toLowerCase();
 
-  // Send invite email - user will set their own password
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { role: role },
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || request.headers.get("origin")}/login`,
-  });
+  // Add to allowed_emails table
+  const { error } = await admin.from("allowed_emails").upsert(
+    { email: emailLower, role },
+    { onConflict: "email" }
+  );
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  // Update role if admin (trigger creates as viewer by default)
-  if (role === "admin" && data?.user?.id) {
-    await admin.from("profiles").update({ role: "admin" }).eq("id", data.user.id);
-  }
-
-  return NextResponse.json({ success: true, userId: data?.user?.id });
+  return NextResponse.json({ success: true });
 }
 
 export async function DELETE(request) {
@@ -55,17 +47,18 @@ export async function DELETE(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { userId } = await request.json();
-  if (!userId) {
-    return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+  const { email } = await request.json();
+  if (!email) {
+    return NextResponse.json({ error: "Missing email" }, { status: 400 });
   }
 
   const admin = getAdminClient();
-  const { error } = await admin.auth.admin.deleteUser(userId);
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
 
-  await admin.from("profiles").delete().eq("id", userId);
+  // Remove from allowed_emails
+  await admin.from("allowed_emails").delete().eq("email", email.toLowerCase());
+
+  // Also remove their profile if it exists
+  await admin.from("profiles").delete().eq("email", email.toLowerCase());
+
   return NextResponse.json({ success: true });
 }

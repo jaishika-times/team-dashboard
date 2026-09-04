@@ -258,6 +258,7 @@ export default function DashboardPage() {
 // ========== ADMIN PANEL ==========
 function AdminPanel({ user, onDataUpdated }) {
   const [users, setUsers] = useState([]);
+  const [allowed, setAllowed] = useState([]);
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState("viewer");
   const [addError, setAddError] = useState("");
@@ -275,6 +276,8 @@ function AdminPanel({ user, onDataUpdated }) {
   async function loadUsers() {
     const { data } = await supabase.from("profiles").select("*").order("created_at");
     if (data) setUsers(data);
+    const { data: a } = await supabase.from("allowed_emails").select("*").order("created_at");
+    if (a) setAllowed(a);
   }
 
   async function addUser() {
@@ -381,15 +384,21 @@ function AdminPanel({ user, onDataUpdated }) {
           </div>
           {addError && <p className="text-xs text-red-600 mb-2">{addError}</p>}
           <div className="space-y-1">
-            {users.map(u => (
-              <div key={u.id} className="flex justify-between items-center px-2 py-1.5 bg-white rounded text-sm">
-                <span>{u.email}</span>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded ${u.role === "admin" ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{u.role}</span>
-                  {u.id !== user.id && <button onClick={() => removeUser(u.id)} className="text-xs text-red-500 hover:text-red-700">Remove</button>}
+            {allowed.map(a => {
+              const hasSignedIn = users.some(u => u.email === a.email);
+              return (
+                <div key={a.email} className="flex justify-between items-center px-2 py-1.5 bg-white rounded text-sm">
+                  <div className="flex items-center gap-2">
+                    <span>{a.email}</span>
+                    {hasSignedIn ? <span className="text-[10px] text-green-500">active</span> : <span className="text-[10px] text-gray-300">pending</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${a.role === "admin" ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{a.role}</span>
+                    <button onClick={() => removeUser(a.email)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
