@@ -1150,10 +1150,12 @@ function PendingBanner({ onGoToAdmin }) {
 // ===== PEOPLE (ONBOARDING / OFFBOARDING) =====
 const PROBATION_LABELS = { m1: "Month 1", m2: "Month 2", m3: "Month 3", m4: "Month 4", m5: "Month 5", m6: "Month 6" };
 const PEOPLE_LINK_LABELS = { staffFolder: "Staff Folder", hrRecording: "HR Recording", tlRecording: "TL Recording", plan: "Plan", confirmationLetter: "Confirmation Letter" };
+const STATUS_OPTIONS = { Onboarding: ["Probation", "Confirmed"], Offboarding: ["Pending", "Exited"] };
+const STATUS_COLORS = { Probation: "bg-amber-50 text-amber-600", Confirmed: "bg-green-50 text-green-600", Pending: "bg-amber-50 text-amber-600", Exited: "bg-red-50 text-red-500" };
 
 function emptyPeopleForm() {
   return {
-    type: "Onboarding", month: "", staff_name: "", join_date: "", key_date: "",
+    type: "Onboarding", status: "Probation", month: "", staff_name: "", join_date: "", key_date: "",
     links: { staffFolder: "", hrRecording: "", tlRecording: "", plan: "", confirmationLetter: "" },
     probation: { m1: "", m2: "", m3: "", m4: "", m5: "", m6: "" },
   };
@@ -1192,7 +1194,7 @@ function PeoplePage({ isAdmin, userId }) {
   function openAdd() { setForm(emptyPeopleForm()); setModal("add"); }
   function openEdit(r) {
     setForm({
-      type: r.type, month: r.month || "", staff_name: r.staff_name, join_date: r.join_date || "", key_date: r.key_date || "",
+      type: r.type, status: r.status || STATUS_OPTIONS[r.type][0], month: r.month || "", staff_name: r.staff_name, join_date: r.join_date || "", key_date: r.key_date || "",
       links: {
         staffFolder: r.links?.staffFolder?.url || "", hrRecording: r.links?.hrRecording?.url || "",
         tlRecording: r.links?.tlRecording?.url || "", plan: r.links?.plan?.url || "", confirmationLetter: r.links?.confirmationLetter?.url || "",
@@ -1210,7 +1212,7 @@ function PeoplePage({ isAdmin, userId }) {
     Object.keys(PEOPLE_LINK_LABELS).forEach(k => { links[k] = form.links[k] ? { text: PEOPLE_LINK_LABELS[k], url: form.links[k] } : null; });
     const probation = {};
     Object.keys(PROBATION_LABELS).forEach(k => { probation[k] = form.probation[k] ? { text: form.probation[k], url: null } : null; });
-    return { type: form.type, month: form.month.trim(), staff_name: form.staff_name.trim(), join_date: form.join_date.trim() || null, key_date: form.key_date.trim() || null, links, probation, uploaded_by: userId };
+    return { type: form.type, status: form.status, month: form.month.trim(), staff_name: form.staff_name.trim(), join_date: form.join_date.trim() || null, key_date: form.key_date.trim() || null, links, probation, uploaded_by: userId };
   }
 
   async function save() {
@@ -1225,6 +1227,18 @@ function PeoplePage({ isAdmin, userId }) {
   async function del(id) {
     if (!confirm("Delete this person's record?")) return;
     await supabase.from("people_lifecycle").delete().eq("id", id);
+    load();
+  }
+
+  async function changeStatus(id, status) {
+    await supabase.from("people_lifecycle").update({ status }).eq("id", id);
+    load();
+  }
+
+  async function toggleProbationDone(r, key) {
+    const current = r.probation?.[key] || {};
+    const updated = { ...r.probation, [key]: { ...current, done: !current.done } };
+    await supabase.from("people_lifecycle").update({ probation: updated }).eq("id", r.id);
     load();
   }
 
@@ -1245,7 +1259,7 @@ function PeoplePage({ isAdmin, userId }) {
     if (!pendingUpload) return;
     setBusy(true);
     const rows = pendingUpload.records.map(r => ({
-      type: r.type, month: r.month, staff_name: r.staffName, join_date: r.joinDate, key_date: r.keyDate,
+      type: r.type, status: r.status, month: r.month, staff_name: r.staffName, join_date: r.joinDate, key_date: r.keyDate,
       links: r.links, probation: r.probation, uploaded_by: userId,
     }));
     await supabase.from("people_lifecycle").upsert(rows, { onConflict: "staff_name" });
@@ -1256,8 +1270,8 @@ function PeoplePage({ isAdmin, userId }) {
 
   const onboardingRecs = records.filter(r => r.type === "Onboarding");
   const offboardingRecs = records.filter(r => r.type === "Offboarding");
-  const inProbation = onboardingRecs.filter(r => !r.links?.confirmationLetter).length;
-  const confirmed = onboardingRecs.filter(r => r.links?.confirmationLetter).length;
+  const inProbation = onboardingRecs.filter(r => (r.status || "Probation") !== "Confirmed").length;
+  const confirmed = onboardingRecs.filter(r => r.status === "Confirmed").length;
 
   const filtered = records
     .filter(r => tab === "all" || r.type === tab)
@@ -1335,11 +1349,18 @@ function PeoplePage({ isAdmin, userId }) {
                 <p className="text-sm font-medium truncate">{r.staff_name}</p>
                 <p className="text-[11px] text-gray-400">{r.month || "—"}{r.join_date ? ` · Joined ${r.join_date}` : ""}</p>
               </div>
+              {r.links?.staffFolder?.url && (
+                <a href={r.links.staffFolder.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                  title="Open employee folder" className="text-xs text-gray-400 hover:text-gray-700 shrink-0">📁 Folder</a>
+              )}
               <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${r.type === "Onboarding" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{r.type}</span>
-              {r.type === "Onboarding" && (
-                <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${r.links?.confirmationLetter ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600"}`}>
-                  {r.links?.confirmationLetter ? "Confirmed" : "Probation"}
-                </span>
+              {isAdmin ? (
+                <select value={r.status || STATUS_OPTIONS[r.type][0]} onClick={e => e.stopPropagation()} onChange={e => changeStatus(r.id, e.target.value)}
+                  className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 border-0 cursor-pointer ${STATUS_COLORS[r.status] || STATUS_COLORS[STATUS_OPTIONS[r.type][0]]}`}>
+                  {STATUS_OPTIONS[r.type].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : (
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${STATUS_COLORS[r.status] || STATUS_COLORS[STATUS_OPTIONS[r.type][0]]}`}>{r.status || STATUS_OPTIONS[r.type][0]}</span>
               )}
               {isAdmin && (
                 <div className="flex gap-2 shrink-0" onClick={e => e.stopPropagation()}>
@@ -1357,9 +1378,15 @@ function PeoplePage({ isAdmin, userId }) {
                     <div className="text-xs text-gray-600">Join date: <span className="text-gray-800">{r.join_date || "—"}</span></div>
                     {Object.keys(PROBATION_LABELS).map(k => (
                       r.probation?.[k] ? (
-                        <div key={k} className="text-xs text-gray-600">{PROBATION_LABELS[k]}: {r.probation[k].url
-                          ? <a href={r.probation[k].url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{r.probation[k].text}</a>
-                          : <span className="text-gray-800">{r.probation[k].text}</span>}</div>
+                        <label key={k} className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                          <input type="checkbox" checked={!!r.probation[k].done} disabled={!isAdmin} onChange={() => toggleProbationDone(r, k)}
+                            className="accent-gray-900" />
+                          <span className={r.probation[k].done ? "line-through text-gray-400" : ""}>
+                            {PROBATION_LABELS[k]}: {r.probation[k].url
+                              ? <a href={r.probation[k].url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-blue-500 hover:underline">{r.probation[k].text}</a>
+                              : <span className="text-gray-800">{r.probation[k].text}</span>}
+                          </span>
+                        </label>
                       ) : null
                     ))}
                     <div className="text-xs text-gray-600">{r.type === "Onboarding" ? "Confirmation date" : "Last day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
@@ -1387,8 +1414,13 @@ function PeoplePage({ isAdmin, userId }) {
               <div className="grid grid-cols-2 gap-3">
                 <input value={form.staff_name} onChange={e => setForm({ ...form, staff_name: e.target.value })} placeholder="Staff name"
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                <select value={form.type} onChange={e => { const type = e.target.value; setForm({ ...form, type, status: STATUS_OPTIONS[type][0] }); }} className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
                   <option>Onboarding</option><option>Offboarding</option>
+                </select>
+              </div>
+              <div>
+                <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                  {STATUS_OPTIONS[form.type].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-3 gap-3">
