@@ -698,6 +698,54 @@ export default function DashboardPage() {
                       </div>
                     )}
 
+                    {/* Summary */}
+                    {kpiTeams.length > 0 && (() => {
+                      const allWithPct = filtered.filter(e => e.kpiPct !== null && !isNaN(e.kpiPct));
+                      const overallAvg = allWithPct.length > 0 ? allWithPct.reduce((s, e) => s + e.kpiPct, 0) / allWithPct.length : 0;
+                      const overallRound = Math.round(overallAvg * 100);
+                      const best = allWithPct.length > 0 ? allWithPct.reduce((a, b) => (a.kpiPct || 0) > (b.kpiPct || 0) ? a : b) : null;
+                      const worst = allWithPct.length > 0 ? allWithPct.reduce((a, b) => (a.kpiPct || 1) < (b.kpiPct || 1) ? a : b) : null;
+                      const onTarget = allWithPct.filter(e => e.kpiPct >= 0.9).length;
+                      const behind = allWithPct.filter(e => e.kpiPct < 0.7).length;
+                      return (
+                        <div className="mt-6 bg-gray-50 rounded-xl p-5 border border-gray-100">
+                          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Summary - {curMonth} W{curWeek}</h3>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <p className="text-2xl font-bold" style={{ color: overallRound >= 90 ? "#16a34a" : overallRound < 70 ? "#dc2626" : "#d97706" }}>{overallRound}%</p>
+                              <p className="text-[11px] text-gray-400">Overall avg KPI</p>
+                            </div>
+                            <div>
+                              <p className="text-2xl font-bold text-gray-900">{allWithPct.length}</p>
+                              <p className="text-[11px] text-gray-400">Members tracked</p>
+                            </div>
+                            <div>
+                              <p className="text-2xl font-bold text-green-600">{onTarget}</p>
+                              <p className="text-[11px] text-gray-400">On target (90%+)</p>
+                            </div>
+                            <div>
+                              <p className="text-2xl font-bold text-red-500">{behind}</p>
+                              <p className="text-[11px] text-gray-400">Behind (below 70%)</p>
+                            </div>
+                          </div>
+                          {best && worst && (
+                            <div className="flex gap-6 mt-4 pt-3 border-t border-gray-200">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400">Top performer:</span>
+                                <span className="text-sm font-semibold text-green-600">{best.employee} ({Math.round(best.kpiPct * 100)}%)</span>
+                              </div>
+                              {worst.employee !== best.employee && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-400">Needs support:</span>
+                                  <span className="text-sm font-semibold text-amber-600">{worst.employee} ({Math.round(worst.kpiPct * 100)}%)</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {kpiTeams.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No data for {curMonth} W{curWeek}</p>}
                   </>
                 ) : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
