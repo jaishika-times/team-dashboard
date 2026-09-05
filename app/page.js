@@ -1227,6 +1227,12 @@ function PeoplePage({ isAdmin, userId }) {
     setLoading(false);
   }
 
+  // Refetches quietly in the background, without the loading screen replacing the list.
+  async function silentReload() {
+    const { data } = await supabase.from("people_lifecycle").select("*").order("uploaded_at", { ascending: false });
+    if (data) setRecords(data);
+  }
+
   function openAdd() { setForm(emptyPeopleForm()); setModal("add"); }
   function openEdit(r) {
     setForm({
@@ -1257,25 +1263,36 @@ function PeoplePage({ isAdmin, userId }) {
     setBusy(true);
     if (modal === "add") await supabase.from("people_lifecycle").upsert(payload, { onConflict: "staff_name" });
     else await supabase.from("people_lifecycle").update(payload).eq("id", modal);
-    setBusy(false); setModal(null); load();
+    setBusy(false); setModal(null); silentReload();
   }
 
   async function del(id) {
     if (!confirm("Delete this person's record?")) return;
+    setRecords(prev => prev.filter(x => x.id !== id));
     await supabase.from("people_lifecycle").delete().eq("id", id);
-    load();
   }
 
+  // Updates the row in place immediately, then saves in the background — no reload, no flicker.
   async function changeStatus(id, status) {
+    setRecords(prev => prev.map(x => x.id === id ? { ...x, status } : x));
     await supabase.from("people_lifecycle").update({ status }).eq("id", id);
-    load();
   }
 
   async function toggleProbationDone(r, key) {
     const current = r.probation?.[key] || {};
     const updated = { ...r.probation, [key]: { ...current, done: !current.done } };
+    setRecords(prev => prev.map(x => x.id === r.id ? { ...x, probation: updated } : x));
     await supabase.from("people_lifecycle").update({ probation: updated }).eq("id", r.id);
-    load();
+  }
+
+  async function setProbationLink(r, key) {
+    const current = r.probation?.[key] || {};
+    const input = window.prompt(`Link for ${PROBATION_LABELS[key]} (leave blank to remove)`, current.url || "");
+    if (input === null) return; // cancelled
+    const url = input.trim() || null;
+    const updated = { ...r.probation, [key]: { ...current, url } };
+    setRecords(prev => prev.map(x => x.id === r.id ? { ...x, probation: updated } : x));
+    await supabase.from("people_lifecycle").update({ probation: updated }).eq("id", r.id);
   }
 
   function handleFile(e) {
@@ -1299,7 +1316,7 @@ function PeoplePage({ isAdmin, userId }) {
       links: r.links, probation: r.probation, uploaded_by: userId,
     }));
     await supabase.from("people_lifecycle").upsert(rows, { onConflict: "staff_name" });
-    setPendingUpload(null); setUploadStatus(null); setBusy(false); load();
+    setPendingUpload(null); setUploadStatus(null); setBusy(false); silentReload();
   }
 
   if (loading) return <p className="text-sm text-gray-400 text-center py-12">Loading...</p>;
@@ -1424,6 +1441,9 @@ function PeoplePage({ isAdmin, userId }) {
                         <input type="checkbox" checked={p.done} disabled={!isAdmin} onChange={() => toggleProbationDone(r, p.key)} className="accent-gray-900 shrink-0" />
                         <span className={`w-16 shrink-0 ${p.done ? "text-gray-400 line-through" : "text-gray-600"}`}>{p.label}</span>
                         <span className="text-gray-800 truncate">{p.url ? <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{p.dueLabel}</a> : p.dueLabel}</span>
+                        {isAdmin && (
+                          <button onClick={() => setProbationLink(r, p.key)} title={p.url ? "Edit link" : "Add link"} className="text-gray-300 hover:text-blue-500 shrink-0">🔗</button>
+                        )}
                         <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${PROBATION_STATUS_COLORS[p.status]}`}>{p.status}</span>
                       </div>
                     ))}
