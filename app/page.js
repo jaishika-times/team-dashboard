@@ -1172,10 +1172,11 @@ function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() 
 function fmtDate(d) { return d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : null; }
 
 // Builds the probation checkpoint schedule for a record: Month 1-3 always,
-// Month 4-6 only once the person has been placed on an extension.
+// plus as many of Month 4-6 as the current extension covers (extension_months, 1-3).
 function buildProbationSchedule(r) {
   const join = parseFlexDate(r.join_date);
-  const keys = r.status === "Extended" ? ["m1", "m2", "m3", "m4", "m5", "m6"] : ["m1", "m2", "m3"];
+  const extMonths = r.status === "Extended" ? Math.min(Math.max(parseInt(r.extension_months) || 1, 1), 3) : 0;
+  const keys = ["m1", "m2", "m3", ...Array.from({ length: extMonths }, (_, i) => `m${4 + i}`)];
   const today = new Date();
   return keys.map((key, i) => {
     const stored = r.probation?.[key] || null;
@@ -1273,9 +1274,21 @@ function PeoplePage({ isAdmin, userId }) {
   }
 
   // Updates the row in place immediately, then saves in the background — no reload, no flicker.
+  // Updates the row in place immediately, then saves in the background — no reload, no flicker.
   async function changeStatus(id, status) {
-    setRecords(prev => prev.map(x => x.id === id ? { ...x, status } : x));
-    await supabase.from("people_lifecycle").update({ status }).eq("id", id);
+    const patch = { status };
+    const rec = records.find(x => x.id === id);
+    if (status === "Extended" && !rec?.extension_months) patch.extension_months = 1;
+    setRecords(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
+    await supabase.from("people_lifecycle").update(patch).eq("id", id);
+  }
+
+  // Sets how many extra months (1-3) the current extension covers. Calling this again later
+  // (e.g. after the first extension month is up and they're still not confirmed) simply
+  // bumps the count so another month gets added — same record, no new status change needed.
+  async function setExtensionMonths(r, n) {
+    setRecords(prev => prev.map(x => x.id === r.id ? { ...x, extension_months: n } : x));
+    await supabase.from("people_lifecycle").update({ extension_months: n }).eq("id", r.id);
   }
 
   async function toggleProbationDone(r, key) {
@@ -1456,11 +1469,24 @@ function PeoplePage({ isAdmin, userId }) {
                         <select value={r.status || "Probation"} onChange={e => changeStatus(r.id, e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs">
                           <option value="Probation">Still on probation</option>
                           <option value="Confirmed">Confirmed</option>
-                          <option value="Extended">Extended (add months 4-6)</option>
+                          <option value="Extended">Extended</option>
                           <option value="Terminated">Terminated</option>
                         </select>
                       ) : (
                         <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${STATUS_COLORS[r.status] || STATUS_COLORS.Probation}`}>{r.status || "Probation"}</span>
+                      )}
+                      {r.status === "Extended" && (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <span className="text-[11px] text-gray-400 mr-0.5">Extended by:</span>
+                          {isAdmin ? [1, 2, 3].map(n => (
+                            <button key={n} onClick={() => setExtensionMonths(r, n)}
+                              className={`px-2 py-1 rounded text-[11px] font-medium ${(r.extension_months || 1) === n ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                              {n} {n === 1 ? "month" : "months"}
+                            </button>
+                          )) : (
+                            <span className="text-[11px] text-gray-600">{r.extension_months || 1} {(r.extension_months || 1) === 1 ? "month" : "months"}</span>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
