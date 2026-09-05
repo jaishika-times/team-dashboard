@@ -698,53 +698,44 @@ export default function DashboardPage() {
                       </div>
                     )}
 
-                    {/* Summary */}
-                    {kpiTeams.length > 0 && (() => {
-                      const allWithPct = filtered.filter(e => e.kpiPct !== null && !isNaN(e.kpiPct));
-                      const overallAvg = allWithPct.length > 0 ? allWithPct.reduce((s, e) => s + e.kpiPct, 0) / allWithPct.length : 0;
-                      const overallRound = Math.round(overallAvg * 100);
-                      const best = allWithPct.length > 0 ? allWithPct.reduce((a, b) => (a.kpiPct || 0) > (b.kpiPct || 0) ? a : b) : null;
-                      const worst = allWithPct.length > 0 ? allWithPct.reduce((a, b) => (a.kpiPct || 1) < (b.kpiPct || 1) ? a : b) : null;
-                      const onTarget = allWithPct.filter(e => e.kpiPct >= 0.9).length;
-                      const behind = allWithPct.filter(e => e.kpiPct < 0.7).length;
-                      return (
-                        <div className="mt-6 bg-gray-50 rounded-xl p-5 border border-gray-100">
-                          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Summary - {curMonth} W{curWeek}</h3>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div>
-                              <p className="text-2xl font-bold" style={{ color: overallRound >= 90 ? "#16a34a" : overallRound < 70 ? "#dc2626" : "#d97706" }}>{overallRound}%</p>
-                              <p className="text-[11px] text-gray-400">Overall avg KPI</p>
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold text-gray-900">{allWithPct.length}</p>
-                              <p className="text-[11px] text-gray-400">Members tracked</p>
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold text-green-600">{onTarget}</p>
-                              <p className="text-[11px] text-gray-400">On target (90%+)</p>
-                            </div>
-                            <div>
-                              <p className="text-2xl font-bold text-red-500">{behind}</p>
-                              <p className="text-[11px] text-gray-400">Behind (below 70%)</p>
-                            </div>
-                          </div>
-                          {best && worst && (
-                            <div className="flex gap-6 mt-4 pt-3 border-t border-gray-200">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400">Top performer:</span>
-                                <span className="text-sm font-semibold text-green-600">{best.employee} ({Math.round(best.kpiPct * 100)}%)</span>
-                              </div>
-                              {worst.employee !== best.employee && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-400">Needs support:</span>
-                                  <span className="text-sm font-semibold text-amber-600">{worst.employee} ({Math.round(worst.kpiPct * 100)}%)</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
+                    {/* Progress Report Table */}
+                    {kpiTeams.length > 0 && (
+                      <div className="mt-6 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                          <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth} W{curWeek}</h3>
                         </div>
-                      );
-                    })()}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-100">
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Total Target / Task</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Completed</th>
+                                <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Progress</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {kpiTeams.map((team, ti) => 
+                                byTeam[team].map((e, i) => {
+                                  const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
+                                  const pctColor = pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600";
+                                  return (
+                                    <tr key={team + i} className="border-b border-gray-50 hover:bg-gray-50">
+                                      {i === 0 ? <td className="px-4 py-2.5 font-semibold align-top" rowSpan={byTeam[team].length}><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td> : null}
+                                      <td className="px-4 py-2.5 font-medium">{e.employee}</td>
+                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.target}</td>
+                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.completed}</td>
+                                      <td className={`px-4 py-2.5 text-right font-bold ${pctColor}`}>{pct !== null ? pct + "%" : "..."}</td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
                     {kpiTeams.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No data for {curMonth} W{curWeek}</p>}
                   </>
