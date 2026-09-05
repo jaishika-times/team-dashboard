@@ -1119,9 +1119,7 @@ function PasteArea({ onRecorded, userId }) {
           </div>
           <p className="text-xs text-gray-400 mb-2">Copy rows from your sheet and paste below. Format: Name, Target, Completed, Progress (tab-separated)</p>
           <textarea value={text} onChange={e => setText(e.target.value)} rows={5}
-            placeholder={"Jeremiah	2 videos	2 videos	1.0
-Mahal	2 videos	2 videos	1.0
-Rosie	Ensure delivery	1	0.9"}
+            placeholder={"Jeremiah\t2 videos\t2 videos\t1.0\nMahal\t2 videos\t2 videos\t1.0\nRosie\tEnsure delivery\t1\t0.9"}
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-400 resize-y" />
           <div className="flex items-center gap-3 mt-2">
             <button onClick={handleRecord} disabled={recording || !text.trim()}
