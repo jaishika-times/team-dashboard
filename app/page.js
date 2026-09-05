@@ -5,6 +5,11 @@ import { supabase } from "@/lib/supabase";
 import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV } from "@/lib/parser";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
+function normMonth(m) {
+  const s = String(m || "").trim().toLowerCase();
+  const map = {january:"Jan",february:"Feb",march:"Mar",april:"Apr",may:"May",june:"Jun",july:"Jul",august:"Aug",september:"Sep",sept:"Sep",october:"Oct",november:"Nov",december:"Dec",jan:"Jan",feb:"Feb",mar:"Mar",apr:"Apr",jun:"Jun",jul:"Jul",aug:"Aug",sep:"Sep",oct:"Oct",nov:"Nov",dec:"Dec"};
+  return map[s] || m;
+}
 const TEAM_COLORS = {Design:"#6366f1",Video:"#3b82f6",Content:"#10b981",Social:"#f59e0b",CSE:"#ef4444",Sales:"#8b5cf6",Knowledge:"#06b6d4",Finance:"#ec4899"};
 const TEAM_ICONS = {Design:"🎨",Video:"🎬",Content:"✍️",Social:"📱",CSE:"🛠️",Sales:"💼",Knowledge:"📚",Finance:"💰"};
 const TEAM_GRADIENTS = {Design:"from-indigo-500 to-purple-600",Video:"from-blue-500 to-cyan-500",Content:"from-emerald-500 to-teal-500",Social:"from-amber-400 to-orange-500",CSE:"from-red-500 to-rose-500",Sales:"from-violet-500 to-purple-500",Knowledge:"from-cyan-500 to-blue-500",Finance:"from-pink-500 to-rose-500"};
@@ -569,7 +574,9 @@ export default function DashboardPage() {
 
           {/* ===== WEEKLY KPI ===== */}
           {page === "kpi" && (() => {
-            const entries = kpiData?.entries || [];
+            const rawEntries = kpiData?.entries || [];
+            // Normalize months at display time
+            const entries = rawEntries.map(e => ({ ...e, month: normMonth(e.month) }));
             const monthsSet = new Set();
             const weeksPerMonth = {};
             entries.forEach(e => {
