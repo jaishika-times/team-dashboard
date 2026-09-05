@@ -164,7 +164,12 @@ export default function DashboardPage() {
           {/* ===== OVERVIEW ===== */}
           {page === "overview" && (() => {
             const COMP_COLORS = {"Xcalibur Digital":"#6366f1","Times Media":"#3b82f6","Edunexa AI Sdn Bhd":"#10b981"};
-            const COMP_ICONS = {"Xcalibur Digital":"⚡","Times Media":"📰","Edunexa AI Sdn Bhd":"🎓"};
+            const COMP_ICONS = {"Xcalibur Digital":"XD","Times Media":"TM","Edunexa AI Sdn Bhd":"EN"};
+const COMP_LOGOS = {
+  "Xcalibur Digital": () => <svg viewBox="0 0 40 40" width="40" height="40"><rect width="40" height="40" rx="10" fill="#6366f1"/><path d="M10 12L20 28L30 12" stroke="#fff" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round"/><path d="M13 28h14" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/><circle cx="20" cy="10" r="2" fill="#a5b4fc"/></svg>,
+  "Times Media": () => <svg viewBox="0 0 40 40" width="40" height="40"><rect width="40" height="40" rx="10" fill="#3b82f6"/><rect x="9" y="10" width="22" height="3" rx="1.5" fill="#fff"/><rect x="9" y="16" width="22" height="2" rx="1" fill="#93c5fd" opacity="0.7"/><rect x="9" y="20" width="22" height="2" rx="1" fill="#93c5fd" opacity="0.7"/><rect x="9" y="24" width="14" height="2" rx="1" fill="#93c5fd" opacity="0.7"/><rect x="9" y="28" width="22" height="2" rx="1" fill="#93c5fd" opacity="0.5"/></svg>,
+  "Edunexa AI Sdn Bhd": () => <svg viewBox="0 0 40 40" width="40" height="40"><rect width="40" height="40" rx="10" fill="#10b981"/><path d="M12 26l8-14 8 14" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/><circle cx="20" cy="15" r="3" fill="#fff" opacity="0.3"/><path d="M16 22h8" stroke="#fff" strokeWidth="2" strokeLinecap="round"/><circle cx="20" cy="10" r="1.5" fill="#6ee7b7"/></svg>,
+};
             const DEPT_ICONS_MAP = {"Design":"🎨","Video":"🎬","Content":"✍️","Social Media":"📱","Sales":"💼","Operations":"⚙️","Account Manager":"🤝","SEO and Website":"🔍","Knowledge Base and Product":"📚"};
             const companies = [...new Set(employees.map(e => e.company))];
             const deptsByCompany = {};
@@ -231,8 +236,8 @@ export default function DashboardPage() {
                           <div className="h-2" style={{ background: COMP_COLORS[company] || "#888" }} />
                           <div className="p-6">
                             <div className="flex items-center gap-4 mb-4">
-                              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform" style={{ background: (COMP_COLORS[company] || "#888") + "15" }}>
-                                {COMP_ICONS[company] || "🏢"}
+                              <div className="group-hover:scale-110 transition-transform">
+                                {COMP_LOGOS[company] ? COMP_LOGOS[company]() : <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{ background: (COMP_COLORS[company] || "#888") + "15" }}>🏢</div>}
                               </div>
                               <div>
                                 <p className="text-base font-bold">{company}</p>
