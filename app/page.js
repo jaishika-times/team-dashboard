@@ -54,9 +54,7 @@ export default function DashboardPage() {
       const liveRes = await fetch("/api/live-prod");
       const liveData = await liveRes.json();
       if (liveData.dates?.length) { setProdData(liveData); setDate(liveData.dates[0]); }
-    } catch (e) {
-      console.log("Sheet fetch failed, no fallback");
-    }
+    } catch (e) { console.log("Sheet fetch error"); }
     const { data: empRows } = await supabase.from("employees").select("*").order("name");
     if (empRows) setEmployees(empRows);
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
@@ -676,7 +674,22 @@ export default function DashboardPage() {
                                   <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Target</span><span className="font-medium text-right max-w-[60%]">{e.target || "..."}</span></div>
                                   <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Completed</span><span className="font-medium">{e.completed || "..."}</span></div>
                                   {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="text-xs text-gray-500 text-right max-w-[60%]">{e.notes}</span></div>}
-                                  {e.status && <div className="flex justify-between py-1"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
+                                  {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
+                                  {e.links && (
+                                    <div className="pt-1">
+                                      <span className="text-gray-400 text-sm">Links</span>
+                                      <div className="mt-1 space-y-1">
+                                        {e.links.split("\n").filter(l => l.trim()).map((link, li) => {
+                                          const isUrl = link.trim().startsWith("http");
+                                          return isUrl ? (
+                                            <a key={li} href={link.trim()} target="_blank" rel="noopener" className="block text-xs text-blue-500 hover:underline truncate">{link.trim()}</a>
+                                          ) : (
+                                            <p key={li} className="text-xs text-gray-500">{link.trim()}</p>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -988,31 +1001,53 @@ function SmallUpload({ type, onRecorded, userId }) {
 // Paste data area for quick entry
 function PasteArea({ onRecorded, userId }) {
   const [text, setText] = useState("");
+  const [month, setMonth] = useState("");
+  const [week, setWeek] = useState("1");
+  const [team, setTeam] = useState("Content");
   const [recording, setRecording] = useState(false);
   const [msg, setMsg] = useState("");
   const [open, setOpen] = useState(false);
 
   async function handleRecord() {
-    if (!text.trim()) return;
+    if (!text.trim() || !month) { setMsg("Enter month and paste data"); return; }
     setRecording(true); setMsg("");
     try {
-      const entries = parsePastedCSV(text);
-      // Store as a simple weekly KPI update
-      const grouped = {};
-      const period = "Pasted " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-      grouped[period] = { month: "", week: "", teams: {} };
-      entries.forEach(e => {
-        const team = e.team || "Other";
-        if (!grouped[period].teams[team]) grouped[period].teams[team] = [];
-        grouped[period].teams[team].push({
-          employee: e.employee, team, kpiType: "", target: e.target,
-          actual: e.completed || e.produced || "", kpiPct: parseFloat(e.progress) || null,
-          notes: "", status: parseFloat(e.progress) >= 0.9 ? "On Target" : parseFloat(e.progress) >= 0.7 ? "Slightly Behind" : "Behind",
-        });
-      });
+      const lines = text.trim().split("\n").map(l => l.split("\t").map(c => c.trim()));
+      // Skip header if first row looks like headers
+      let startIdx = 0;
+      if (lines[0]?.some(c => c.toLowerCase().includes("name") || c.toLowerCase().includes("target"))) startIdx = 1;
+      
+      const entries = [];
+      for (let i = startIdx; i < lines.length; i++) {
+        const row = lines[i];
+        if (!row || row.every(c => !c)) continue;
+        // Auto-detect: if first cell is a name (no number), it's Name, Target, Completed, Progress
+        // If it has numbers, try to match sheet format
+        const name = row[0] || "";
+        if (!name) continue;
+        
+        const target = row[1] || "";
+        const completed = row[2] || "";
+        const progress = parseFloat(row[3]) || parseFloat(row[row.length - 1]) || null;
+        const notes = row[4] || "";
+        const status = row[5] || (progress >= 0.9 ? "On Target" : progress >= 0.7 ? "Slightly Behind" : "Behind");
+        const links = row[6] || "";
+
+        entries.push({ month, week, team, employee: name, target, completed, kpiPct: isNaN(progress) ? null : progress, notes, status, links });
+      }
+
+      if (!entries.length) { setMsg("No data found. Check format."); setRecording(false); return; }
+
+      // Merge with existing KPI data
+      const { data: existing } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
+      let allEntries = existing?.[0]?.data?.entries || [];
+      // Remove old entries for this month+week+team
+      allEntries = allEntries.filter(e => !(e.month === month && String(e.week) === String(week) && e.team === team));
+      allEntries = allEntries.concat(entries);
+
       await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("weekly_kpi").insert({ data: { entries, grouped, periods: Object.keys(grouped) }, uploaded_by: userId });
-      setText(""); setMsg("Recorded " + entries.length + " entries");
+      await supabase.from("weekly_kpi").insert({ data: { entries: allEntries }, uploaded_by: userId });
+      setText(""); setMsg("Added " + entries.length + " entries for " + team + " " + month + " W" + week);
       onRecorded();
     } catch (err) { setMsg("Error: " + err.message); }
     setRecording(false);
@@ -1020,13 +1055,34 @@ function PasteArea({ onRecorded, userId }) {
 
   return (
     <div className="mt-8 border-t border-gray-100 pt-6">
-      <button onClick={() => setOpen(!open)} className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 mb-3">
-        {open ? "▾" : "▸"} Quick data entry (paste CSV)
+      <button onClick={() => setOpen(!open)} className="text-sm font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-3">
+        {open ? "▾" : "▸"} Paste weekly data
       </button>
       {open && (
         <>
-          <p className="text-xs text-gray-400 mb-2">Paste CSV or tab-separated data. First row should be headers (Team, Name, Target, Completed, Progress).</p>
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={6} placeholder={"Team,Name,Total Target/ Task,Estimated Time,Time Produced,Completed,Progress\nContent,Jeremiah,2 videos,—,—,2 videos,0.7\nVideo,Nic,6 videos/shoots,—,—,5 videos,0.9"}
+          <div className="flex gap-3 mb-3 flex-wrap">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-gray-400 uppercase">Team</label>
+              <select value={team} onChange={e => setTeam(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm">
+                <option>Content</option><option>Video</option><option>Design</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-gray-400 uppercase">Month</label>
+              <input value={month} onChange={e => setMonth(e.target.value)} placeholder="e.g. July" className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm w-24" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-gray-400 uppercase">Week</label>
+              <select value={week} onChange={e => setWeek(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm">
+                <option value="1">W1</option><option value="2">W2</option><option value="3">W3</option><option value="4">W4</option>
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mb-2">Copy rows from your sheet and paste below. Format: Name, Target, Completed, Progress (tab-separated)</p>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={5}
+            placeholder={"Jeremiah	2 videos	2 videos	1.0
+Mahal	2 videos	2 videos	1.0
+Rosie	Ensure delivery	1	0.9"}
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-400 resize-y" />
           <div className="flex items-center gap-3 mt-2">
             <button onClick={handleRecord} disabled={recording || !text.trim()}
