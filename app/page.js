@@ -570,153 +570,129 @@ export default function DashboardPage() {
           )}
 
           {/* ===== WEEKLY KPI ===== */}
-          {page === "kpi" && (
-            <>
-              <h1 className="text-xl font-semibold mb-1">Weekly KPI</h1>
-              <p className="text-sm text-gray-400 mb-5">Team performance by week</p>
+          {page === "kpi" && (() => {
+            const entries = kpiData?.entries || [];
+            const monthsSet = new Set();
+            const weeksPerMonth = {};
+            entries.forEach(e => {
+              if (e.month) { monthsSet.add(e.month); if (!weeksPerMonth[e.month]) weeksPerMonth[e.month] = new Set(); }
+              if (e.month && e.week) weeksPerMonth[e.month].add(e.week);
+            });
+            const months = Array.from(monthsSet);
+            const curMonth = kpiPeriod.split("|")[0] || months[months.length - 1] || "";
+            const weeksForMonth = Array.from(weeksPerMonth[curMonth] || []).sort((a,b) => parseInt(a) - parseInt(b));
+            const curWeek = kpiPeriod.split("|")[1] || weeksForMonth[weeksForMonth.length - 1] || "";
 
-              {kpiData ? (() => {
-                // Build month and week lists from data
-                const monthsSet = new Set();
-                const weeksMap = {};
-                kpiData.entries.forEach(e => {
-                  if (e.month) monthsSet.add(e.month);
-                  const mKey = e.month || "";
-                  if (!weeksMap[mKey]) weeksMap[mKey] = new Set();
-                  if (e.week) weeksMap[mKey].add(e.week);
-                });
-                const months = Array.from(monthsSet);
-                const selMonth = kpiPeriod.split("|")[0] || months[months.length - 1] || "";
-                const weeksForMonth = Array.from(weeksMap[selMonth] || []).sort((a,b) => parseFloat(a) - parseFloat(b));
-                const selWeek = kpiPeriod.split("|")[1] || weeksForMonth[weeksForMonth.length - 1] || "";
-                
-                // Filter entries for selected month + week
-                const filtered = kpiData.entries.filter(e => e.month === selMonth && String(e.week) === String(selWeek));
-                const byTeam = {};
-                filtered.forEach(e => {
-                  const t = e.team || "Other";
-                  if (!byTeam[t]) byTeam[t] = [];
-                  byTeam[t].push(e);
-                });
+            const filtered = entries.filter(e => e.month === curMonth && String(e.week) === String(curWeek));
+            const byTeam = {};
+            filtered.forEach(e => { const t = e.team || "Other"; if (!byTeam[t]) byTeam[t] = []; byTeam[t].push(e); });
+            const kpiTeams = ["Content", "Video", "Design"].filter(t => byTeam[t]);
 
-                return (
+            return (
+              <>
+                <h1 className="text-xl font-semibold mb-1">Weekly KPI</h1>
+                <p className="text-sm text-gray-400 mb-5">Team performance by week</p>
+
+                {entries.length > 0 ? (
                   <>
-                    <div className="flex gap-3 items-end flex-wrap mb-6">
+                    <div className="flex gap-3 items-end flex-wrap mb-5">
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-gray-400 uppercase tracking-wide">Month</label>
-                        <select value={selMonth} onChange={e => { const w = Array.from(weeksMap[e.target.value] || []); setKpiPeriod(e.target.value + "|" + (w[w.length-1] || "")); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        <select value={curMonth} onChange={e => { const w = Array.from(weeksPerMonth[e.target.value] || []); setKpiPeriod(e.target.value + "|" + (w[w.length-1] || "")); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
                           {months.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                       </div>
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-gray-400 uppercase tracking-wide">Week</label>
-                        <select value={selWeek} onChange={e => setKpiPeriod(selMonth + "|" + e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        <select value={curWeek} onChange={e => setKpiPeriod(curMonth + "|" + e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
                           {weeksForMonth.map(w => <option key={w} value={w}>W{w}</option>)}
                         </select>
                       </div>
                       {isAdmin && <SmallUpload type="kpi" onRecorded={loadData} userId={user.id} />}
                     </div>
 
-                    {filtered.length > 0 ? (
-                      <>
-                        {/* Team cards */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                          {TEAMS.filter(t => byTeam[t]).map(team => {
-                            const members = byTeam[team];
-                            const avgPct = members.filter(m => m.kpiPct !== null).reduce((s, m) => s + m.kpiPct, 0) / (members.filter(m => m.kpiPct !== null).length || 1);
-                            const avgRound = Math.round(avgPct * 100);
-                            const color = avgRound >= 95 ? "#16a34a" : avgRound < 85 ? "#dc2626" : "#d97706";
-                            const isSelected = selectedTeam === team;
+                    {/* Team cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      {kpiTeams.map(team => {
+                        const members = byTeam[team];
+                        const withPct = members.filter(m => m.kpiPct !== null && !isNaN(m.kpiPct));
+                        const avgPct = withPct.length > 0 ? withPct.reduce((s, m) => s + m.kpiPct, 0) / withPct.length : 0;
+                        const avgRound = Math.round(avgPct * 100);
+                        const color = avgRound >= 90 ? "#16a34a" : avgRound < 70 ? "#dc2626" : "#d97706";
+                        const isSelected = selectedTeam === team;
+                        return (
+                          <div key={team} onClick={() => setSelectedTeam(isSelected ? null : team)}
+                            className={`rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-sm ${isSelected ? "border-gray-300 shadow-sm ring-2 ring-gray-200" : "border-gray-100"}`} style={{ background: "#fff" }}>
+                            <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
+                            <div className="p-4">
+                              <div className="flex items-center gap-2.5 mb-3">
+                                <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-lg`}>{TEAM_ICONS[team] || "📋"}</div>
+                                <div>
+                                  <p className="text-sm font-bold">{team}</p>
+                                  <p className="text-[11px] text-gray-400">{members.length} members</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                                <span className="text-2xl font-bold" style={{ color }}>{avgRound}%</span>
+                                <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${avgRound >= 90 ? "bg-green-50 text-green-600" : avgRound < 70 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>
+                                  {avgRound >= 90 ? "On Target" : avgRound < 70 ? "Behind" : "Slightly Behind"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Member details for selected team */}
+                    {selectedTeam && byTeam[selectedTeam] && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedTeam] || "📋"}</div>
+                          <span className="text-sm font-semibold">{selectedTeam} Team - {curMonth} W{curWeek}</span>
+                          <button onClick={() => setSelectedTeam(null)} className="ml-2 text-xs text-gray-400 hover:text-gray-600">Close</button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {byTeam[selectedTeam].map((e, i) => {
+                            const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
+                            const isGood = pct !== null && pct >= 90;
+                            const isBad = pct !== null && pct < 70;
+                            const clr = isGood ? "#16a34a" : isBad ? "#dc2626" : "#d97706";
                             return (
-                              <div key={team} onClick={() => setSelectedTeam(isSelected ? null : team)}
-                                className={`rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-sm ${isSelected ? "border-gray-300 shadow-sm" : "border-gray-100"}`} style={{ background: "#fff" }}>
-                                <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
-                                <div className="p-3.5">
-                                  <div className="flex items-center gap-2.5 mb-2">
-                                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
-                                    <div>
-                                      <p className="text-sm font-bold">{team}</p>
-                                      <p className="text-[11px] text-gray-400">{members.length} members</p>
-                                    </div>
+                              <div key={i} className="bg-white rounded-xl p-5 border border-gray-100">
+                                <div className="flex justify-between items-center mb-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: TEAM_COLORS[selectedTeam] || "#888" }}>{e.employee?.[0]}</div>
+                                    <p className="text-base font-semibold">{e.employee}</p>
                                   </div>
-                                  <div className="flex items-center justify-between pt-2 border-t border-gray-50">
-                                    <span className="text-lg font-bold" style={{ color }}>{avgRound}%</span>
-                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${avgRound >= 95 ? "bg-green-50 text-green-600" : avgRound < 85 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>
-                                      {avgRound >= 95 ? "On Target" : avgRound < 85 ? "Behind" : "Slightly Behind"}
-                                    </span>
+                                  {pct !== null && <p className="text-3xl font-bold" style={{ color: clr }}>{pct}%</p>}
+                                </div>
+                                {pct !== null && (
+                                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+                                    <div className="h-full rounded-full" style={{ width: Math.min(pct, 100) + "%", background: clr }} />
                                   </div>
+                                )}
+                                <div className="space-y-2 text-sm">
+                                  <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Target</span><span className="font-medium text-right max-w-[60%]">{e.target || "..."}</span></div>
+                                  <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Completed</span><span className="font-medium">{e.completed || "..."}</span></div>
+                                  {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="text-xs text-gray-500 text-right max-w-[60%]">{e.notes}</span></div>}
+                                  {e.status && <div className="flex justify-between py-1"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
                                 </div>
                               </div>
                             );
                           })}
                         </div>
+                      </div>
+                    )}
 
-                        {/* Member details for selected team */}
-                        {selectedTeam && byTeam[selectedTeam] && (
-                          <div>
-                            <div className="flex items-center gap-2 mb-4">
-                              <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedTeam] || "📋"}</div>
-                              <span className="text-sm font-semibold">{selectedTeam} team</span>
-                              <button onClick={() => setSelectedTeam(null)} className="ml-2 text-xs text-gray-400 hover:text-gray-600">Close</button>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {byTeam[selectedTeam].map((e, i) => {
-                                const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
-                                const isGood = pct !== null && pct >= 95;
-                                const isBad = pct !== null && pct < 85;
-                                const color = isGood ? "#16a34a" : isBad ? "#dc2626" : "#d97706";
-                                return (
-                                  <div key={i} className="bg-white rounded-xl p-5 border border-gray-100">
-                                    <div className="flex justify-between items-center mb-3">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: TEAM_COLORS[selectedTeam] || "#888" }}>{e.employee?.[0]}</div>
-                                        <div>
-                                          <p className="text-base font-semibold">{e.employee}</p>
-                                          <p className="text-xs text-gray-400">{e.kpiType}</p>
-                                        </div>
-                                      </div>
-                                      {pct !== null && <p className="text-3xl font-bold" style={{ color }}>{pct}%</p>}
-                                    </div>
-                                    {pct !== null && (
-                                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
-                                        <div className="h-full rounded-full" style={{ width: Math.min(pct, 100) + "%", background: color }} />
-                                      </div>
-                                    )}
-                                    <div className="space-y-2 text-sm">
-                                      <div className="flex justify-between py-1.5 border-b border-gray-50">
-                                        <span className="text-gray-400">Target</span>
-                                        <span className="font-medium">{e.target || "..."}</span>
-                                      </div>
-                                      <div className="flex justify-between py-1.5 border-b border-gray-50">
-                                        <span className="text-gray-400">Actual</span>
-                                        <span className="font-medium">{e.actual || "..."}</span>
-                                      </div>
-                                      {e.notes && (
-                                        <div className="flex justify-between py-1.5 border-b border-gray-50">
-                                          <span className="text-gray-400">Notes</span>
-                                          <span className="text-gray-500 text-xs text-right max-w-[200px]">{e.notes}</span>
-                                        </div>
-                                      )}
-                                      <div className="flex justify-between py-1.5">
-                                        <span className="text-gray-400">Status</span>
-                                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status ? e.status.replace(/[🟢🟡🔴]/g, "").trim() : (isGood ? "On Target" : isBad ? "Behind" : "Slightly Behind")}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : <p className="text-sm text-gray-400 text-center py-8">No data for {selMonth} W{selWeek}</p>}
+                    {kpiTeams.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No data for {curMonth} W{curWeek}</p>}
                   </>
-                );
-              })() : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
+                ) : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
 
-              {isAdmin && <PasteArea onRecorded={loadData} userId={user.id} />}
-            </>
-          )}
+                {isAdmin && <PasteArea onRecorded={loadData} userId={user.id} />}
+              </>
+            );
+          })()}
 
           {/* ===== ADMIN ===== */}
           {page === "admin" && isAdmin && <AdminPanel user={user} onDataUpdated={loadData} />}
