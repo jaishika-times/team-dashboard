@@ -1150,8 +1150,44 @@ function PendingBanner({ onGoToAdmin }) {
 // ===== PEOPLE (ONBOARDING / OFFBOARDING) =====
 const PROBATION_LABELS = { m1: "Month 1", m2: "Month 2", m3: "Month 3", m4: "Month 4", m5: "Month 5", m6: "Month 6" };
 const PEOPLE_LINK_LABELS = { staffFolder: "Staff Folder", hrRecording: "HR Recording", tlRecording: "TL Recording", plan: "Plan", confirmationLetter: "Confirmation Letter" };
-const STATUS_OPTIONS = { Onboarding: ["Probation", "Confirmed"], Offboarding: ["Pending", "Exited"] };
-const STATUS_COLORS = { Probation: "bg-amber-50 text-amber-600", Confirmed: "bg-green-50 text-green-600", Pending: "bg-amber-50 text-amber-600", Exited: "bg-red-50 text-red-500" };
+const STATUS_OPTIONS = { Onboarding: ["Probation", "Confirmed", "Extended", "Terminated"], Offboarding: ["Pending", "Exited"] };
+const STATUS_COLORS = { Probation: "bg-amber-50 text-amber-600", Confirmed: "bg-green-50 text-green-600", Extended: "bg-blue-50 text-blue-600", Terminated: "bg-red-50 text-red-500", Pending: "bg-amber-50 text-amber-600", Exited: "bg-red-50 text-red-500" };
+const PROBATION_STATUS_COLORS = { Done: "bg-green-50 text-green-600", "In Progress": "bg-amber-50 text-amber-600", Scheduled: "bg-gray-100 text-gray-400" };
+
+function parseFlexDate(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) { const d = new Date(+m[1], +m[2] - 1, +m[3]); return isNaN(d.getTime()) ? null : d; }
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (m) {
+    let [, d, mo, y] = m;
+    y = y.length === 2 ? "20" + y : y;
+    const dt = new Date(+y, +mo - 1, +d);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  return null;
+}
+function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() + n); return d; }
+function fmtDate(d) { return d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : null; }
+
+// Builds the probation checkpoint schedule for a record: Month 1-3 always,
+// Month 4-6 only once the person has been placed on an extension.
+function buildProbationSchedule(r) {
+  const join = parseFlexDate(r.join_date);
+  const keys = r.status === "Extended" ? ["m1", "m2", "m3", "m4", "m5", "m6"] : ["m1", "m2", "m3"];
+  const today = new Date();
+  return keys.map((key, i) => {
+    const stored = r.probation?.[key] || null;
+    const storedDate = stored?.text ? parseFlexDate(stored.text) : null;
+    const dueDate = storedDate || (join ? addMonths(join, i + 1) : null);
+    let status;
+    if (stored?.done) status = "Done";
+    else if (dueDate && dueDate <= today) status = "In Progress";
+    else status = "Scheduled";
+    return { key, label: PROBATION_LABELS[key], dueLabel: stored?.text || fmtDate(dueDate) || "Not scheduled", url: stored?.url || null, done: !!stored?.done, status };
+  });
+}
 
 function emptyPeopleForm() {
   return {
@@ -1270,8 +1306,9 @@ function PeoplePage({ isAdmin, userId }) {
 
   const onboardingRecs = records.filter(r => r.type === "Onboarding");
   const offboardingRecs = records.filter(r => r.type === "Offboarding");
-  const inProbation = onboardingRecs.filter(r => (r.status || "Probation") !== "Confirmed").length;
+  const inProbation = onboardingRecs.filter(r => (r.status || "Probation") === "Probation" || r.status === "Extended").length;
   const confirmed = onboardingRecs.filter(r => r.status === "Confirmed").length;
+  const terminated = onboardingRecs.filter(r => r.status === "Terminated").length;
 
   const filtered = records
     .filter(r => tab === "all" || r.type === tab)
@@ -1308,7 +1345,7 @@ function PeoplePage({ isAdmin, userId }) {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-5 gap-3 mb-5">
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
           <p className="text-2xl font-bold">{records.length}</p>
           <p className="text-[11px] text-gray-400">Total tracked</p>
@@ -1320,6 +1357,10 @@ function PeoplePage({ isAdmin, userId }) {
         <div className="bg-green-50 rounded-xl p-4 border border-green-100 text-center">
           <p className="text-2xl font-bold text-green-600">{confirmed}</p>
           <p className="text-[11px] text-gray-400">Confirmed</p>
+        </div>
+        <div className="bg-red-50 rounded-xl p-4 border border-red-100 text-center">
+          <p className="text-2xl font-bold text-red-500">{terminated}</p>
+          <p className="text-[11px] text-gray-400">Terminated</p>
         </div>
         <div className="bg-red-50 rounded-xl p-4 border border-red-100 text-center">
           <p className="text-2xl font-bold text-red-500">{offboardingRecs.length}</p>
@@ -1373,24 +1414,36 @@ function PeoplePage({ isAdmin, userId }) {
             {expanded === r.id && (
               <div className="px-4 pb-4 pt-1 border-t border-gray-50 grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">Timeline</p>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">
+                    {r.type === "Onboarding" ? "Probation (3 months from hire date)" : "Timeline"}
+                  </p>
                   <div className="space-y-1.5">
                     <div className="text-xs text-gray-600">Join date: <span className="text-gray-800">{r.join_date || "—"}</span></div>
-                    {Object.keys(PROBATION_LABELS).map(k => (
-                      r.probation?.[k] ? (
-                        <label key={k} className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                          <input type="checkbox" checked={!!r.probation[k].done} disabled={!isAdmin} onChange={() => toggleProbationDone(r, k)}
-                            className="accent-gray-900" />
-                          <span className={r.probation[k].done ? "line-through text-gray-400" : ""}>
-                            {PROBATION_LABELS[k]}: {r.probation[k].url
-                              ? <a href={r.probation[k].url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-blue-500 hover:underline">{r.probation[k].text}</a>
-                              : <span className="text-gray-800">{r.probation[k].text}</span>}
-                          </span>
-                        </label>
-                      ) : null
+                    {r.type === "Onboarding" && buildProbationSchedule(r).map(p => (
+                      <div key={p.key} className="flex items-center gap-2 text-xs">
+                        <input type="checkbox" checked={p.done} disabled={!isAdmin} onChange={() => toggleProbationDone(r, p.key)} className="accent-gray-900 shrink-0" />
+                        <span className={`w-16 shrink-0 ${p.done ? "text-gray-400 line-through" : "text-gray-600"}`}>{p.label}</span>
+                        <span className="text-gray-800 truncate">{p.url ? <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{p.dueLabel}</a> : p.dueLabel}</span>
+                        <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${PROBATION_STATUS_COLORS[p.status]}`}>{p.status}</span>
+                      </div>
                     ))}
-                    <div className="text-xs text-gray-600">{r.type === "Onboarding" ? "Confirmation date" : "Last day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
+                    <div className="text-xs text-gray-600 pt-1">{r.type === "Onboarding" ? "Confirmation date" : "Last day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
                   </div>
+                  {r.type === "Onboarding" && (
+                    <div className="mt-3 pt-3 border-t border-gray-50">
+                      <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1.5">Confirmation decision</p>
+                      {isAdmin ? (
+                        <select value={r.status || "Probation"} onChange={e => changeStatus(r.id, e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs">
+                          <option value="Probation">Still on probation</option>
+                          <option value="Confirmed">Confirmed</option>
+                          <option value="Extended">Extended (add months 4-6)</option>
+                          <option value="Terminated">Terminated</option>
+                        </select>
+                      ) : (
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${STATUS_COLORS[r.status] || STATUS_COLORS.Probation}`}>{r.status || "Probation"}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">Documents</p>
