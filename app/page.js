@@ -49,8 +49,17 @@ export default function DashboardPage() {
   }
 
   async function loadData() {
-    const { data: prodRows } = await supabase.from("productivity_records").select("*").order("uploaded_at", { ascending: false }).limit(1);
-    if (prodRows?.length) { const r = prodRows[0]; setProdData({ data: r.data, dates: r.dates, members: r.members }); setDate(r.dates?.[0] || ""); }
+    // Fetch live from Google Sheet
+    try {
+      const liveRes = await fetch("/api/live-prod");
+      const liveData = await liveRes.json();
+      if (liveData.dates?.length) { setProdData(liveData); setDate(liveData.dates[0]); }
+    } catch (e) {
+      // Fall back to uploaded data
+      const { data: prodRows } = await supabase.from("productivity_records").select("*").order("uploaded_at", { ascending: false }).limit(1);
+      if (prodRows?.length) { const r = prodRows[0]; setProdData({ data: r.data, dates: r.dates, members: r.members }); setDate(r.dates?.[0] || ""); }
+    }
+    const _skip = null;
     const { data: empRows } = await supabase.from("employees").select("*").order("name");
     if (empRows) setEmployees(empRows);
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
@@ -423,7 +432,7 @@ export default function DashboardPage() {
             return (
               <>
                 <h1 className="text-xl font-semibold mb-1">Productivity</h1>
-                <p className="text-sm text-gray-400 mb-5">Daily tasks and team performance</p>
+                <p className="text-sm text-gray-400 mb-5">Daily tasks, live from Google Sheet</p>
 
                 {prodData ? (
                   <>
