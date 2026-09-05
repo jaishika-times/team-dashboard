@@ -1172,16 +1172,25 @@ function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() 
 function fmtDate(d) { return d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : null; }
 
 // Builds the probation checkpoint schedule for a record: Month 1-3 always,
-// plus as many of Month 4-6 as the current extension covers (extension_months, 1-3).
+// plus Month 4-6 for as long as they're within the active extension length,
+// OR if that month already has recorded data — so confirming/terminating someone
+// never hides an extension's history unless the data is explicitly cleared.
 function buildProbationSchedule(r) {
   const join = parseFlexDate(r.join_date);
   const extMonths = r.status === "Extended" ? Math.min(Math.max(parseInt(r.extension_months) || 1, 1), 3) : 0;
-  const keys = ["m1", "m2", "m3", ...Array.from({ length: extMonths }, (_, i) => `m${4 + i}`)];
+  const keys = ["m1", "m2", "m3"];
+  for (let i = 0; i < 3; i++) {
+    const key = `m${4 + i}`;
+    const stored = r.probation?.[key];
+    const hasData = !!(stored && (stored.text || stored.url || stored.done));
+    if (i < extMonths || hasData) keys.push(key);
+  }
   const today = new Date();
-  return keys.map((key, i) => {
+  return keys.map((key) => {
+    const monthNum = parseInt(key.slice(1), 10);
     const stored = r.probation?.[key] || null;
     const storedDate = stored?.text ? parseFlexDate(stored.text) : null;
-    const dueDate = storedDate || (join ? addMonths(join, i + 1) : null);
+    const dueDate = storedDate || (join ? addMonths(join, monthNum) : null);
     let status;
     if (stored?.done) status = "Done";
     else if (dueDate && dueDate <= today) status = "In Progress";
@@ -1189,6 +1198,8 @@ function buildProbationSchedule(r) {
     return { key, label: PROBATION_LABELS[key], dueLabel: stored?.text || fmtDate(dueDate) || "Not scheduled", url: stored?.url || null, done: !!stored?.done, status };
   });
 }
+
+function normalizeName(name) { return String(name || "").trim().replace(/\s+/g, " ").toLowerCase(); }
 
 function emptyPeopleForm() {
   return {
@@ -1262,8 +1273,17 @@ function PeoplePage({ isAdmin, userId }) {
     const payload = buildPayload();
     if (!payload.staff_name) return;
     setBusy(true);
-    if (modal === "add") await supabase.from("people_lifecycle").upsert(payload, { onConflict: "staff_name" });
-    else await supabase.from("people_lifecycle").update(payload).eq("id", modal);
+    const norm = normalizeName(payload.staff_name);
+    const existing = records.find(x => x.id !== modal && normalizeName(x.staff_name) === norm);
+    if (existing) {
+      // Same person already exists under this name (case/whitespace-insensitive) — merge into
+      // that record instead of creating a duplicate row.
+      await supabase.from("people_lifecycle").update(payload).eq("id", existing.id);
+    } else if (modal === "add") {
+      await supabase.from("people_lifecycle").upsert(payload, { onConflict: "staff_name" });
+    } else {
+      await supabase.from("people_lifecycle").update(payload).eq("id", modal);
+    }
     setBusy(false); setModal(null); silentReload();
   }
 
@@ -1273,7 +1293,6 @@ function PeoplePage({ isAdmin, userId }) {
     await supabase.from("people_lifecycle").delete().eq("id", id);
   }
 
-  // Updates the row in place immediately, then saves in the background — no reload, no flicker.
   // Updates the row in place immediately, then saves in the background — no reload, no flicker.
   async function changeStatus(id, status) {
     const patch = { status };
@@ -1324,11 +1343,24 @@ function PeoplePage({ isAdmin, userId }) {
   async function confirmUpload() {
     if (!pendingUpload) return;
     setBusy(true);
-    const rows = pendingUpload.records.map(r => ({
-      type: r.type, status: r.status, month: r.month, staff_name: r.staffName, join_date: r.joinDate, key_date: r.keyDate,
-      links: r.links, probation: r.probation, uploaded_by: userId,
-    }));
-    await supabase.from("people_lifecycle").upsert(rows, { onConflict: "staff_name" });
+    // Match each row to an existing person by normalized name (trim/case-insensitive) so the
+    // same person never ends up as two rows — whether the duplicate is already in the table
+    // or appears twice within this same file.
+    const nameToId = new Map(records.map(x => [normalizeName(x.staff_name), x.id]));
+    for (const r of pendingUpload.records) {
+      const row = {
+        type: r.type, status: r.status, month: r.month, staff_name: r.staffName, join_date: r.joinDate, key_date: r.keyDate,
+        links: r.links, probation: r.probation, uploaded_by: userId,
+      };
+      const norm = normalizeName(r.staffName);
+      const existingId = nameToId.get(norm);
+      if (existingId) {
+        await supabase.from("people_lifecycle").update(row).eq("id", existingId);
+      } else {
+        const { data } = await supabase.from("people_lifecycle").upsert(row, { onConflict: "staff_name" }).select("id").single();
+        if (data) nameToId.set(norm, data.id);
+      }
+    }
     setPendingUpload(null); setUploadStatus(null); setBusy(false); silentReload();
   }
 
