@@ -33,32 +33,9 @@ export default function DashboardPage() {
   const [empForm, setEmpForm] = useState({ name: "", company: "", department: "" });
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
-
-  // Live productivity (synced from Google Sheets)
-  const [liveProdDate, setLiveProdDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [liveProdTasks, setLiveProdTasks] = useState([]);
-  const [liveProdLoading, setLiveProdLoading] = useState(true);
-  const [selectedProdEmployee, setSelectedProdEmployee] = useState(null);
+  const [selectedProdTeam, setSelectedProdTeam] = useState(null);
 
   useEffect(() => { init(); }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLiveProdLoading(true);
-    supabase
-      .from("daily_productivity_tasks")
-      .select("*")
-      .eq("task_date", liveProdDate)
-      .order("employee_name", { ascending: true })
-      .order("sort_order", { ascending: true })
-      .then(({ data }) => {
-        if (!cancelled) {
-          setLiveProdTasks(data || []);
-          setLiveProdLoading(false);
-        }
-      });
-    return () => { cancelled = true; };
-  }, [liveProdDate]);
 
   async function init() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -439,128 +416,111 @@ export default function DashboardPage() {
 
           {/* ===== PRODUCTIVITY (live, synced from Google Sheets) ===== */}
           {page === "productivity" && (() => {
-            const byTeam = {};
-            liveProdTasks.forEach(t => {
-              if (!byTeam[t.team]) byTeam[t.team] = {};
-              if (!byTeam[t.team][t.employee_name]) byTeam[t.team][t.employee_name] = [];
-              byTeam[t.team][t.employee_name].push(t);
-            });
-            const teamNames = Object.keys(byTeam).sort((a, b) => {
-              const ai = TEAMS.indexOf(a), bi = TEAMS.indexOf(b);
-              if (ai !== -1 && bi !== -1) return ai - bi;
-              if (ai !== -1) return -1;
-              if (bi !== -1) return 1;
-              return a.localeCompare(b);
-            });
-
-            function empTotal(tasks) { return tasks.reduce((s, t) => s + (t.hours_spent || 0), 0); }
-            function empStatus(tasks) {
-              if (tasks.every(t => t.entry_status === "leave")) return tasks[0]?.leave_label || "On leave";
-              if (tasks.every(t => t.entry_status === "no_tasks")) return "No tasks today";
-              return empTotal(tasks).toFixed(2) + " hrs";
-            }
-
-            const selEmpTasks = selectedProdEmployee ? liveProdTasks.filter(t => t.employee_name === selectedProdEmployee) : [];
+            const dayData = prodData?.data?.[date] || {};
+            const allMems = prodData?.members || [];
+            const teamsSet = new Set(); allMems.forEach(m => teamsSet.add(m.team));
 
             return (
               <>
                 <h1 className="text-xl font-semibold mb-1">Productivity</h1>
-                <p className="text-sm text-gray-400 mb-5">Daily tasks, synced live from the team's Google Sheet</p>
+                <p className="text-sm text-gray-400 mb-5">Daily tasks and team performance</p>
 
-                <div className="flex gap-3 items-end flex-wrap mb-5">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
-                    <input type="date" value={liveProdDate} onChange={e => setLiveProdDate(e.target.value)}
-                      className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white" />
-                  </div>
-                </div>
+                {prodData ? (
+                  <>
+                    <div className="flex gap-3 items-end flex-wrap mb-5">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
+                        <select value={date} onChange={e => setDate(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                          {prodData.dates.map(d => { const dt = new Date(d + "T00:00:00"); return <option key={d} value={d}>{dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</option>; })}
+                        </select>
+                      </div>
+                      {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
+                    </div>
 
-                {liveProdLoading ? (
-                  <p className="text-sm text-gray-400 text-center py-12">Loading...</p>
-                ) : teamNames.length === 0 ? (
-                  <div className="text-center py-16 text-gray-300">
-                    <div className="text-4xl mb-3">📊</div>
-                    <p className="text-gray-400">No submissions synced for this date yet</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {teamNames.map(team => {
-                      const employeesInTeam = Object.entries(byTeam[team]);
-                      return (
-                        <div key={team} className="rounded-xl overflow-hidden border border-gray-100 bg-white">
-                          <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
-                          <div className="p-4">
-                            <div className="flex items-center gap-2.5 mb-3">
-                              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
-                              <p className="text-sm font-bold">{team} Team</p>
-                            </div>
-                            <div className="space-y-1.5">
-                              {employeesInTeam.map(([name, tasks]) => {
-                                const isLeave = tasks.every(t => t.entry_status === "leave");
-                                const isEmpty = tasks.every(t => t.entry_status === "no_tasks");
-                                return (
-                                  <button key={name} onClick={() => setSelectedProdEmployee(name)}
-                                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-gray-100 hover:bg-gray-50 transition-all text-left">
-                                    <span className="text-sm font-medium">{name}</span>
-                                    <span className={`text-xs font-medium ${isLeave ? "text-amber-500" : isEmpty ? "text-gray-300" : "text-emerald-600"}`}>{empStatus(tasks)}</span>
-                                  </button>
-                                );
-                              })}
+                    {/* Team cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
+                      {TEAMS.filter(t => teamsSet.has(t)).map(team => {
+                        const members = allMems.filter(m => m.team === team);
+                        const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
+                        const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
+                        const isSelected = selectedProdTeam === team;
+                        return (
+                          <div key={team} onClick={() => setSelectedProdTeam(isSelected ? null : team)}
+                            className={`rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-sm ${isSelected ? "border-gray-300 shadow-sm ring-2 ring-gray-200" : "border-gray-100"}`} style={{ background: "#fff" }}>
+                            <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
+                            <div className="p-3.5">
+                              <div className="flex items-center gap-2.5 mb-2">
+                                <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
+                                <div>
+                                  <p className="text-sm font-bold">{team}</p>
+                                  <p className="text-[11px] text-gray-400">{members.length} members</p>
+                                </div>
+                              </div>
+                              <div className="flex gap-4 pt-2 border-t border-gray-50">
+                                <div><span className="text-lg font-bold">{taskCount}</span><span className="text-[10px] text-gray-400 ml-1">tasks</span></div>
+                                <div><span className="text-lg font-bold">{th > 0 ? th.toFixed(1) : "0"}</span><span className="text-[10px] text-gray-400 ml-1">hrs</span></div>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {selectedProdEmployee && (
-                  <div onClick={() => setSelectedProdEmployee(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[520px] max-w-[92%] max-h-[80vh] overflow-y-auto shadow-xl">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-base font-semibold">{selectedProdEmployee}</h3>
-                        <button onClick={() => setSelectedProdEmployee(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
-                      </div>
-                      {selEmpTasks.every(t => t.entry_status === "leave") ? (
-                        <p className="text-amber-600 font-medium text-sm">{selEmpTasks[0]?.leave_label || "On leave"}</p>
-                      ) : selEmpTasks.every(t => t.entry_status === "no_tasks") ? (
-                        <p className="text-gray-400 text-sm">No tasks today</p>
-                      ) : (
-                        <>
-                          {selEmpTasks.some(t => t.entry_status === "unparsed") && (
-                            <div className="mb-3 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-3 py-2">
-                              Some entries below couldn't be fully parsed — shown as raw text.
-                            </div>
-                          )}
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-left text-gray-400 border-b border-gray-100">
-                                <th className="py-2 pr-2 text-xs uppercase tracking-wide">Task Name</th>
-                                <th className="py-2 pr-2 text-xs uppercase tracking-wide">Description</th>
-                                <th className="py-2 text-right text-xs uppercase tracking-wide">Hours</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {selEmpTasks.map(t => (
-                                <tr key={t.id} className="border-b border-gray-50 last:border-0">
-                                  <td className="py-2 pr-2 align-top">{t.entry_status === "unparsed" ? <span className="text-amber-600">raw:</span> : t.task_name}</td>
-                                  <td className="py-2 pr-2 align-top">{t.entry_status === "unparsed" ? t.task_name : t.task_description}</td>
-                                  <td className="py-2 text-right align-top">{t.hours_spent ?? "—"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr className="font-semibold border-t border-gray-200">
-                                <td className="py-2" colSpan={2}>Total Hours Spent</td>
-                                <td className="py-2 text-right">{empTotal(selEmpTasks).toFixed(2)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </>
-                      )}
+                        );
+                      })}
                     </div>
-                  </div>
-                )}
+
+                    {/* Member details for selected team */}
+                    {selectedProdTeam && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedProdTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedProdTeam] || "📋"}</div>
+                          <span className="text-sm font-semibold">{selectedProdTeam} Team</span>
+                          <button onClick={() => setSelectedProdTeam(null)} className="ml-2 text-xs text-gray-400 hover:text-gray-600">Close</button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {allMems.filter(m => m.team === selectedProdTeam).map(({ name }) => {
+                            const data = dayData[name];
+                            return (
+                              <div key={name} className="bg-white rounded-xl p-5 border border-gray-100">
+                                <div className="flex justify-between items-center mb-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: TEAM_COLORS[selectedProdTeam] || "#888" }}>{name[0]}</div>
+                                    <p className="text-base font-semibold">{name}</p>
+                                  </div>
+                                  {data?.leave ? <span className="text-xs text-amber-600 font-medium px-2 py-1 bg-amber-50 rounded-lg">{data.leave}</span>
+                                    : data?.hours > 0 ? <span className="text-2xl font-bold text-blue-500">{data.hours.toFixed(1)}h</span> : null}
+                                </div>
+                                {data?.tasks?.length > 0 ? (
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="text-left text-gray-400 border-b border-gray-100">
+                                        <th className="py-1.5 text-[11px] uppercase tracking-wide">Task Name</th>
+                                        <th className="py-1.5 text-[11px] uppercase tracking-wide">Description</th>
+                                        <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Hours</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {data.tasks.map((t, i) => (
+                                        <tr key={i} className="border-b border-gray-50 last:border-0">
+                                          <td className="py-2 pr-2 font-medium text-gray-700">{t.project}</td>
+                                          <td className="py-2 pr-2 text-gray-400">{t.desc}</td>
+                                          <td className="py-2 text-right font-medium text-blue-500">{t.hrs > 0 ? t.hrs + "h" : ""}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr className="font-semibold border-t border-gray-200">
+                                        <td className="py-2" colSpan={2}>Total</td>
+                                        <td className="py-2 text-right text-blue-600">{data.hours.toFixed(1)}h</td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                ) : !data?.leave && <p className="text-sm text-gray-300 italic">No tasks logged</p>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : isAdmin ? <InlineUpload type="prod" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📊" text="No data yet" />}
               </>
             );
           })()}
