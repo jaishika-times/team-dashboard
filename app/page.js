@@ -32,6 +32,10 @@ export default function DashboardPage() {
   const [attWeek, setAttWeek] = useState("");
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [employees, setEmployees] = useState([]);
+  const [assets, setAssets] = useState([]);
+  const [assetSearch, setAssetSearch] = useState("");
+  const [assetModal, setAssetModal] = useState(null);
+  const [assetForm, setAssetForm] = useState({ code: "", name: "", category: "Video Properties", status: "Available", remark: "" });
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
@@ -61,6 +65,8 @@ export default function DashboardPage() {
       if (liveData.dates?.length) { setProdData(liveData); setDate(liveData.dates[0]); }
     } catch (e) { console.log("Sheet fetch error"); }
     const { data: empRows } = await supabase.from("employees").select("*").order("name");
+    const { data: assetRows } = await supabase.from("assets").select("*").order("code");
+    if (assetRows) setAssets(assetRows);
     if (empRows) setEmployees(empRows);
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
     if (kpiRows?.length) { setKpiData(kpiRows[0].data); }
@@ -112,6 +118,7 @@ export default function DashboardPage() {
     { id: "productivity", icon: "◈", label: "Productivity" },
     { id: "attendance", icon: "◷", label: "Attendance" },
     { id: "kpi", icon: "◆", label: "Weekly KPI" },
+    { id: "assets", icon: "◫", label: "Assets" },
   ];
   const pendingCount = isAdmin ? 0 : 0; // calculated below
   if (isAdmin) navItems.push({ id: "admin", icon: "◎", label: "Admin" });
@@ -749,6 +756,145 @@ export default function DashboardPage() {
                 ) : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
 
                 {isAdmin && <PasteArea onRecorded={loadData} userId={user.id} />}
+              </>
+            );
+          })()}
+
+          {/* ===== ASSETS ===== */}
+          {page === "assets" && (() => {
+            const filtered = assets.filter(a =>
+              assetSearch ? (a.code + " " + a.name + " " + a.remark).toLowerCase().includes(assetSearch.toLowerCase()) : true
+            );
+            const available = assets.filter(a => a.status === "Available").length;
+            const cantUse = assets.filter(a => a.status === "Cannot Use").length;
+
+            async function saveAsset() {
+              if (!assetForm.code || !assetForm.name) return;
+              if (assetModal === "add") {
+                await supabase.from("assets").insert(assetForm);
+              } else {
+                await supabase.from("assets").update(assetForm).eq("id", assetModal);
+              }
+              setAssetModal(null);
+              const { data } = await supabase.from("assets").select("*").order("code");
+              if (data) setAssets(data);
+            }
+
+            async function deleteAsset(id) {
+              if (!confirm("Delete this asset?")) return;
+              await supabase.from("assets").delete().eq("id", id);
+              const { data } = await supabase.from("assets").select("*").order("code");
+              if (data) setAssets(data);
+            }
+
+            async function toggleStatus(id, current) {
+              const next = current === "Available" ? "Cannot Use" : current === "Cannot Use" ? "In Use" : "Available";
+              await supabase.from("assets").update({ status: next }).eq("id", id);
+              const { data } = await supabase.from("assets").select("*").order("code");
+              if (data) setAssets(data);
+            }
+
+            return (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h1 className="text-xl font-semibold">Assets</h1>
+                    <p className="text-sm text-gray-400">Equipment inventory</p>
+                  </div>
+                  {isAdmin && (
+                    <button onClick={() => { setAssetModal("add"); setAssetForm({ code: "", name: "", category: "Video Properties", status: "Available", remark: "" }); }}
+                      className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg">+ Add item</button>
+                  )}
+                </div>
+
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-3 mb-5">
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
+                    <p className="text-2xl font-bold">{assets.length}</p>
+                    <p className="text-[11px] text-gray-400">Total items</p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-4 border border-green-100 text-center">
+                    <p className="text-2xl font-bold text-green-600">{available}</p>
+                    <p className="text-[11px] text-gray-400">Available</p>
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-4 border border-red-100 text-center">
+                    <p className="text-2xl font-bold text-red-500">{cantUse}</p>
+                    <p className="text-[11px] text-gray-400">Cannot use</p>
+                  </div>
+                </div>
+
+                {/* Search */}
+                <input value={assetSearch} onChange={e => setAssetSearch(e.target.value)} placeholder="Search by code, name, or remark..."
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm mb-4 focus:outline-none focus:border-gray-400" />
+
+                {/* Table */}
+                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100">
+                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
+                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Item Name</th>
+                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
+                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Remark</th>
+                          {isAdmin && <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map(a => (
+                          <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="px-4 py-2.5 font-mono font-semibold text-gray-500">{a.code}</td>
+                            <td className="px-4 py-2.5 max-w-[300px]">{a.name}</td>
+                            <td className="px-4 py-2.5">
+                              {isAdmin ? (
+                                <button onClick={() => toggleStatus(a.id, a.status)}
+                                  className={`text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>
+                                  {a.status}
+                                </button>
+                              ) : (
+                                <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{a.status}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-400 text-xs max-w-[150px] truncate">{a.remark}</td>
+                            {isAdmin && (
+                              <td className="px-4 py-2.5 text-right">
+                                <button onClick={() => { setAssetModal(a.id); setAssetForm({ code: a.code, name: a.name, category: a.category, status: a.status, remark: a.remark || "" }); }}
+                                  className="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
+                                <button onClick={() => deleteAsset(a.id)} className="text-xs text-red-400 hover:text-red-600">Delete</button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filtered.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No items found</p>}
+                </div>
+
+                {/* Add/Edit Modal */}
+                {assetModal && (
+                  <div onClick={() => setAssetModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[440px] max-w-[92%] shadow-xl">
+                      <h3 className="text-base font-semibold mb-4">{assetModal === "add" ? "Add asset" : "Edit asset"}</h3>
+                      <div className="space-y-3">
+                        <input value={assetForm.code} onChange={e => setAssetForm({ ...assetForm, code: e.target.value })} placeholder="Code (e.g. VR67)"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <input value={assetForm.name} onChange={e => setAssetForm({ ...assetForm, name: e.target.value })} placeholder="Item name"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <select value={assetForm.status} onChange={e => setAssetForm({ ...assetForm, status: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                          <option>Available</option><option>In Use</option><option>Cannot Use</option>
+                        </select>
+                        <input value={assetForm.remark} onChange={e => setAssetForm({ ...assetForm, remark: e.target.value })} placeholder="Remark (optional)"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      </div>
+                      <div className="flex gap-2 mt-4">
+                        <button onClick={saveAsset} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">{assetModal === "add" ? "Add" : "Save"}</button>
+                        <button onClick={() => setAssetModal(null)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             );
           })()}
