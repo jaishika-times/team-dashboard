@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV } from "@/lib/parser";
+import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle } from "@/lib/parser";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
 function normMonth(m) {
@@ -119,6 +119,7 @@ export default function DashboardPage() {
     { id: "attendance", icon: "◷", label: "Attendance" },
     { id: "kpi", icon: "◆", label: "Weekly KPI" },
     { id: "assets", icon: "◫", label: "Assets" },
+    { id: "people", icon: "◐", label: "People" },
   ];
   const pendingCount = isAdmin ? 0 : 0; // calculated below
   if (isAdmin) navItems.push({ id: "admin", icon: "◎", label: "Admin" });
@@ -962,6 +963,9 @@ const COMP_LOGOS = {
             );
           })()}
 
+          {/* ===== PEOPLE ===== */}
+          {page === "people" && <PeoplePage isAdmin={isAdmin} userId={user.id} />}
+
           {/* ===== ADMIN ===== */}
           {page === "admin" && isAdmin && <AdminPanel user={user} onDataUpdated={loadData} />}
         </div>
@@ -1140,6 +1144,284 @@ function PendingBanner({ onGoToAdmin }) {
         <span className="text-xs text-amber-500 font-medium">Go to Admin &rarr;</span>
       </div>
     </div>
+  );
+}
+
+// ===== PEOPLE (ONBOARDING / OFFBOARDING) =====
+const PROBATION_LABELS = { m1: "Month 1", m2: "Month 2", m3: "Month 3", m4: "Month 4", m5: "Month 5", m6: "Month 6" };
+const PEOPLE_LINK_LABELS = { staffFolder: "Staff Folder", hrRecording: "HR Recording", tlRecording: "TL Recording", plan: "Plan", confirmationLetter: "Confirmation Letter" };
+
+function emptyPeopleForm() {
+  return {
+    type: "Onboarding", month: "", staff_name: "", join_date: "", key_date: "",
+    links: { staffFolder: "", hrRecording: "", tlRecording: "", plan: "", confirmationLetter: "" },
+    probation: { m1: "", m2: "", m3: "", m4: "", m5: "", m6: "" },
+  };
+}
+
+function PeopleLink({ label, item }) {
+  if (!item) return <div className="text-xs text-gray-300">{label}: <span className="text-gray-300">—</span></div>;
+  return item.url ? (
+    <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline block truncate">{label}: {item.text || "Open"}</a>
+  ) : (
+    <div className="text-xs text-gray-500 truncate">{label}: {item.text || "—"}</div>
+  );
+}
+
+function PeoplePage({ isAdmin, userId }) {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("all");
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(null);
+  const [modal, setModal] = useState(null); // null | "add" | record id
+  const [form, setForm] = useState(emptyPeopleForm());
+  const [uploadStatus, setUploadStatus] = useState(null);
+  const [pendingUpload, setPendingUpload] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    const { data } = await supabase.from("people_lifecycle").select("*").order("uploaded_at", { ascending: false });
+    if (data) setRecords(data);
+    setLoading(false);
+  }
+
+  function openAdd() { setForm(emptyPeopleForm()); setModal("add"); }
+  function openEdit(r) {
+    setForm({
+      type: r.type, month: r.month || "", staff_name: r.staff_name, join_date: r.join_date || "", key_date: r.key_date || "",
+      links: {
+        staffFolder: r.links?.staffFolder?.url || "", hrRecording: r.links?.hrRecording?.url || "",
+        tlRecording: r.links?.tlRecording?.url || "", plan: r.links?.plan?.url || "", confirmationLetter: r.links?.confirmationLetter?.url || "",
+      },
+      probation: {
+        m1: r.probation?.m1?.text || "", m2: r.probation?.m2?.text || "", m3: r.probation?.m3?.text || "",
+        m4: r.probation?.m4?.text || "", m5: r.probation?.m5?.text || "", m6: r.probation?.m6?.text || "",
+      },
+    });
+    setModal(r.id);
+  }
+
+  function buildPayload() {
+    const links = {};
+    Object.keys(PEOPLE_LINK_LABELS).forEach(k => { links[k] = form.links[k] ? { text: PEOPLE_LINK_LABELS[k], url: form.links[k] } : null; });
+    const probation = {};
+    Object.keys(PROBATION_LABELS).forEach(k => { probation[k] = form.probation[k] ? { text: form.probation[k], url: null } : null; });
+    return { type: form.type, month: form.month.trim(), staff_name: form.staff_name.trim(), join_date: form.join_date.trim() || null, key_date: form.key_date.trim() || null, links, probation, uploaded_by: userId };
+  }
+
+  async function save() {
+    const payload = buildPayload();
+    if (!payload.staff_name) return;
+    setBusy(true);
+    if (modal === "add") await supabase.from("people_lifecycle").upsert(payload, { onConflict: "staff_name" });
+    else await supabase.from("people_lifecycle").update(payload).eq("id", modal);
+    setBusy(false); setModal(null); load();
+  }
+
+  async function del(id) {
+    if (!confirm("Delete this person's record?")) return;
+    await supabase.from("people_lifecycle").delete().eq("id", id);
+    load();
+  }
+
+  function handleFile(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const result = parsePeopleLifecycle(evt.target.result, file.name);
+        setPendingUpload(result);
+        setUploadStatus({ ok: true, msg: `${result.count} staff records found in ${file.name}` });
+      } catch (err) { setUploadStatus({ ok: false, msg: err.message }); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function confirmUpload() {
+    if (!pendingUpload) return;
+    setBusy(true);
+    const rows = pendingUpload.records.map(r => ({
+      type: r.type, month: r.month, staff_name: r.staffName, join_date: r.joinDate, key_date: r.keyDate,
+      links: r.links, probation: r.probation, uploaded_by: userId,
+    }));
+    await supabase.from("people_lifecycle").upsert(rows, { onConflict: "staff_name" });
+    setPendingUpload(null); setUploadStatus(null); setBusy(false); load();
+  }
+
+  if (loading) return <p className="text-sm text-gray-400 text-center py-12">Loading...</p>;
+
+  const onboardingRecs = records.filter(r => r.type === "Onboarding");
+  const offboardingRecs = records.filter(r => r.type === "Offboarding");
+  const inProbation = onboardingRecs.filter(r => !r.links?.confirmationLetter).length;
+  const confirmed = onboardingRecs.filter(r => r.links?.confirmationLetter).length;
+
+  const filtered = records
+    .filter(r => tab === "all" || r.type === tab)
+    .filter(r => !search.trim() || r.staff_name.toLowerCase().includes(search.trim().toLowerCase()));
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold">People</h1>
+          <p className="text-sm text-gray-400">Onboarding &amp; offboarding lifecycle</p>
+        </div>
+        {isAdmin && (
+          <div className="flex gap-2">
+            <button onClick={openAdd} className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg">+ Add person</button>
+            <label className="cursor-pointer">
+              <div className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Upload file</div>
+              <input type="file" accept=".xlsx,.xls,.csv,.ods" onChange={handleFile} className="hidden" />
+            </label>
+          </div>
+        )}
+      </div>
+
+      {uploadStatus && (
+        <div className={`mb-4 p-3 rounded-xl text-xs flex items-center justify-between ${uploadStatus.ok ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-600"}`}>
+          <span>{uploadStatus.ok ? "✓ " + uploadStatus.msg : uploadStatus.msg}</span>
+          {uploadStatus.ok && pendingUpload && (
+            <div className="flex gap-2">
+              <button onClick={confirmUpload} disabled={busy} className="px-3 py-1 bg-gray-900 text-white rounded-lg disabled:opacity-50">{busy ? "Saving..." : "Confirm & save"}</button>
+              <button onClick={() => { setPendingUpload(null); setUploadStatus(null); }} className="px-3 py-1 text-gray-400">Cancel</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-3 mb-5">
+        <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
+          <p className="text-2xl font-bold">{records.length}</p>
+          <p className="text-[11px] text-gray-400">Total tracked</p>
+        </div>
+        <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 text-center">
+          <p className="text-2xl font-bold text-blue-600">{inProbation}</p>
+          <p className="text-[11px] text-gray-400">In probation</p>
+        </div>
+        <div className="bg-green-50 rounded-xl p-4 border border-green-100 text-center">
+          <p className="text-2xl font-bold text-green-600">{confirmed}</p>
+          <p className="text-[11px] text-gray-400">Confirmed</p>
+        </div>
+        <div className="bg-red-50 rounded-xl p-4 border border-red-100 text-center">
+          <p className="text-2xl font-bold text-red-500">{offboardingRecs.length}</p>
+          <p className="text-[11px] text-gray-400">Offboarded</p>
+        </div>
+      </div>
+
+      {/* Tabs + search */}
+      <div className="flex items-center gap-2 mb-4">
+        {[["all", "All"], ["Onboarding", "Onboarding"], ["Offboarding", "Offboarding"]].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium ${tab === id ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>{label}</button>
+        ))}
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name..."
+          className="ml-auto px-3 py-1.5 border border-gray-200 rounded-lg text-xs w-48 focus:outline-none focus:border-gray-400" />
+      </div>
+
+      {/* List */}
+      <div className="space-y-2">
+        {filtered.map(r => (
+          <div key={r.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            <div onClick={() => setExpanded(expanded === r.id ? null : r.id)} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-500 shrink-0">
+                {r.staff_name?.[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{r.staff_name}</p>
+                <p className="text-[11px] text-gray-400">{r.month || "—"}{r.join_date ? ` · Joined ${r.join_date}` : ""}</p>
+              </div>
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${r.type === "Onboarding" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{r.type}</span>
+              {r.type === "Onboarding" && (
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${r.links?.confirmationLetter ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600"}`}>
+                  {r.links?.confirmationLetter ? "Confirmed" : "Probation"}
+                </span>
+              )}
+              {isAdmin && (
+                <div className="flex gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => openEdit(r)} className="text-xs text-blue-500 hover:text-blue-700">Edit</button>
+                  <button onClick={() => del(r.id)} className="text-xs text-red-400 hover:text-red-600">Del</button>
+                </div>
+              )}
+              <span className="text-gray-300 text-xs shrink-0">{expanded === r.id ? "▲" : "▼"}</span>
+            </div>
+            {expanded === r.id && (
+              <div className="px-4 pb-4 pt-1 border-t border-gray-50 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">Timeline</p>
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-gray-600">Join date: <span className="text-gray-800">{r.join_date || "—"}</span></div>
+                    {Object.keys(PROBATION_LABELS).map(k => (
+                      r.probation?.[k] ? (
+                        <div key={k} className="text-xs text-gray-600">{PROBATION_LABELS[k]}: {r.probation[k].url
+                          ? <a href={r.probation[k].url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{r.probation[k].text}</a>
+                          : <span className="text-gray-800">{r.probation[k].text}</span>}</div>
+                      ) : null
+                    ))}
+                    <div className="text-xs text-gray-600">{r.type === "Onboarding" ? "Confirmation date" : "Last day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">Documents</p>
+                  <div className="space-y-1.5">
+                    {Object.keys(PEOPLE_LINK_LABELS).map(k => <PeopleLink key={k} label={PEOPLE_LINK_LABELS[k]} item={r.links?.[k]} />)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {filtered.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No records found</p>}
+      </div>
+
+      {/* Add/Edit Modal */}
+      {modal && (
+        <div onClick={() => setModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[560px] max-w-full max-h-[88vh] overflow-y-auto shadow-xl">
+            <h3 className="text-base font-semibold mb-4">{modal === "add" ? "Add person" : "Edit person"}</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input value={form.staff_name} onChange={e => setForm({ ...form, staff_name: e.target.value })} placeholder="Staff name"
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                  <option>Onboarding</option><option>Offboarding</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <input value={form.month} onChange={e => setForm({ ...form, month: e.target.value })} placeholder="Month (e.g. August)"
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                <input value={form.join_date} onChange={e => setForm({ ...form, join_date: e.target.value })} placeholder="Join date"
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                <input value={form.key_date} onChange={e => setForm({ ...form, key_date: e.target.value })} placeholder={form.type === "Onboarding" ? "Confirmation date" : "Last day"}
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+
+              <p className="text-[11px] font-semibold text-gray-400 uppercase pt-2">Document links (URLs)</p>
+              {Object.keys(PEOPLE_LINK_LABELS).map(k => (
+                <input key={k} value={form.links[k]} onChange={e => setForm({ ...form, links: { ...form.links, [k]: e.target.value } })} placeholder={PEOPLE_LINK_LABELS[k]}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              ))}
+
+              <p className="text-[11px] font-semibold text-gray-400 uppercase pt-2">Probation evaluations</p>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.keys(PROBATION_LABELS).map(k => (
+                  <input key={k} value={form.probation[k]} onChange={e => setForm({ ...form, probation: { ...form.probation, [k]: e.target.value } })} placeholder={PROBATION_LABELS[k]}
+                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={save} disabled={busy} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg disabled:opacity-50">{busy ? "Saving..." : modal === "add" ? "Add" : "Save"}</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
