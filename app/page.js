@@ -447,7 +447,7 @@ export default function DashboardPage() {
 
                     {/* Team cards */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                      {TEAMS.filter(t => teamsSet.has(t)).map(team => {
+                      {TEAMS.filter(t => allMems.some(m => m.team === t)).map(team => {
                         const members = allMems.filter(m => m.team === team);
                         const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
                         const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
