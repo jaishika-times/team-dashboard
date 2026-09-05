@@ -802,13 +802,17 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-400">Equipment inventory</p>
                   </div>
                   {isAdmin && (
-                    <button onClick={() => { setAssetModal("add"); setAssetForm({ code: "", name: "", category: "Video Properties", status: "Available", remark: "" }); }}
-                      className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg">+ Add item</button>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setAssetModal("add"); setAssetForm({ code: "", name: "", category: "Video Properties", status: "Available", remark: "", held_by: "", date_taken: "", date_returned: "", notes: "" }); }}
+                        className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg">+ Add item</button>
+                      <button onClick={() => setAssetModal("stockcheck")}
+                        className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Friday Stock Check</button>
+                    </div>
                   )}
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-3 gap-3 mb-5">
+                <div className="grid grid-cols-4 gap-3 mb-5">
                   <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
                     <p className="text-2xl font-bold">{assets.length}</p>
                     <p className="text-[11px] text-gray-400">Total items</p>
@@ -816,6 +820,10 @@ export default function DashboardPage() {
                   <div className="bg-green-50 rounded-xl p-4 border border-green-100 text-center">
                     <p className="text-2xl font-bold text-green-600">{available}</p>
                     <p className="text-[11px] text-gray-400">Available</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{assets.filter(a => a.status === "In Use").length}</p>
+                    <p className="text-[11px] text-gray-400">In use</p>
                   </div>
                   <div className="bg-red-50 rounded-xl p-4 border border-red-100 text-center">
                     <p className="text-2xl font-bold text-red-500">{cantUse}</p>
@@ -833,19 +841,22 @@ export default function DashboardPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
-                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Item Name</th>
-                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
-                          <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Remark</th>
-                          {isAdmin && <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Actions</th>}
+                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
+                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Item Name</th>
+                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
+                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Held By</th>
+                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Date Taken</th>
+                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Returned</th>
+                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Notes</th>
+                          {isAdmin && <th className="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase w-20"></th>}
                         </tr>
                       </thead>
                       <tbody>
                         {filtered.map(a => (
                           <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="px-4 py-2.5 font-mono font-semibold text-gray-500">{a.code}</td>
-                            <td className="px-4 py-2.5 max-w-[300px]">{a.name}</td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-3 py-2 font-mono font-semibold text-gray-500 text-xs">{a.code}</td>
+                            <td className="px-3 py-2 text-sm max-w-[200px]">{a.name}</td>
+                            <td className="px-3 py-2">
                               {isAdmin ? (
                                 <button onClick={() => toggleStatus(a.id, a.status)}
                                   className={`text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>
@@ -855,12 +866,15 @@ export default function DashboardPage() {
                                 <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{a.status}</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5 text-gray-400 text-xs max-w-[150px] truncate">{a.remark}</td>
+                            <td className="px-3 py-2 text-xs text-gray-600">{a.held_by || "-"}</td>
+                            <td className="px-3 py-2 text-xs text-gray-400">{a.date_taken || "-"}</td>
+                            <td className="px-3 py-2 text-xs text-gray-400">{a.date_returned || "-"}</td>
+                            <td className="px-3 py-2 text-xs text-gray-400 max-w-[120px] truncate">{a.notes || "-"}</td>
                             {isAdmin && (
-                              <td className="px-4 py-2.5 text-right">
-                                <button onClick={() => { setAssetModal(a.id); setAssetForm({ code: a.code, name: a.name, category: a.category, status: a.status, remark: a.remark || "" }); }}
+                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                                <button onClick={() => { setAssetModal(a.id); setAssetForm({ code: a.code, name: a.name, category: a.category, status: a.status, remark: a.remark || "", held_by: a.held_by || "", date_taken: a.date_taken || "", date_returned: a.date_returned || "", notes: a.notes || "" }); }}
                                   className="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
-                                <button onClick={() => deleteAsset(a.id)} className="text-xs text-red-400 hover:text-red-600">Delete</button>
+                                <button onClick={() => deleteAsset(a.id)} className="text-xs text-red-400 hover:text-red-600">Del</button>
                               </td>
                             )}
                           </tr>
@@ -877,20 +891,64 @@ export default function DashboardPage() {
                     <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[440px] max-w-[92%] shadow-xl">
                       <h3 className="text-base font-semibold mb-4">{assetModal === "add" ? "Add asset" : "Edit asset"}</h3>
                       <div className="space-y-3">
-                        <input value={assetForm.code} onChange={e => setAssetForm({ ...assetForm, code: e.target.value })} placeholder="Code (e.g. VR67)"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <div className="grid grid-cols-2 gap-3">
+                          <input value={assetForm.code} onChange={e => setAssetForm({ ...assetForm, code: e.target.value })} placeholder="Code (e.g. VR67)"
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                          <select value={assetForm.status} onChange={e => setAssetForm({ ...assetForm, status: e.target.value })}
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                            <option>Available</option><option>In Use</option><option>Cannot Use</option>
+                          </select>
+                        </div>
                         <input value={assetForm.name} onChange={e => setAssetForm({ ...assetForm, name: e.target.value })} placeholder="Item name"
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <select value={assetForm.status} onChange={e => setAssetForm({ ...assetForm, status: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                          <option>Available</option><option>In Use</option><option>Cannot Use</option>
-                        </select>
-                        <input value={assetForm.remark} onChange={e => setAssetForm({ ...assetForm, remark: e.target.value })} placeholder="Remark (optional)"
+                        <input value={assetForm.held_by} onChange={e => setAssetForm({ ...assetForm, held_by: e.target.value })} placeholder="Person holding stock"
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <div className="grid grid-cols-2 gap-3">
+                          <input value={assetForm.date_taken} onChange={e => setAssetForm({ ...assetForm, date_taken: e.target.value })} placeholder="Date taken"
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                          <input value={assetForm.date_returned} onChange={e => setAssetForm({ ...assetForm, date_returned: e.target.value })} placeholder="Date returned"
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <input value={assetForm.remark} onChange={e => setAssetForm({ ...assetForm, remark: e.target.value })} placeholder="Remark"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <textarea value={assetForm.notes} onChange={e => setAssetForm({ ...assetForm, notes: e.target.value })} placeholder="Notes (stock check observations, condition, etc.)" rows={2}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-y" />
                       </div>
                       <div className="flex gap-2 mt-4">
                         <button onClick={saveAsset} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">{assetModal === "add" ? "Add" : "Save"}</button>
                         <button onClick={() => setAssetModal(null)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stock Check Modal */}
+                {assetModal === "stockcheck" && (
+                  <div onClick={() => setAssetModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[700px] max-w-[95%] max-h-[85vh] overflow-y-auto shadow-xl">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-base font-semibold">Friday Stock Check</h3>
+                          <p className="text-xs text-gray-400">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+                        </div>
+                        <button onClick={() => setAssetModal(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+                      </div>
+                      <p className="text-xs text-gray-400 mb-3">Update each item: who has it, status, and any notes. Changes save immediately.</p>
+                      <div className="space-y-2">
+                        {assets.filter(a => a.status !== "Cannot Use").map(a => (
+                          <div key={a.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
+                            <span className="font-mono text-xs text-gray-500 w-12 shrink-0">{a.code}</span>
+                            <span className="flex-1 min-w-0 truncate text-xs">{a.name}</span>
+                            <input defaultValue={a.held_by || ""} placeholder="Who has it?" onBlur={e => { if (e.target.value !== (a.held_by || "")) supabase.from("assets").update({ held_by: e.target.value }).eq("id", a.id).then(() => loadData()); }}
+                              className="w-28 px-2 py-1 border border-gray-200 rounded text-xs" />
+                            <select defaultValue={a.status} onChange={e => supabase.from("assets").update({ status: e.target.value }).eq("id", a.id).then(() => loadData())}
+                              className={`w-20 px-1 py-1 border-0 rounded text-[11px] font-medium ${a.status === "Available" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>
+                              <option>Available</option><option>In Use</option>
+                            </select>
+                            <input defaultValue={a.notes || ""} placeholder="Notes" onBlur={e => { if (e.target.value !== (a.notes || "")) supabase.from("assets").update({ notes: e.target.value }).eq("id", a.id).then(() => loadData()); }}
+                              className="w-32 px-2 py-1 border border-gray-200 rounded text-xs" />
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
