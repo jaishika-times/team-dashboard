@@ -55,11 +55,8 @@ export default function DashboardPage() {
       const liveData = await liveRes.json();
       if (liveData.dates?.length) { setProdData(liveData); setDate(liveData.dates[0]); }
     } catch (e) {
-      // Fall back to uploaded data
-      const { data: prodRows } = await supabase.from("productivity_records").select("*").order("uploaded_at", { ascending: false }).limit(1);
-      if (prodRows?.length) { const r = prodRows[0]; setProdData({ data: r.data, dates: r.dates, members: r.members }); setDate(r.dates?.[0] || ""); }
+      console.log("Sheet fetch failed, no fallback");
     }
-    const _skip = null;
     const { data: empRows } = await supabase.from("employees").select("*").order("name");
     if (empRows) setEmployees(empRows);
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
@@ -443,7 +440,6 @@ export default function DashboardPage() {
                           {prodData.dates.map(d => { const dt = new Date(d + "T00:00:00"); return <option key={d} value={d}>{dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</option>; })}
                         </select>
                       </div>
-                      {isAdmin && <SmallUpload type="prod" onRecorded={loadData} userId={user.id} />}
                     </div>
 
                     {/* Team cards */}
@@ -529,7 +525,7 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </>
-                ) : isAdmin ? <InlineUpload type="prod" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📊" text="No data yet" />}
+                ) : <EmptyState icon="📊" text="No form submissions yet. Data syncs live from Google Sheet." />}
               </>
             );
           })()}
@@ -856,17 +852,6 @@ function AdminPanel({ user, onDataUpdated }) {
 
       {/* Uploads */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-        <div>
-          <label className="block cursor-pointer">
-            <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${prodStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
-              <div className={`text-xl mb-1 ${prodStatus?.ok ? "text-green-500" : "text-gray-300"}`}>{prodStatus?.ok ? "✓" : "📊"}</div>
-              <div className={`text-sm font-medium ${prodStatus?.ok ? "text-green-600" : "text-gray-500"}`}>{prodStatus?.msg || "Upload productivity file"}</div>
-              <div className="text-xs text-gray-400 mt-1">Excel, CSV, PDF, ODS</div>
-            </div>
-            <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleProdFile} className="hidden" />
-          </label>
-          {pendingProd && <button onClick={recordProd} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">Record</button>}
-        </div>
         <div>
           <label className="block cursor-pointer">
             <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${attStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
