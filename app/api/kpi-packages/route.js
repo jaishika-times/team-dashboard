@@ -11,15 +11,36 @@ export const revalidate = 0;
 // dashboard falls back to a plain Drive folder link for those.
 const TEAM_CONFIG = {
   Edunexa: {
+    type: "folder_scan",
     rootFolderId: "1-w4pfSZVErco_3xbI21eL5utU94GaLOw",
     // one known subfolder that also holds people directly (Knowledge Engineers)
     subfolderIds: ["1XqxjEJdAb6m-blLGslBHakCNcIrmaaIY"],
   },
   "Video Team": {
+    type: "folder_scan",
     rootFolderId: "1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ",
     subfolderIds: [],
   },
+  // Account Managers has an actual maintained master summary sheet — Staff x Month, one
+  // row per person — instead of relying on each person's own scattered, differently-shaped
+  // KPI file. Far more reliable than folder-scanning their nested per-person subfolders.
+  "Account Managers": {
+    type: "summary_sheet",
+    spreadsheetId: "1p5l3mlM7ajzn0BXajSctdpodGLopK_4b4SMHZ1srgRo",
+    tabName: "2026",
+    folderUrl: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_",
+  },
 };
+
+const MONTH_ABBR_MAP = {
+  jan: "January", feb: "February", mar: "March", apr: "April", may: "May", jun: "June",
+  june: "June", jul: "July", july: "July", aug: "August", sep: "September", sept: "September",
+  oct: "October", nov: "November", dec: "December",
+};
+function normalizeMonthHeader(h) {
+  const key = (h || "").trim().toLowerCase().replace(/\.$/, "");
+  return MONTH_ABBR_MAP[key] || null;
+}
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -120,6 +141,52 @@ async function getPersonScore(sheets, fileId, fileName) {
   };
 }
 
+// The master summary sheet has one row per person and one column per month, already
+// aggregated — no digging through individual files needed. Some cells hold a real numeric
+// score; others hold a status note instead (resigned, on leave, not updated yet) — those
+// are surfaced as a note rather than forced into a fake score.
+async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId,
+    ranges: [tabName],
+    fields: "sheets.data.rowData.values(formattedValue)",
+  });
+  const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
+  const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
+  if (!rows.length) return [];
+
+  const header = rows[0];
+  const monthCols = [];
+  header.forEach((h, idx) => {
+    const month = normalizeMonthHeader(h);
+    if (month && !monthCols.some(m => m.month === month)) monthCols.push({ month, col: idx });
+  });
+
+  const people = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const name = (row[0] || "").trim();
+    if (!name) continue;
+    const months = monthCols.map(({ month, col }) => {
+      const raw = (row[col] || "").trim();
+      if (!raw) return { month, score: null, flagged: false };
+      const isPureNumber = /^-?[\d.]+%?$/.test(raw);
+      if (isPureNumber) {
+        const numeric = parseFloat(raw.replace(/[^0-9.-]/g, ""));
+        return { month, score: raw, flagged: !isNaN(numeric) && (numeric > 150 || numeric < 0) };
+      }
+      // Not a plain number — a status note (resigned, on leave, not updated yet, etc).
+      return { month, score: null, note: raw, flagged: false };
+    });
+    people.push({
+      name,
+      months,
+      sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    });
+  }
+  return people;
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const team = searchParams.get("team");
@@ -130,9 +197,15 @@ export async function GET(request) {
 
   try {
     const auth = getAuth();
-    const drive = google.drive({ version: "v3", auth });
     const sheets = google.sheets({ version: "v4", auth });
 
+    if (config.type === "summary_sheet") {
+      const people = await getSummarySheetPeople(sheets, config.spreadsheetId, config.tabName);
+      return NextResponse.json({ status: "ok", team, people }, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    // folder_scan (default): each person has their own file, possibly nested in a subfolder.
+    const drive = google.drive({ version: "v3", auth });
     const folderIds = [config.rootFolderId, ...(config.subfolderIds || [])];
     const files = [];
     const debugPerFolder = [];

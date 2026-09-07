@@ -1616,22 +1616,36 @@ function ResourceLibrary() {
 // point straight at Drive (not copies), whatever gets added each month just shows up —
 // nothing here needs to be re-synced or re-uploaded.
 const KPI_PACKAGE_FOLDERS = [
-  { name: "Acc Mnmgt Team", url: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_" },
-  { name: "Content Curation Team", url: "https://drive.google.com/drive/folders/1EUFh1vrkQaaPxeCmO3et51PJInAI16We" },
-  { name: "Design Team", url: "https://drive.google.com/drive/folders/1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO" },
-  { name: "Operations", url: "https://drive.google.com/drive/folders/1x-paz_jOw2J0uh_3SRnoWHMTEaODN2tv" },
-  { name: "Sales Team", url: "https://drive.google.com/drive/folders/1Qsqf1BhS9tO8pf-nxPfkygmiHVVnqC-T" },
-  { name: "Social Team", url: "https://drive.google.com/drive/folders/1zb8vnZ7ikSIS88bGMK3pBuJ_u0Yej8mi" },
-  { name: "Tech Team", url: "https://drive.google.com/drive/folders/1bOQ8vVrbNWG-YpNXcbvpnzxh2KsLwFQp" },
-  { name: "Video Team", url: "https://drive.google.com/drive/folders/1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ", live: true },
-  { name: "Edunexa", url: "https://drive.google.com/drive/folders/1-w4pfSZVErco_3xbI21eL5utU94GaLOw", live: true },
+  { name: "Account Managers", url: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_", live: true, emoji: "\ud83d\udcbc", gradient: "from-fuchsia-500 to-pink-600" },
+  { name: "Content Curation Team", url: "https://drive.google.com/drive/folders/1EUFh1vrkQaaPxeCmO3et51PJInAI16We", emoji: "\ud83d\udcdd", gradient: "from-emerald-500 to-teal-600" },
+  { name: "Design Team", url: "https://drive.google.com/drive/folders/1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO", emoji: "\ud83c\udfa8", gradient: "from-indigo-500 to-purple-600" },
+  { name: "Operations", url: "https://drive.google.com/drive/folders/1x-paz_jOw2J0uh_3SRnoWHMTEaODN2tv", emoji: "\u2699\ufe0f", gradient: "from-slate-500 to-slate-700" },
+  { name: "Sales Team", url: "https://drive.google.com/drive/folders/1Qsqf1BhS9tO8pf-nxPfkygmiHVVnqC-T", emoji: "\ud83d\udcc8", gradient: "from-violet-500 to-purple-600" },
+  { name: "Social Team", url: "https://drive.google.com/drive/folders/1zb8vnZ7ikSIS88bGMK3pBuJ_u0Yej8mi", emoji: "\ud83d\udcf1", gradient: "from-amber-400 to-orange-500" },
+  { name: "Tech Team", url: "https://drive.google.com/drive/folders/1bOQ8vVrbNWG-YpNXcbvpnzxh2KsLwFQp", emoji: "\ud83d\udcbb", gradient: "from-cyan-500 to-blue-600" },
+  { name: "Video Team", url: "https://drive.google.com/drive/folders/1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ", live: true, emoji: "\ud83c\udfa5", gradient: "from-blue-500 to-cyan-500" },
+  { name: "Edunexa", url: "https://drive.google.com/drive/folders/1-w4pfSZVErco_3xbI21eL5utU94GaLOw", live: true, emoji: "\ud83e\udd16", gradient: "from-rose-500 to-red-600" },
 ];
 
-// A team whose live scores are built (currently just Edunexa) — click it and see each
-// person's name + current KPI score, pulled straight from their real scoring sheet.
 const MONTH_ORDER = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-function TeamPeopleCards({ team, folderUrl }) {
+// Score -> a tier color, so a strong month reads as a strong month at a glance.
+function scoreTier(scoreStr) {
+  const n = parseFloat(String(scoreStr).replace(/[^0-9.-]/g, ""));
+  if (isNaN(n)) return { bg: "bg-gray-100", text: "text-gray-600", ring: "ring-gray-200" };
+  if (n >= 90) return { bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" };
+  if (n >= 70) return { bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" };
+  if (n >= 50) return { bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-200" };
+  return { bg: "bg-red-50", text: "text-red-700", ring: "ring-red-200" };
+}
+
+function initials(name) {
+  return (name || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join("");
+}
+
+// A team whose live scores are built — click it and see each person's name + current KPI
+// score, pulled straight from their real scoring sheet (or a maintained summary sheet).
+function TeamPeopleCards({ team, folderUrl, gradient }) {
   const [people, setPeople] = useState(null); // null = loading
   const [error, setError] = useState(null);
   const [debug, setDebug] = useState(null);
@@ -1663,8 +1677,13 @@ function TeamPeopleCards({ team, folderUrl }) {
     .sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b)) : [];
 
   return (
-    <div className="mt-3 pl-2 border-l-2 border-gray-100">
-      {people === null && !error && <p className="text-xs text-gray-300 py-3">Loading live scores…</p>}
+    <div className="mt-4">
+      {people === null && !error && (
+        <div className="flex items-center gap-2 py-4 text-xs text-gray-400">
+          <span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>
+          Loading live scores…
+        </div>
+      )}
       {error && <p className="text-xs text-red-400 py-3">Couldn't load live scores: {error}</p>}
       {people && people.length === 0 && (
         <div className="py-3">
@@ -1684,33 +1703,37 @@ function TeamPeopleCards({ team, folderUrl }) {
         <>
           {allMonths.length > 0 && (
             <select value={selectedMonth || ""} onChange={e => setSelectedMonth(e.target.value)}
-              className="text-xs px-2 py-1 border border-gray-200 rounded-lg mb-2 bg-white">
+              className="text-xs font-medium px-3 py-1.5 border border-gray-200 rounded-full mb-3 bg-white shadow-sm">
               {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {people.map((p, i) => {
               const entry = p.months.find(m => m.month === selectedMonth);
+              const tier = entry?.score ? scoreTier(entry.score) : null;
               return (
                 <a key={i} href={p.sheetUrl} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center justify-between px-3 py-2.5 bg-white rounded-lg border border-gray-100 hover:border-gray-200 text-sm">
-                  <div>
-                    <p className="font-medium text-gray-800">{p.name}</p>
-                    <p className="text-[11px] text-gray-400">{selectedMonth || "—"}</p>
+                  className={`flex items-center gap-3 px-3 py-2.5 bg-white rounded-xl border ${tier ? `ring-1 ${tier.ring} border-transparent` : "border-gray-100"} hover:shadow-md transition-shadow text-sm`}>
+                  <div className={`w-9 h-9 shrink-0 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-xs font-bold`}>
+                    {initials(p.name)}
                   </div>
-                  {!entry ? (
-                    <span className="text-[11px] text-gray-300">No data</span>
-                  ) : entry.score ? (
-                    entry.flagged ? (
-                      <span className="text-right" title="This value looks unusual — likely a formula issue in the source sheet, worth checking">
-                        <span className="text-sm font-semibold text-gray-900">{entry.score}</span>
-                        <span className="block text-[10px] text-red-400">⚠ check sheet</span>
-                      </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-800 truncate">{p.name}</p>
+                    {entry?.note ? (
+                      <p className="text-[11px] text-gray-400 truncate" title={entry.note}>{entry.note}</p>
                     ) : (
-                      <span className="text-sm font-semibold text-gray-900">{entry.score}</span>
-                    )
+                      <p className="text-[11px] text-gray-400">{selectedMonth || "—"}</p>
+                    )}
+                  </div>
+                  {!entry || (!entry.score && !entry.note) ? (
+                    <span className="text-[11px] text-gray-300 shrink-0">No data</span>
+                  ) : entry.score ? (
+                    <span className={`shrink-0 text-sm font-bold px-2.5 py-1 rounded-lg ${tier.bg} ${tier.text}`}>
+                      {entry.score}
+                      {entry.flagged && <span className="block text-[9px] font-normal text-red-500 -mt-0.5">⚠ check sheet</span>}
+                    </span>
                   ) : (
-                    <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">Pending</span>
+                    <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg shrink-0">Pending</span>
                   )}
                 </a>
               );
@@ -1718,7 +1741,7 @@ function TeamPeopleCards({ team, folderUrl }) {
           </div>
         </>
       )}
-      <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-[11px] text-gray-400 hover:text-gray-600 mt-1 mb-2">Open team folder in Drive →</a>
+      <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-[11px] text-gray-400 hover:text-gray-600 mt-3">Open team folder in Drive →</a>
     </div>
   );
 }
@@ -1734,29 +1757,38 @@ function TeamKpiPackages() {
       <h1 className="text-xl font-semibold mb-1">KPI Packages</h1>
       <p className="text-sm text-gray-400 mb-5">Team-by-team, live from each person's real KPI scoring sheet.</p>
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teams..."
-        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm mb-4 focus:outline-none focus:border-gray-400" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm mb-5 focus:outline-none focus:border-gray-400" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filtered.map((f, i) => {
           const isOpen = openTeam === f.name;
           return (
-            <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
-              <button onClick={() => setOpenTeam(isOpen ? null : f.name)} className="w-full flex items-center justify-between text-left">
-                <span className="text-sm font-semibold">{f.name}</span>
+            <div key={i} className={`bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-lg transition-shadow ${isOpen ? "md:col-span-2" : ""}`}>
+              <button onClick={() => setOpenTeam(isOpen ? null : f.name)}
+                className={`w-full flex items-center justify-between text-left px-5 py-4 bg-gradient-to-r ${f.gradient} text-white`}>
+                <span className="flex items-center gap-2.5">
+                  <span className="text-xl">{f.emoji}</span>
+                  <span className="text-base font-bold">{f.name}</span>
+                </span>
                 {f.live ? (
-                  <span className="text-[10px] font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded">Live {isOpen ? "▲" : "▼"}</span>
+                  <span className="text-[10px] font-semibold text-white bg-white/25 px-2.5 py-1 rounded-full flex items-center gap-1">● Live <span className="text-xs">{isOpen ? "▲" : "▼"}</span></span>
                 ) : (
-                  <span className="text-[10px] text-gray-300">{isOpen ? "▲" : "▼"}</span>
+                  <span className="text-white/70 text-sm">{isOpen ? "▲" : "▼"}</span>
                 )}
               </button>
-              {isOpen && (f.live
-                ? <TeamPeopleCards team={f.name} folderUrl={f.url} />
-                : <div className="mt-3 pl-2 border-l-2 border-gray-100 py-2">
-                    <p className="text-xs text-gray-400 mb-2">Live scores for this team aren't built yet — for now, browse the sheets directly.</p>
-                    <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700">Open team folder in Drive →</a>
-                  </div>
+              {isOpen && (
+                <div className="px-5 pb-5">
+                  {f.live
+                    ? <TeamPeopleCards team={f.name} folderUrl={f.url} gradient={f.gradient} />
+                    : <div className="mt-4">
+                        <p className="text-xs text-gray-400 mb-2">Live scores for this team aren't built yet — for now, browse the sheets directly.</p>
+                        <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700">Open team folder in Drive →</a>
+                      </div>
+                  }
+                </div>
               )}
             </div>
           );
+        })}          );
         })}
         {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-6 col-span-2">No teams match your search</p>}
       </div>
