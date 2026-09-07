@@ -213,6 +213,9 @@ async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
       // Not a plain number — a status note (resigned, on leave, not updated yet, etc).
       return { month, score: null, note: raw, flagged: false };
     });
+    // Someone who's resigned shouldn't still show up as an active team member on a
+    // current-KPI view — skip them rather than hardcoding a name that'll go stale.
+    if (months.some(m => (m.note || "").toLowerCase().includes("resign"))) continue;
     people.push({
       name,
       months,
