@@ -58,6 +58,9 @@ export default function DashboardPage() {
   const [assetForm, setAssetForm] = useState({ code: "", name: "", category: "Video Properties", status: "Available", remark: "" });
   const [assetLogs, setAssetLogs] = useState([]);
   const [selectedAssetLog, setSelectedAssetLog] = useState(null);
+  const [checkoutHistoryFor, setCheckoutHistoryFor] = useState(null); // asset object currently viewing history for
+  const [checkoutEntries, setCheckoutEntries] = useState([]);
+  const [checkoutForm, setCheckoutForm] = useState({ held_by: "", date_taken: "", date_returned: "", notes: "" });
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
@@ -938,6 +941,37 @@ const COMP_LOGOS = {
               loadData();
             }
 
+            async function openCheckoutHistory(asset) {
+              setCheckoutHistoryFor(asset);
+              setCheckoutForm({ held_by: "", date_taken: "", date_returned: "", notes: "" });
+              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", asset.id).order("date_taken", { ascending: false });
+              if (data) setCheckoutEntries(data);
+            }
+
+            async function addCheckoutEntry() {
+              if (!checkoutHistoryFor || !checkoutForm.held_by.trim()) return;
+              const payload = { asset_id: checkoutHistoryFor.id, ...checkoutForm, created_by: user.id };
+              await supabase.from("asset_checkouts").insert(payload);
+              // Keep the asset's current-status fields in sync with the latest checkout logged,
+              // while every individual checkout (even same-day, same item) is preserved in the log.
+              await supabase.from("assets").update({
+                held_by: checkoutForm.held_by, date_taken: checkoutForm.date_taken,
+                date_returned: checkoutForm.date_returned, notes: checkoutForm.notes,
+                status: checkoutForm.date_returned ? "Available" : "In Use",
+              }).eq("id", checkoutHistoryFor.id);
+              setCheckoutForm({ held_by: "", date_taken: "", date_returned: "", notes: "" });
+              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
+              if (data) setCheckoutEntries(data);
+              loadData();
+            }
+
+            async function deleteCheckoutEntry(id) {
+              if (!confirm("Delete this checkout entry?")) return;
+              await supabase.from("asset_checkouts").delete().eq("id", id);
+              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
+              if (data) setCheckoutEntries(data);
+            }
+
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
@@ -1018,8 +1052,7 @@ const COMP_LOGOS = {
                             <td className="px-3 py-2 text-xs text-gray-400 max-w-[120px] truncate">{a.notes || "-"}</td>
                             {isAdmin && (
                               <td className="px-3 py-2 text-right whitespace-nowrap">
-                                <button onClick={() => { setAssetModal(a.id); setAssetForm({ code: a.code, name: a.name, category: a.category, status: a.status, remark: a.remark || "", held_by: a.held_by || "", date_taken: a.date_taken || "", date_returned: a.date_returned || "", notes: a.notes || "" }); }}
-                                  className="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
+                                <button onClick={() => openCheckoutHistory(a)} className="text-xs text-blue-500 hover:text-blue-700 mr-2">History</button>
                                 <button onClick={() => deleteAsset(a.id)} className="text-xs text-red-400 hover:text-red-600">Del</button>
                               </td>
                             )}
@@ -1050,10 +1083,16 @@ const COMP_LOGOS = {
                         <input value={assetForm.held_by} onChange={e => setAssetForm({ ...assetForm, held_by: e.target.value })} placeholder="Person holding stock"
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         <div className="grid grid-cols-2 gap-3">
-                          <input value={assetForm.date_taken} onChange={e => setAssetForm({ ...assetForm, date_taken: e.target.value })} placeholder="Date taken"
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                          <input value={assetForm.date_returned} onChange={e => setAssetForm({ ...assetForm, date_returned: e.target.value })} placeholder="Date returned"
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] text-gray-400">Date taken</span>
+                            <input type="date" value={assetForm.date_taken} onChange={e => setAssetForm({ ...assetForm, date_taken: e.target.value })}
+                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] text-gray-400">Date returned</span>
+                            <input type="date" value={assetForm.date_returned} onChange={e => setAssetForm({ ...assetForm, date_returned: e.target.value })}
+                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                          </label>
                         </div>
                         <input value={assetForm.remark} onChange={e => setAssetForm({ ...assetForm, remark: e.target.value })} placeholder="Remark"
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
@@ -1094,10 +1133,10 @@ const COMP_LOGOS = {
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <input defaultValue={a.held_by || ""} placeholder="Who has it?" onBlur={e => { if (e.target.value !== (a.held_by || "")) supabase.from("assets").update({ held_by: e.target.value }).eq("id", a.id).then(() => loadData()); }}
                                 className="w-28 px-2 py-1 border border-gray-200 rounded text-xs" />
-                              <input defaultValue={a.date_taken || ""} placeholder="Date taken" onBlur={e => { if (e.target.value !== (a.date_taken || "")) supabase.from("assets").update({ date_taken: e.target.value }).eq("id", a.id).then(() => loadData()); }}
-                                className="w-24 px-2 py-1 border border-gray-200 rounded text-xs" />
-                              <input defaultValue={a.date_returned || ""} placeholder="Date returned" onBlur={e => { if (e.target.value !== (a.date_returned || "")) supabase.from("assets").update({ date_returned: e.target.value }).eq("id", a.id).then(() => loadData()); }}
-                                className="w-24 px-2 py-1 border border-gray-200 rounded text-xs" />
+                              <input type="date" defaultValue={a.date_taken || ""} onChange={e => supabase.from("assets").update({ date_taken: e.target.value }).eq("id", a.id).then(() => loadData())}
+                                className="w-32 px-2 py-1 border border-gray-200 rounded text-xs" />
+                              <input type="date" defaultValue={a.date_returned || ""} onChange={e => supabase.from("assets").update({ date_returned: e.target.value }).eq("id", a.id).then(() => loadData())}
+                                className="w-32 px-2 py-1 border border-gray-200 rounded text-xs" />
                               <input defaultValue={a.notes || ""} placeholder="Notes" onBlur={e => { if (e.target.value !== (a.notes || "")) supabase.from("assets").update({ notes: e.target.value }).eq("id", a.id).then(() => loadData()); }}
                                 className="flex-1 min-w-[100px] px-2 py-1 border border-gray-200 rounded text-xs" />
                             </div>
@@ -1173,6 +1212,53 @@ const COMP_LOGOS = {
                             ))}
                           </tbody>
                         </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Checkout History (supports multiple people/dates for the same item, even same day) */}
+                {checkoutHistoryFor && (
+                  <div onClick={() => setCheckoutHistoryFor(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[560px] max-w-[95%] max-h-[85vh] overflow-y-auto shadow-xl">
+                      <div className="flex justify-between items-center mb-1">
+                        <h3 className="text-base font-semibold">{checkoutHistoryFor.name}</h3>
+                        <button onClick={() => setCheckoutHistoryFor(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+                      </div>
+                      <p className="text-xs text-gray-400 mb-4 font-mono">{checkoutHistoryFor.code}</p>
+
+                      <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">Log a checkout</p>
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <input value={checkoutForm.held_by} onChange={e => setCheckoutForm({ ...checkoutForm, held_by: e.target.value })} placeholder="Who's taking it?"
+                          className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[11px] text-gray-400">Date taken</span>
+                          <input type="date" value={checkoutForm.date_taken} onChange={e => setCheckoutForm({ ...checkoutForm, date_taken: e.target.value })}
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[11px] text-gray-400">Date returned</span>
+                          <input type="date" value={checkoutForm.date_returned} onChange={e => setCheckoutForm({ ...checkoutForm, date_returned: e.target.value })}
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </label>
+                      </div>
+                      <input value={checkoutForm.notes} onChange={e => setCheckoutForm({ ...checkoutForm, notes: e.target.value })} placeholder="Notes"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-2" />
+                      <button onClick={addCheckoutEntry} className="w-full py-2 bg-gray-900 text-white text-sm font-medium rounded-lg mb-5">+ Add checkout entry</button>
+
+                      <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">History</p>
+                      <div className="space-y-1.5">
+                        {checkoutEntries.map(c => (
+                          <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-xs">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-700">{c.held_by}</p>
+                              <p className="text-gray-400">{c.date_taken || "?"} → {c.date_returned || "not yet returned"}</p>
+                              {c.notes && <p className="text-gray-400 truncate">{c.notes}</p>}
+                            </div>
+                            <button onClick={() => deleteCheckoutEntry(c.id)} className="text-red-300 hover:text-red-600 shrink-0">✕</button>
+                          </div>
+                        ))}
+                        {checkoutEntries.length === 0 && <p className="text-sm text-gray-300 text-center py-4">No checkouts logged yet</p>}
                       </div>
                     </div>
                   </div>
