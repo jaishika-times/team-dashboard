@@ -67,6 +67,13 @@ export default function DashboardPage() {
 
   useEffect(() => { init(); }, []);
 
+  // Re-fetch the live sheets every 60s so edits made in Google Sheets show up here
+  // automatically, without needing to reload the page.
+  useEffect(() => {
+    const id = setInterval(() => { if (user) loadData(); }, 60000);
+    return () => clearInterval(id);
+  }, [user]);
+
   async function init() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.push("/login"); return; }
@@ -734,29 +741,43 @@ const COMP_LOGOS = {
                                   </div>
                                 )}
                                 <div className="space-y-2 text-sm">
+                                  {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
                                   {e.tasks && e.tasks.length > 0 ? (
-                                    <div className="overflow-x-auto -mx-1 mb-1">
-                                      <table className="w-full text-xs">
+                                    <div className="overflow-x-auto -mx-1 mt-1">
+                                      <table className="w-full text-xs border-collapse">
                                         <thead>
                                           <tr className="text-left text-gray-400 border-b border-gray-100">
-                                            <th className="py-1.5 px-1 text-[10px] uppercase tracking-wide">Task</th>
-                                            <th className="py-1.5 px-1 text-[10px] uppercase tracking-wide">Completed</th>
-                                            <th className="py-1.5 px-1 text-[10px] uppercase tracking-wide">Weightage</th>
-                                            <th className="py-1.5 px-1 text-right text-[10px] uppercase tracking-wide">Score</th>
+                                            <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Task</th>
+                                            <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Completed</th>
+                                            <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Weightage</th>
+                                            <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Score</th>
+                                            <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Links</th>
+                                            <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Notes</th>
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          {e.tasks.map((t, ti) => (
-                                            <tr key={ti} className="border-b border-gray-50 last:border-0">
-                                              <td className="py-1.5 px-1 text-gray-700">
-                                                {t.task}
-                                                {t.platform && <span className="text-gray-400"> ({t.platform})</span>}
-                                              </td>
-                                              <td className="py-1.5 px-1 text-gray-600">{t.completed || "—"}</td>
-                                              <td className="py-1.5 px-1 text-gray-400">{t.weightage || "—"}</td>
-                                              <td className="py-1.5 px-1 text-right font-medium text-gray-700">{t.weightageScore || "—"}</td>
-                                            </tr>
-                                          ))}
+                                          {e.tasks.map((t, ti) => {
+                                            const rowLinks = ti === 0 ? extractUrls(e.links) : [];
+                                            return (
+                                              <tr key={ti} className="border-b border-gray-50 align-top last:border-0">
+                                                <td className="py-1.5 px-1.5 text-gray-700 min-w-[110px]">
+                                                  {t.task}
+                                                  {t.platform && <div className="text-gray-400">{t.platform}</div>}
+                                                </td>
+                                                <td className="py-1.5 px-1.5 text-gray-600">{t.completed || "—"}</td>
+                                                <td className="py-1.5 px-1.5 text-gray-400">{t.weightage || "—"}</td>
+                                                <td className="py-1.5 px-1.5 font-medium text-gray-700">{t.weightageScore || "—"}</td>
+                                                <td className="py-1.5 px-1.5 min-w-[90px]">
+                                                  {rowLinks.length > 0 ? (
+                                                    <div className="flex flex-col gap-0.5">
+                                                      {rowLinks.map((u, ui) => <a key={ui} href={u} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">📄 Link {rowLinks.length > 1 ? ui + 1 : ""}</a>)}
+                                                    </div>
+                                                  ) : "—"}
+                                                </td>
+                                                <td className="py-1.5 px-1.5 text-gray-500 min-w-[160px]">{ti === 0 ? (e.notes || "—") : "—"}</td>
+                                              </tr>
+                                            );
+                                          })}
                                         </tbody>
                                       </table>
                                     </div>
@@ -770,24 +791,23 @@ const COMP_LOGOS = {
                                           <span className="font-medium">{e.weightage || "—"}{e.weightageScore ? ` (score: ${e.weightageScore})` : ""}</span>
                                         </div>
                                       )}
+                                      {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="text-xs text-gray-500 text-right max-w-[60%]">{e.notes}</span></div>}
+                                      {e.links && (
+                                        <div className="pt-1">
+                                          <span className="text-gray-400 text-sm">Documents</span>
+                                          <div className="mt-1 space-y-1">
+                                            {e.links.split("\n").filter(l => l.trim()).map((link, li) => {
+                                              const isUrl = link.trim().startsWith("http");
+                                              return isUrl ? (
+                                                <a key={li} href={link.trim()} target="_blank" rel="noopener" className="block text-xs text-blue-500 hover:underline truncate">📄 {link.trim()}</a>
+                                              ) : (
+                                                <p key={li} className="text-xs text-gray-500">{link.trim()}</p>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
                                     </>
-                                  )}
-                                  {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
-                                  {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="text-xs text-gray-500 text-right max-w-[60%]">{e.notes}</span></div>}
-                                  {e.links && (
-                                    <div className="pt-1">
-                                      <span className="text-gray-400 text-sm">Documents</span>
-                                      <div className="mt-1 space-y-1">
-                                        {e.links.split("\n").filter(l => l.trim()).map((link, li) => {
-                                          const isUrl = link.trim().startsWith("http");
-                                          return isUrl ? (
-                                            <a key={li} href={link.trim()} target="_blank" rel="noopener" className="block text-xs text-blue-500 hover:underline truncate">📄 {link.trim()}</a>
-                                          ) : (
-                                            <p key={li} className="text-xs text-gray-500">{link.trim()}</p>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
                                   )}
                                 </div>
                               </div>
