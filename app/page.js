@@ -658,6 +658,7 @@ const COMP_LOGOS = {
                         const avgRound = Math.round(avgPct * 100);
                         const color = avgRound >= 90 ? "#16a34a" : avgRound < 70 ? "#dc2626" : "#d97706";
                         const isSelected = selectedTeam === team;
+                        const docsCount = members.filter(m => extractUrls(m.links).length > 0).length;
                         return (
                           <div key={team} onClick={() => setSelectedTeam(isSelected ? null : team)}
                             className={`rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-sm ${isSelected ? "border-gray-300 shadow-sm ring-2 ring-gray-200" : "border-gray-100"}`} style={{ background: "#fff" }}>
@@ -667,7 +668,7 @@ const COMP_LOGOS = {
                                 <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-lg`}>{TEAM_ICONS[team] || "📋"}</div>
                                 <div>
                                   <p className="text-sm font-bold">{team}</p>
-                                  <p className="text-[11px] text-gray-400">{members.length} members</p>
+                                  <p className="text-[11px] text-gray-400">{members.length} members{docsCount > 0 ? ` · 📄 ${docsCount} with docs` : ""}</p>
                                 </div>
                               </div>
                               <div className="flex items-center justify-between pt-2 border-t border-gray-50">
