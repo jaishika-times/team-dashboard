@@ -989,11 +989,17 @@ const COMP_LOGOS = {
               if (data) setAssets(data);
             }
 
-            async function toggleStatus(id, current) {
-              const next = current === "Available" ? "Cannot Use" : current === "Cannot Use" ? "In Use" : "Available";
-              await supabase.from("assets").update({ status: next }).eq("id", id);
-              const { data } = await supabase.from("assets").select("*").order("code");
-              if (data) setAssets(data);
+            // Setting status directly (not cycling/guessing). Choosing "Available" also closes
+            // out any checkout that's still open for this item — same effect as Mark Returned —
+            // so the item can't stay stuck showing "In Use" with no way back.
+            async function setAssetStatus(id, next) {
+              const updates = { status: next };
+              if (next === "Available") updates.date_returned = new Date().toISOString().split("T")[0];
+              await supabase.from("assets").update(updates).eq("id", id);
+              if (next === "Available") {
+                await supabase.from("asset_checkouts").update({ date_returned: updates.date_returned }).eq("asset_id", id).is("date_returned", null);
+              }
+              loadData();
             }
 
             async function saveWeeklyLog() {
@@ -1040,9 +1046,15 @@ const COMP_LOGOS = {
               loadData();
             }
 
-            async function deleteCheckoutEntry(id) {
+            async function deleteCheckoutEntry(id, assetId) {
               if (!confirm("Delete this checkout entry?")) return;
               await supabase.from("asset_checkouts").delete().eq("id", id);
+              // If that was the item's only open (not-yet-returned) checkout, nothing marks it
+              // In Use anymore — put it back to Available automatically instead of leaving it stuck.
+              if (assetId) {
+                const { data: stillOpen } = await supabase.from("asset_checkouts").select("id").eq("asset_id", assetId).is("date_returned", null).limit(1);
+                if (!stillOpen?.length) await supabase.from("assets").update({ status: "Available" }).eq("id", assetId);
+              }
               if (checkoutHistoryFor) {
                 const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
                 if (data) setCheckoutEntries(data);
@@ -1149,10 +1161,12 @@ const COMP_LOGOS = {
                             <td className="px-3 py-2 text-sm max-w-[200px]">{a.name}</td>
                             <td className="px-3 py-2">
                               {isAdmin ? (
-                                <button onClick={() => toggleStatus(a.id, a.status)}
-                                  className={`text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>
-                                  {a.status}
-                                </button>
+                                <select value={a.status} onChange={e => setAssetStatus(a.id, e.target.value)}
+                                  className={`text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer border-0 ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>
+                                  <option value="Available">Available</option>
+                                  <option value="In Use">In Use</option>
+                                  <option value="Cannot Use">Cannot Use</option>
+                                </select>
                               ) : (
                                 <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{a.status}</span>
                               )}
@@ -1222,7 +1236,7 @@ const COMP_LOGOS = {
                                     {!c.date_returned && (
                                       <button onClick={() => markCheckoutReturned(c)} className="text-xs text-green-600 hover:text-green-800 font-medium mr-2">Mark Returned</button>
                                     )}
-                                    <button onClick={() => deleteCheckoutEntry(c.id)} className="text-xs text-red-300 hover:text-red-600">✕</button>
+                                    <button onClick={() => deleteCheckoutEntry(c.id, c.asset_id)} className="text-xs text-red-300 hover:text-red-600">✕</button>
                                   </td>
                                 )}
                               </tr>
@@ -1297,7 +1311,7 @@ const COMP_LOGOS = {
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-xs text-gray-500 w-12 shrink-0">{a.code}</span>
                               <span className="flex-1 min-w-0 truncate text-xs font-medium">{a.name}</span>
-                              <select defaultValue={a.status} onChange={e => supabase.from("assets").update({ status: e.target.value }).eq("id", a.id).then(() => loadData())}
+                              <select defaultValue={a.status} onChange={e => setAssetStatus(a.id, e.target.value)}
                                 className={`w-24 px-1 py-1 border-0 rounded text-[11px] font-medium ${a.status === "Available" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>
                                 <option>Available</option><option>In Use</option>
                               </select>
@@ -1430,7 +1444,7 @@ const COMP_LOGOS = {
                             {!c.date_returned && (
                               <button onClick={() => markCheckoutReturned(c)} className="text-green-600 hover:text-green-800 shrink-0 font-medium">Mark Returned</button>
                             )}
-                            <button onClick={() => deleteCheckoutEntry(c.id)} className="text-red-300 hover:text-red-600 shrink-0">✕</button>
+                            <button onClick={() => deleteCheckoutEntry(c.id, c.asset_id)} className="text-red-300 hover:text-red-600 shrink-0">✕</button>
                           </div>
                         ))}
                         {checkoutEntries.length === 0 && <p className="text-sm text-gray-300 text-center py-4">No checkouts logged yet</p>}
