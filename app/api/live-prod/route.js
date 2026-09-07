@@ -13,6 +13,10 @@ const teamMap = {
   luc:"Sales",dinesh:"Finance"
 };
 
+// Pulls Task Name / Description / Hours out of a free-typed line, regardless of what order
+// the person entered them in or which separator they used — this is the "auto sort" fix so
+// glitchy manual entries (hours first, semicolons instead of commas, "2 hrs" instead of "2")
+// still land in the right fields instead of getting mangled.
 function parseTasks(raw) {
   if (!raw || raw === "NaN") return { tasks: [], hours: 0, leave: null };
   const s = String(raw).trim();
@@ -26,17 +30,24 @@ function parseTasks(raw) {
     if (LEAVE_RE.test(line.replace(/\(.*?\)/g, "").trim())) continue;
     line = line.replace(/^\d+[\.\)]\s*/, "").replace(/^[\-\u2022\uFEFF]\s*/, "");
     if (!line || line.length < 3) continue;
-    const parts = line.split(/[,\t]+/).map(p => p.trim()).filter(p => p);
-    let hrs = 0, project = "", desc = "";
-    if (parts.length >= 3) {
-      const n = parseFloat(parts[parts.length - 1]);
-      if (!isNaN(n) && n > 0 && n < 24) { hrs = n; project = parts[0]; desc = parts.slice(1, -1).join(", "); }
-      else { project = parts[0]; desc = parts.slice(1).join(", "); }
-    } else if (parts.length === 2) {
-      const n = parseFloat(parts[1]);
-      if (!isNaN(n) && n > 0 && n < 24) { hrs = n; project = parts[0]; }
-      else { project = parts[0]; desc = parts[1]; }
-    } else { project = parts[0] || line; }
+
+    // Accept comma, tab, semicolon or pipe as a field separator — whichever the person used.
+    const parts = line.split(/[,\t;|]+/).map(p => p.trim()).filter(p => p);
+
+    // Find the hours value wherever it sits (start, middle, or end), accepting "2", "2h",
+    // "2hr", "2hrs", "2 hours".
+    let hrs = 0, hrsIdx = -1;
+    for (let idx = 0; idx < parts.length; idx++) {
+      const m = parts[idx].match(/^(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)?$/i);
+      if (m) { const n = parseFloat(m[1]); if (n > 0 && n <= 24) { hrs = n; hrsIdx = idx; break; } }
+    }
+    const rest = hrsIdx === -1 ? parts : parts.filter((_, i) => i !== hrsIdx);
+
+    let project = "", desc = "";
+    if (rest.length >= 2) { project = rest[0]; desc = rest.slice(1).join(", "); }
+    else if (rest.length === 1) { project = rest[0]; }
+    else { project = line; }
+
     tasks.push({ project: project.substring(0, 80), desc: desc.substring(0, 200), hrs });
     total += hrs;
   }
@@ -107,16 +118,24 @@ export async function GET() {
       if (!dateStr) continue;
       if (!data[dateStr]) data[dateStr] = {};
 
-      const processCol = (col, info) => {
+      // Combine a person's primary column with any overflow "Name's Tasks 2" columns
+      // that belong to THIS SAME row/submission before deciding what to do with it.
+      const rowResults = {};
+      const combineIntoRow = (col, info) => {
         const raw = row[col]; if (!raw) return;
         const p = parseTasks(raw); if (p.tasks.length === 0 && !p.leave) return;
-        const ex = data[dateStr][info.name];
-        if (ex) { if (p.leave && !ex.leave) ex.leave = p.leave; ex.tasks = ex.tasks.concat(p.tasks); ex.hours += p.hours; }
-        else data[dateStr][info.name] = { tasks: p.tasks, hours: p.hours, leave: p.leave, team: info.team };
+        const ex = rowResults[info.name];
+        if (ex) { if (p.leave && !ex.leave) ex.leave = p.leave; ex.tasks = ex.tasks.concat(p.tasks); ex.hours = Math.round((ex.hours + p.hours) * 100) / 100; }
+        else rowResults[info.name] = { tasks: p.tasks, hours: p.hours, leave: p.leave, team: info.team };
       };
+      Object.keys(colMap).forEach(cs => combineIntoRow(parseInt(cs), colMap[parseInt(cs)]));
+      Object.keys(dupCols).forEach(ds => { const pc = dupCols[parseInt(ds)]; if (colMap[pc]) combineIntoRow(parseInt(ds), colMap[pc]); });
 
-      Object.keys(colMap).forEach(cs => processCol(parseInt(cs), colMap[parseInt(cs)]));
-      Object.keys(dupCols).forEach(ds => { const pc = dupCols[parseInt(ds)]; if (colMap[pc]) processCol(parseInt(ds), colMap[pc]); });
+      // A later row for the same date + person is treated as a corrected resubmission —
+      // it REPLACES the earlier entry rather than being added on top of it. Previously this
+      // summed hours across resubmissions, which was doubling/tripling totals whenever
+      // someone edited or resubmitted the form for a day already logged.
+      Object.keys(rowResults).forEach(name => { data[dateStr][name] = rowResults[name]; });
     }
 
     const dates = Object.keys(data).sort().reverse();
