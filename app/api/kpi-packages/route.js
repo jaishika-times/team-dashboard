@@ -15,6 +15,10 @@ const TEAM_CONFIG = {
     // one known subfolder that also holds people directly (Knowledge Engineers)
     subfolderIds: ["1XqxjEJdAb6m-blLGslBHakCNcIrmaaIY"],
   },
+  "Video Team": {
+    rootFolderId: "1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ",
+    subfolderIds: [],
+  },
 };
 
 function getAuth() {
@@ -103,7 +107,15 @@ async function getPersonScore(sheets, fileId, fileName) {
 
   return {
     name: nameFromTitle(fileName),
-    months: months.map(m => ({ month: m, score: scoreByMonth[m] || null })), // null score = genuinely not scored yet
+    months: months.map(m => {
+      const score = scoreByMonth[m] || null;
+      // A KPI score reasonably sits in the 0-100ish range (a bit over 100 for "exceeds
+      // target" categories is normal). Anything wildly outside that is almost certainly a
+      // broken formula in the source sheet, not a real score — flag it instead of hiding it.
+      const numeric = score ? parseFloat(score.replace(/[^0-9.-]/g, "")) : null;
+      const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0);
+      return { month: m, score, flagged };
+    }), // null score = genuinely not scored yet
     sheetUrl: `https://docs.google.com/spreadsheets/d/${fileId}/edit`,
   };
 }

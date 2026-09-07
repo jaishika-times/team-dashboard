@@ -1623,7 +1623,7 @@ const KPI_PACKAGE_FOLDERS = [
   { name: "Sales Team", url: "https://drive.google.com/drive/folders/1Qsqf1BhS9tO8pf-nxPfkygmiHVVnqC-T" },
   { name: "Social Team", url: "https://drive.google.com/drive/folders/1zb8vnZ7ikSIS88bGMK3pBuJ_u0Yej8mi" },
   { name: "Tech Team", url: "https://drive.google.com/drive/folders/1bOQ8vVrbNWG-YpNXcbvpnzxh2KsLwFQp" },
-  { name: "Video Team", url: "https://drive.google.com/drive/folders/1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ" },
+  { name: "Video Team", url: "https://drive.google.com/drive/folders/1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ", live: true },
   { name: "Edunexa", url: "https://drive.google.com/drive/folders/1-w4pfSZVErco_3xbI21eL5utU94GaLOw", live: true },
 ];
 
@@ -1701,7 +1701,14 @@ function TeamPeopleCards({ team, folderUrl }) {
                   {!entry ? (
                     <span className="text-[11px] text-gray-300">No data</span>
                   ) : entry.score ? (
-                    <span className="text-sm font-semibold text-gray-900">{entry.score}</span>
+                    entry.flagged ? (
+                      <span className="text-right" title="This value looks unusual — likely a formula issue in the source sheet, worth checking">
+                        <span className="text-sm font-semibold text-gray-900">{entry.score}</span>
+                        <span className="block text-[10px] text-red-400">⚠ check sheet</span>
+                      </span>
+                    ) : (
+                      <span className="text-sm font-semibold text-gray-900">{entry.score}</span>
+                    )
                   ) : (
                     <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">Pending</span>
                   )}
