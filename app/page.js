@@ -56,6 +56,8 @@ export default function DashboardPage() {
   const [assetSearch, setAssetSearch] = useState("");
   const [assetModal, setAssetModal] = useState(null);
   const [assetForm, setAssetForm] = useState({ code: "", name: "", category: "Video Properties", status: "Available", remark: "" });
+  const [assetLogs, setAssetLogs] = useState([]);
+  const [selectedAssetLog, setSelectedAssetLog] = useState(null);
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
@@ -95,6 +97,8 @@ export default function DashboardPage() {
     const { data: empRows } = await supabase.from("employees").select("*").order("name");
     const { data: assetRows } = await supabase.from("assets").select("*").order("code");
     if (assetRows) setAssets(assetRows);
+    const { data: assetLogRows } = await supabase.from("asset_weekly_logs").select("id, week_ending, recorded_at").order("week_ending", { ascending: false });
+    if (assetLogRows) setAssetLogs(assetLogRows);
     if (empRows) setEmployees(empRows);
 
     // Weekly KPI: merge the live-synced sheets with anything manually uploaded/pasted.
@@ -914,6 +918,26 @@ const COMP_LOGOS = {
               if (data) setAssets(data);
             }
 
+            async function saveWeeklyLog() {
+              const today = new Date().toISOString().split("T")[0];
+              if (!confirm(`Save today's (${today}) asset status as this week's record?`)) return;
+              const snapshot = assets.map(a => ({ code: a.code, name: a.name, status: a.status, held_by: a.held_by || "", notes: a.notes || "" }));
+              await supabase.from("asset_weekly_logs").upsert({ week_ending: today, data: snapshot, recorded_by: user.id }, { onConflict: "week_ending" });
+              loadData();
+            }
+
+            async function openAssetLog(id) {
+              const { data } = await supabase.from("asset_weekly_logs").select("*").eq("id", id).single();
+              if (data) setSelectedAssetLog(data);
+            }
+
+            async function deleteAssetLog(id) {
+              if (!confirm("Delete this weekly record?")) return;
+              await supabase.from("asset_weekly_logs").delete().eq("id", id);
+              setSelectedAssetLog(null);
+              loadData();
+            }
+
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
@@ -927,6 +951,8 @@ const COMP_LOGOS = {
                         className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg">+ Add item</button>
                       <button onClick={() => setAssetModal("stockcheck")}
                         className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Friday Stock Check</button>
+                      <button onClick={() => setAssetModal("records")}
+                        className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Weekly Records</button>
                     </div>
                   )}
                 </div>
@@ -1069,6 +1095,72 @@ const COMP_LOGOS = {
                               className="w-32 px-2 py-1 border border-gray-200 rounded text-xs" />
                           </div>
                         ))}
+                      </div>
+                      <div className="flex justify-end mt-4 pt-3 border-t border-gray-100">
+                        <button onClick={saveWeeklyLog} className="px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg">📌 Save this week's record</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Weekly Records list */}
+                {assetModal === "records" && (
+                  <div onClick={() => setAssetModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[440px] max-w-[92%] max-h-[80vh] overflow-y-auto shadow-xl">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-base font-semibold">Weekly Records</h3>
+                        <button onClick={() => setAssetModal(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+                      </div>
+                      <p className="text-xs text-gray-400 mb-3">A dated snapshot of every item's status, saved each time "Save this week's record" is used.</p>
+                      <div className="space-y-1.5">
+                        {assetLogs.map(l => (
+                          <div key={l.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
+                            <button onClick={() => { openAssetLog(l.id); setAssetModal(null); }} className="text-left flex-1 hover:underline">
+                              {new Date(l.week_ending + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                            </button>
+                            <button onClick={() => deleteAssetLog(l.id)} className="text-xs text-red-400 hover:text-red-600 ml-2">Delete</button>
+                          </div>
+                        ))}
+                        {assetLogs.length === 0 && <p className="text-sm text-gray-300 text-center py-6">No weekly records saved yet</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Weekly Record detail (read-only snapshot) */}
+                {selectedAssetLog && (
+                  <div onClick={() => setSelectedAssetLog(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[700px] max-w-[95%] max-h-[85vh] overflow-y-auto shadow-xl">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-base font-semibold">Weekly Record</h3>
+                          <p className="text-xs text-gray-400">{new Date(selectedAssetLog.week_ending + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+                        </div>
+                        <button onClick={() => setSelectedAssetLog(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-100">
+                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
+                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Item Name</th>
+                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
+                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Held By</th>
+                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(selectedAssetLog.data || []).map((a, i) => (
+                              <tr key={i} className="border-b border-gray-50">
+                                <td className="px-3 py-2 font-mono text-xs text-gray-500">{a.code}</td>
+                                <td className="px-3 py-2 text-sm">{a.name}</td>
+                                <td className="px-3 py-2"><span className={`text-[11px] font-medium px-2 py-0.5 rounded ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{a.status}</span></td>
+                                <td className="px-3 py-2 text-xs text-gray-600">{a.held_by || "-"}</td>
+                                <td className="px-3 py-2 text-xs text-gray-400">{a.notes || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
