@@ -178,6 +178,7 @@ export default function DashboardPage() {
     { id: "kpi", icon: "◆", label: "Weekly KPI" },
     { id: "assets", icon: "◫", label: "Assets" },
     { id: "people", icon: "◐", label: "People" },
+    { id: "kpipkg", icon: "🗂", label: "KPI Packages" },
   ];
   const pendingCount = isAdmin ? 0 : 0; // calculated below
   if (isAdmin) navItems.push({ id: "admin", icon: "◎", label: "Admin" });
@@ -1390,6 +1391,9 @@ const COMP_LOGOS = {
           {/* ===== PEOPLE ===== */}
           {page === "people" && <PeoplePage isAdmin={isAdmin} userId={user.id} />}
 
+          {/* ===== KPI PACKAGES ===== */}
+          {page === "kpipkg" && <TeamKpiPackages />}
+
           {/* ===== ADMIN ===== */}
           {page === "admin" && isAdmin && <AdminPanel user={user} onDataUpdated={loadData} />}
         </div>
@@ -1512,15 +1516,15 @@ function TeamKpiPackages() {
   const filtered = q ? KPI_PACKAGE_FOLDERS.filter(f => f.name.toLowerCase().includes(q)) : KPI_PACKAGE_FOLDERS;
 
   return (
-    <div className="mt-6">
-      <h3 className="text-sm font-semibold mb-3">Team KPI Packages</h3>
-      <p className="text-xs text-gray-400 mb-3">Each team's individual member KPI scoring sheets, targets, and monthly source docs — live from Drive.</p>
+    <>
+      <h1 className="text-xl font-semibold mb-1">KPI Packages</h1>
+      <p className="text-sm text-gray-400 mb-5">Each team's individual member KPI scoring sheets, targets, and monthly source docs — live from Drive.</p>
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teams..."
-        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3" />
-      <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50">
+        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm mb-4 focus:outline-none focus:border-gray-400" />
+      <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
         {filtered.map((f, i) => (
           <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-gray-50">
+            className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-gray-50">
             <span className="shrink-0">📁</span>
             <span className="flex-1 min-w-0 truncate text-gray-700">{f.name}</span>
             <span className="text-gray-300 text-xs shrink-0">Open in Drive →</span>
@@ -1528,9 +1532,10 @@ function TeamKpiPackages() {
         ))}
         {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-6">No teams match your search</p>}
       </div>
-    </div>
+    </>
   );
 }
+
 // ===== ADMIN PANEL =====
 function AdminPanel({ user, onDataUpdated }) {
   const [users, setUsers] = useState([]);
@@ -1614,7 +1619,6 @@ function AdminPanel({ user, onDataUpdated }) {
       </div>
 
       <ResourceLibrary />
-      <TeamKpiPackages />
 
       <DataManager onDataUpdated={onDataUpdated} userId={user.id} />
     </>
