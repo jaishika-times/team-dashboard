@@ -1634,19 +1634,22 @@ const MONTH_ORDER = ["January", "February", "March", "April", "May", "June", "Ju
 function TeamPeopleCards({ team, folderUrl }) {
   const [people, setPeople] = useState(null); // null = loading
   const [error, setError] = useState(null);
+  const [debug, setDebug] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setPeople(null);
     setError(null);
+    setDebug(null);
     setSelectedMonth(null);
-    fetch(`/api/kpi-packages?team=${encodeURIComponent(team)}`)
+    fetch(`/api/kpi-packages?team=${encodeURIComponent(team)}`, { cache: "no-store" })
       .then(r => r.json())
       .then(data => {
         if (cancelled) return;
         if (data.status === "ok") {
           setPeople(data.people);
+          if (data.debug) setDebug(data.debug);
           const allMonths = Array.from(new Set(data.people.flatMap(p => p.months.map(m => m.month))))
             .sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
           setSelectedMonth(allMonths[allMonths.length - 1] || null);
@@ -1663,7 +1666,20 @@ function TeamPeopleCards({ team, folderUrl }) {
     <div className="mt-3 pl-2 border-l-2 border-gray-100">
       {people === null && !error && <p className="text-xs text-gray-300 py-3">Loading live scores…</p>}
       {error && <p className="text-xs text-red-400 py-3">Couldn't load live scores: {error}</p>}
-      {people && people.length === 0 && <p className="text-xs text-gray-300 py-3">No individual sheets found for this team.</p>}
+      {people && people.length === 0 && (
+        <div className="py-3">
+          <p className="text-xs text-gray-300 mb-2">No individual sheets found for this team.</p>
+          {debug && (
+            <div className="bg-gray-50 rounded-lg p-2 space-y-1">
+              {debug.map((d, i) => (
+                <p key={i} className="text-[10px] text-gray-400 font-mono break-all">
+                  {d.folderId}: {d.error ? `error — ${d.error}` : `${d.filesFound} file(s) found${d.names.length ? " (" + d.names.join(", ") + ")" : ""}`}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {people && people.length > 0 && (
         <>
           {allMonths.length > 0 && (

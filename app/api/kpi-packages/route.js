@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // Each team's KPI files live in a genuinely different arrangement — some flat, some nested,
 // some one tab per month, some one tab labeled with whatever the current month is. This route
 // is built team-by-team (not one generic parser) so each team's real layout gets verified
@@ -120,8 +123,13 @@ export async function GET(request) {
 
     const folderIds = [config.rootFolderId, ...(config.subfolderIds || [])];
     const files = [];
+    const debugPerFolder = [];
     for (const id of folderIds) {
-      const found = await listSpreadsheetsIn(drive, id);
+      let found = [];
+      let folderError = null;
+      try { found = await listSpreadsheetsIn(drive, id); }
+      catch (e) { folderError = e.message; }
+      debugPerFolder.push({ folderId: id, filesFound: found.length, names: found.map(f => f.name), error: folderError });
       files.push(...found);
     }
 
@@ -131,11 +139,16 @@ export async function GET(request) {
         const p = await getPersonScore(sheets, f.id, f.name);
         if (p) people.push(p);
       } catch (e) {
-        people.push({ name: nameFromTitle(f.name), month: null, score: null, sheetUrl: `https://docs.google.com/spreadsheets/d/${f.id}/edit`, error: e.message });
+        people.push({ name: nameFromTitle(f.name), months: [], sheetUrl: `https://docs.google.com/spreadsheets/d/${f.id}/edit`, error: e.message });
       }
     }
 
-    return NextResponse.json({ status: "ok", team, people });
+    // If nothing was found, include what each folder query actually returned — this is the
+    // fastest way to tell "wrong folder shared" apart from "sharing hasn't propagated yet"
+    // apart from "genuinely empty" without more back-and-forth guessing.
+    const payload = { status: "ok", team, people };
+    if (people.length === 0) payload.debug = debugPerFolder;
+    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ status: "error", error: e.message }, { status: 500 });
   }
