@@ -1488,6 +1488,49 @@ function ResourceLibrary() {
     </div>
   );
 }
+
+// Links to each team's live KPI package folder in Drive — every member's individual KPI
+// scoring sheets, targets, revenue data, and monthly source docs live inside. Since these
+// point straight at Drive (not copies), whatever gets added each month just shows up —
+// nothing here needs to be re-synced or re-uploaded.
+const KPI_PACKAGE_FOLDERS = [
+  { name: "All Teams — Target & KPI 2026", url: "https://drive.google.com/drive/folders/1MvWKmuOJUVgsk7vFs3K-hjHltgxof3WX" },
+  { name: "Acc Mnmgt Team", url: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_" },
+  { name: "Content Curation Team", url: "https://drive.google.com/drive/folders/1EUFh1vrkQaaPxeCmO3et51PJInAI16We" },
+  { name: "Design Team", url: "https://drive.google.com/drive/folders/1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO" },
+  { name: "Operations", url: "https://drive.google.com/drive/folders/1x-paz_jOw2J0uh_3SRnoWHMTEaODN2tv" },
+  { name: "Sales Team", url: "https://drive.google.com/drive/folders/1Qsqf1BhS9tO8pf-nxPfkygmiHVVnqC-T" },
+  { name: "Social Team", url: "https://drive.google.com/drive/folders/1zb8vnZ7ikSIS88bGMK3pBuJ_u0Yej8mi" },
+  { name: "Tech Team", url: "https://drive.google.com/drive/folders/1bOQ8vVrbNWG-YpNXcbvpnzxh2KsLwFQp" },
+  { name: "Video Team", url: "https://drive.google.com/drive/folders/1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ" },
+  { name: "Edunexa", url: "https://drive.google.com/drive/folders/1-w4pfSZVErco_3xbI21eL5utU94GaLOw" },
+];
+
+function TeamKpiPackages() {
+  const [search, setSearch] = useState("");
+  const q = search.trim().toLowerCase();
+  const filtered = q ? KPI_PACKAGE_FOLDERS.filter(f => f.name.toLowerCase().includes(q)) : KPI_PACKAGE_FOLDERS;
+
+  return (
+    <div className="mt-6">
+      <h3 className="text-sm font-semibold mb-3">Team KPI Packages</h3>
+      <p className="text-xs text-gray-400 mb-3">Each team's individual member KPI scoring sheets, targets, and monthly source docs — live from Drive.</p>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teams..."
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3" />
+      <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50">
+        {filtered.map((f, i) => (
+          <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-gray-50">
+            <span className="shrink-0">📁</span>
+            <span className="flex-1 min-w-0 truncate text-gray-700">{f.name}</span>
+            <span className="text-gray-300 text-xs shrink-0">Open in Drive →</span>
+          </a>
+        ))}
+        {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-6">No teams match your search</p>}
+      </div>
+    </div>
+  );
+}
 // ===== ADMIN PANEL =====
 function AdminPanel({ user, onDataUpdated }) {
   const [users, setUsers] = useState([]);
@@ -1571,6 +1614,7 @@ function AdminPanel({ user, onDataUpdated }) {
       </div>
 
       <ResourceLibrary />
+      <TeamKpiPackages />
 
       <DataManager onDataUpdated={onDataUpdated} userId={user.id} />
     </>
