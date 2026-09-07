@@ -14,6 +14,26 @@ const TEAM_COLORS = {Design:"#6366f1",Video:"#3b82f6",Content:"#10b981",Social:"
 const TEAM_ICONS = {Design:"🎨",Video:"🎬",Content:"✍️",Social:"📱",CSE:"🛠️",Sales:"💼",Knowledge:"📚",Finance:"💰"};
 const TEAM_GRADIENTS = {Design:"from-indigo-500 to-purple-600",Video:"from-blue-500 to-cyan-500",Content:"from-emerald-500 to-teal-500",Social:"from-amber-400 to-orange-500",CSE:"from-red-500 to-rose-500",Sales:"from-violet-500 to-purple-500",Knowledge:"from-cyan-500 to-blue-500",Finance:"from-pink-500 to-rose-500"};
 
+// Pulls just the URLs out of a KPI entry's raw "links" text (which may mix URLs with plain notes).
+function extractUrls(text) {
+  if (!text) return [];
+  return String(text).split("\n").map(l => l.trim()).filter(l => l.startsWith("http"));
+}
+
+// Compact clickable document icons for a table cell — used in the Weekly KPI progress report.
+function KpiDocs({ links }) {
+  const urls = extractUrls(links);
+  if (!urls.length) return <span className="text-gray-300">—</span>;
+  return (
+    <div className="flex items-center gap-1.5">
+      {urls.slice(0, 3).map((u, i) => (
+        <a key={i} href={u} target="_blank" rel="noopener noreferrer" title={u} className="text-blue-500 hover:text-blue-700">📄</a>
+      ))}
+      {urls.length > 3 && <span className="text-[10px] text-gray-400">+{urls.length - 3}</span>}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -697,12 +717,12 @@ const COMP_LOGOS = {
                                   {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
                                   {e.links && (
                                     <div className="pt-1">
-                                      <span className="text-gray-400 text-sm">Links</span>
+                                      <span className="text-gray-400 text-sm">Documents</span>
                                       <div className="mt-1 space-y-1">
                                         {e.links.split("\n").filter(l => l.trim()).map((link, li) => {
                                           const isUrl = link.trim().startsWith("http");
                                           return isUrl ? (
-                                            <a key={li} href={link.trim()} target="_blank" rel="noopener" className="block text-xs text-blue-500 hover:underline truncate">{link.trim()}</a>
+                                            <a key={li} href={link.trim()} target="_blank" rel="noopener" className="block text-xs text-blue-500 hover:underline truncate">📄 {link.trim()}</a>
                                           ) : (
                                             <p key={li} className="text-xs text-gray-500">{link.trim()}</p>
                                           );
@@ -732,6 +752,7 @@ const COMP_LOGOS = {
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Total Target / Task</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Completed</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Documents</th>
                                 <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Progress</th>
                               </tr>
                             </thead>
@@ -746,6 +767,7 @@ const COMP_LOGOS = {
                                       <td className="px-4 py-2.5 font-medium">{e.employee}</td>
                                       <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.target}</td>
                                       <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.completed}</td>
+                                      <td className="px-4 py-2.5"><KpiDocs links={e.links} /></td>
                                       <td className={`px-4 py-2.5 text-right font-bold ${pctColor}`}>{pct !== null ? pct + "%" : "..."}</td>
                                     </tr>
                                   );
@@ -1012,10 +1034,8 @@ const tdCR = tdC + " text-right";
 // ===== ADMIN PANEL =====
 function AdminPanel({ user, onDataUpdated }) {
   const [users, setUsers] = useState([]);
-  const [prodStatus, setProdStatus] = useState(null);
   const [attStatus, setAttStatus] = useState(null);
   const [recording, setRecording] = useState(false);
-  const [pendingProd, setPendingProd] = useState(null);
   const [pendingAtt, setPendingAtt] = useState(null);
 
   useEffect(() => { loadUsers(); }, []);
@@ -1035,15 +1055,6 @@ function AdminPanel({ user, onDataUpdated }) {
     loadUsers();
   }
 
-  function handleProdFile(e) {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try { const result = await parseProductivity(evt.target.result, file.name); setPendingProd(result); setProdStatus({ ok: true, msg: `${result.dates.length} days from ${file.name}` }); }
-      catch (err) { setProdStatus({ ok: false, msg: err.message }); }
-    }; reader.readAsArrayBuffer(file);
-  }
-
   function handleAttFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
@@ -1053,20 +1064,11 @@ function AdminPanel({ user, onDataUpdated }) {
     }; reader.readAsArrayBuffer(file);
   }
 
-  async function recordProd() {
-    if (!pendingProd) return; setRecording(true);
-    await supabase.from("productivity_records").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await supabase.from("productivity_records").insert({ data: pendingProd.data, dates: pendingProd.dates, members: pendingProd.members, uploaded_by: user.id });
-    setPendingProd(null); setProdStatus({ ok: true, msg: "Recorded" }); setRecording(false); onDataUpdated();
-  }
-
   async function recordAtt() {
     if (!pendingAtt) return; setRecording(true);
     await supabase.from("attendance_records").upsert({ month_key: pendingAtt.monthKey, month_label: pendingAtt.monthLabel, data: pendingAtt.data, uploaded_by: user.id }, { onConflict: "month_key" });
-    setPendingAtt(null); setAttStatus({ ok: true, msg: "Recorded" }); setRecording(false); onDataUpdated();
+    setPendingAtt(null); setAttStatus(null); setRecording(false); onDataUpdated();
   }
-
-
 
   return (
     <>
@@ -1098,27 +1100,162 @@ function AdminPanel({ user, onDataUpdated }) {
         </div>
       </div>
 
-      {/* Uploads */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-        <div>
-          <label className="block cursor-pointer">
-            <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${attStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
-              <div className={`text-xl mb-1 ${attStatus?.ok ? "text-green-500" : "text-gray-300"}`}>{attStatus?.ok ? "✓" : "📅"}</div>
-              <div className={`text-sm font-medium ${attStatus?.ok ? "text-green-600" : "text-gray-500"}`}>{attStatus?.msg || "Upload attendance file"}</div>
-              <div className="text-xs text-gray-400 mt-1">Excel, CSV, PDF, ODS</div>
+      {/* Attendance upload */}
+      <div className="mb-5">
+        <label className="block cursor-pointer">
+          <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${attStatus?.ok ? "border-green-400 bg-green-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
+            <div className={`text-xl mb-1 ${attStatus?.ok ? "text-green-500" : "text-gray-300"}`}>{attStatus?.ok ? "✓" : "📅"}</div>
+            <div className={`text-sm font-medium ${attStatus?.ok ? "text-green-600" : "text-gray-500"}`}>{attStatus?.msg || "Upload attendance file"}</div>
+            <div className="text-xs text-gray-400 mt-1">Excel, CSV, PDF, ODS</div>
+          </div>
+          <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleAttFile} className="hidden" />
+        </label>
+        {pendingAtt && <button onClick={recordAtt} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">{recording ? "Recording..." : "Record"}</button>}
+      </div>
+
+      <DataManager onDataUpdated={onDataUpdated} userId={user.id} />
+    </>
+  );
+}
+
+// Lets an admin see every recorded Attendance month and every Weekly KPI entry individually,
+// and pick exactly what to delete instead of only having an all-or-nothing wipe.
+function DataManager({ onDataUpdated, userId }) {
+  const [attRecords, setAttRecords] = useState([]);
+  const [kpiRowId, setKpiRowId] = useState(null);
+  const [kpiEntries, setKpiEntries] = useState([]); // each carries its original array index as `idx`
+  const [selectedKpi, setSelectedKpi] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    const { data: att } = await supabase.from("attendance_records").select("id, month_key, month_label").order("month_key", { ascending: false });
+    if (att) setAttRecords(att);
+    const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
+    if (kpiRows?.length) {
+      setKpiRowId(kpiRows[0].id);
+      setKpiEntries((kpiRows[0].data?.entries || []).map((e, idx) => ({ ...e, idx })));
+    } else { setKpiRowId(null); setKpiEntries([]); }
+    setSelectedKpi(new Set());
+    setLoading(false);
+  }
+
+  async function deleteAttendance(id) {
+    if (!confirm("Delete this attendance month?")) return;
+    setAttRecords(prev => prev.filter(r => r.id !== id));
+    await supabase.from("attendance_records").delete().eq("id", id);
+    onDataUpdated();
+  }
+
+  async function saveKpiEntries(remaining) {
+    await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (remaining.length) await supabase.from("weekly_kpi").insert({ data: { entries: remaining.map(({ idx, ...rest }) => rest) }, uploaded_by: userId });
+    onDataUpdated();
+  }
+
+  async function deleteKpiEntry(idx) {
+    const remaining = kpiEntries.filter(e => e.idx !== idx);
+    setKpiEntries(remaining.map((e, i) => ({ ...e, idx: i })));
+    setSelectedKpi(prev => { const next = new Set(prev); next.delete(idx); return next; });
+    await saveKpiEntries(remaining);
+  }
+
+  async function deleteSelectedKpi() {
+    if (!selectedKpi.size) return;
+    if (!confirm(`Delete ${selectedKpi.size} selected KPI entr${selectedKpi.size === 1 ? "y" : "ies"}?`)) return;
+    const remaining = kpiEntries.filter(e => !selectedKpi.has(e.idx));
+    setKpiEntries(remaining.map((e, i) => ({ ...e, idx: i })));
+    setSelectedKpi(new Set());
+    await saveKpiEntries(remaining);
+  }
+
+  async function deleteKpiGroup(month, week) {
+    if (!confirm(`Delete all KPI entries for ${month} W${week}?`)) return;
+    const remaining = kpiEntries.filter(e => !(e.month === month && String(e.week) === String(week)));
+    setKpiEntries(remaining.map((e, i) => ({ ...e, idx: i })));
+    await saveKpiEntries(remaining);
+  }
+
+  function toggleKpi(idx) {
+    setSelectedKpi(prev => { const next = new Set(prev); next.has(idx) ? next.delete(idx) : next.add(idx); return next; });
+  }
+
+  function toggleKpiGroup(entriesInGroup, allSelected) {
+    setSelectedKpi(prev => {
+      const next = new Set(prev);
+      entriesInGroup.forEach(e => allSelected ? next.delete(e.idx) : next.add(e.idx));
+      return next;
+    });
+  }
+
+  if (loading) return <p className="text-sm text-gray-400 text-center py-6">Loading recorded data...</p>;
+
+  // Group KPI entries by Month + Week for a manageable list
+  const groups = {};
+  kpiEntries.forEach(e => { const key = `${e.month}|${e.week}`; if (!groups[key]) groups[key] = []; groups[key].push(e); });
+  const groupKeys = Object.keys(groups).sort().reverse();
+
+  return (
+    <div className="mt-2">
+      <h3 className="text-sm font-semibold mb-3">Manage recorded data</h3>
+
+      {/* Attendance */}
+      <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 mb-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Attendance months</p>
+        {attRecords.length === 0 && <p className="text-sm text-gray-300 py-2">No attendance records yet.</p>}
+        <div className="space-y-1.5">
+          {attRecords.map(r => (
+            <div key={r.id} className="flex items-center justify-between px-3 py-2 bg-white rounded-lg text-sm border border-gray-100">
+              <span>{r.month_label}</span>
+              <button onClick={() => deleteAttendance(r.id)} className="text-xs text-red-400 hover:text-red-600">Delete</button>
             </div>
-            <input type="file" accept=".xlsx,.xls,.csv,.tsv,.ods,.pdf" onChange={handleAttFile} className="hidden" />
-          </label>
-          {pendingAtt && <button onClick={recordAtt} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">Record</button>}
+          ))}
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 flex-wrap">
-<button onClick={() => clearData("prod")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear productivity</button>
-        <button onClick={() => clearData("att")} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Clear attendance</button>
+      {/* Weekly KPI */}
+      <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase">Weekly KPI entries (uploaded &amp; pasted)</p>
+          {selectedKpi.size > 0 && (
+            <button onClick={deleteSelectedKpi} className="text-xs px-2.5 py-1 bg-red-500 text-white rounded-md font-medium hover:bg-red-600">
+              Delete selected ({selectedKpi.size})
+            </button>
+          )}
+        </div>
+        {groupKeys.length === 0 && <p className="text-sm text-gray-300 py-2">No KPI entries yet.</p>}
+        <div className="space-y-3">
+          {groupKeys.map(key => {
+            const [month, week] = key.split("|");
+            const entriesInGroup = groups[key];
+            const allSelected = entriesInGroup.every(e => selectedKpi.has(e.idx));
+            return (
+              <div key={key} className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
+                  <input type="checkbox" checked={allSelected} onChange={() => toggleKpiGroup(entriesInGroup, allSelected)} className="accent-gray-900" />
+                  <span className="text-xs font-semibold">{month} — Week {week}</span>
+                  <span className="text-[11px] text-gray-400">({entriesInGroup.length} entries)</span>
+                  <button onClick={() => deleteKpiGroup(month, week)} className="ml-auto text-[11px] text-red-400 hover:text-red-600">Delete this week</button>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {entriesInGroup.map(e => (
+                    <div key={e.idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                      <input type="checkbox" checked={selectedKpi.has(e.idx)} onChange={() => toggleKpi(e.idx)} className="accent-gray-900" />
+                      <span className="px-1.5 py-0.5 rounded text-white text-[10px] font-medium shrink-0" style={{ background: TEAM_COLORS[e.team] || "#888" }}>{e.team}</span>
+                      <span className="font-medium">{e.employee}</span>
+                      <span className="text-gray-400 truncate flex-1">{e.target}</span>
+                      <button onClick={() => deleteKpiEntry(e.idx)} className="text-red-300 hover:text-red-600 shrink-0">✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 
