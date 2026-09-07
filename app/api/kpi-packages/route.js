@@ -167,15 +167,24 @@ async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
     return { people: [], debug: { availableTabs, requestedTab: tabName, matchedTab: actualTab, issue: "tab matched but returned zero rows" } };
   }
 
-  const header = rows[0];
-  const monthCols = [];
-  header.forEach((h, idx) => {
-    const month = normalizeMonthHeader(h);
-    if (month && !monthCols.some(m => m.month === month)) monthCols.push({ month, col: idx });
-  });
+  // Find the real header row — some sheets have a blank row (or other leading rows) before
+  // the actual "Staff, Jan, Feb, ..." header, so scan for it rather than assuming row 0.
+  let headerRowIdx = -1;
+  let monthCols = [];
+  for (let r = 0; r < Math.min(rows.length, 5); r++) {
+    const cols = [];
+    rows[r].forEach((h, idx) => {
+      const month = normalizeMonthHeader(h);
+      if (month && !cols.some(m => m.month === month)) cols.push({ month, col: idx });
+    });
+    if (cols.length > 0) { headerRowIdx = r; monthCols = cols; break; }
+  }
+  if (headerRowIdx === -1) {
+    return { people: [], debug: { availableTabs, requestedTab: tabName, matchedTab: actualTab, rowCount: rows.length, first5Rows: rows.slice(0, 5), issue: "scanned the first 5 rows but found no row with recognizable month headers" } };
+  }
 
   const people = [];
-  for (let r = 1; r < rows.length; r++) {
+  for (let r = headerRowIdx + 1; r < rows.length; r++) {
     const row = rows[r];
     const name = (row[0] || "").trim();
     if (!name) continue;
@@ -197,7 +206,7 @@ async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
     });
   }
   const debug = people.length === 0
-    ? { availableTabs, requestedTab: tabName, matchedTab: actualTab, rowCount: rows.length, headerRow: header, monthColsFound: monthCols.map(m => m.month), issue: "tab and rows found, but no row had a name in column A" }
+    ? { availableTabs, requestedTab: tabName, matchedTab: actualTab, rowCount: rows.length, headerRowIdx, monthColsFound: monthCols.map(m => m.month), issue: "found header row but no data row had a name in column A" }
     : null;
   return { people, debug };
 }
