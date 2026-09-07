@@ -7,9 +7,10 @@ const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTeS9rrzeJzv7GY
 const teamMap = {
   marcus: "Design", aiem: "Design", fatanah: "Design",
   nich: "Video", nicholas: "Video", zul: "Video", roshan: "Video", vanessa: "Video",
-  maha: "Content", mahal: "Content", jeremiah: "Content", rosie: "Content", jeng: "Knowledge",
-  yash: "Social", divya: "Social",
-  shiman: "CSE", jon: "CSE", jev: "CSE", mika: "CSE", naz: "CSE",
+  maha: "Content", mahal: "Content", jeremiah: "Content", rosie: "Content",
+  jeng: "Knowledge", divya: "Knowledge", jon: "Knowledge", rahul: "Knowledge",
+  yash: "Social",
+  shiman: "CSE", jev: "CSE", mika: "CSE", naz: "CSE",
   luc: "Sales", dinesh: "Finance",
 };
 

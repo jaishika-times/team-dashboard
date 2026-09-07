@@ -7,9 +7,10 @@ const LEAVE_RE = /^(sl|el|al|ul|rl|wfh|mc|on al|on leave|sick leave|birthday lea
 const teamMap = {
   marcus:"Design",aiem:"Design",fatanah:"Design",
   nich:"Video",zul:"Video",roshan:"Video",vanessa:"Video",
-  maha:"Content",jeremiah:"Content",rosie:"Content",jeng:"Knowledge",
-  yash:"Social",divya:"Social",
-  shiman:"CSE",jon:"CSE",jev:"CSE",mika:"CSE",naz:"CSE",
+  maha:"Content",jeremiah:"Content",rosie:"Content",
+  jeng:"Knowledge",divya:"Knowledge",jon:"Knowledge",rahul:"Knowledge",
+  yash:"Social",
+  shiman:"CSE",jev:"CSE",mika:"CSE",naz:"CSE",
   luc:"Sales",dinesh:"Finance"
 };
 
