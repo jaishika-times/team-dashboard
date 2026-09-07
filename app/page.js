@@ -62,6 +62,8 @@ export default function DashboardPage() {
   const [checkoutEntries, setCheckoutEntries] = useState([]);
   const [checkoutForm, setCheckoutForm] = useState({ held_by: "", date_taken: "", date_returned: "", notes: "" });
   const [allCheckouts, setAllCheckouts] = useState([]);
+  const [quickEntryModal, setQuickEntryModal] = useState(false);
+  const [quickEntryForm, setQuickEntryForm] = useState({ asset_id: "", held_by: "", date_taken: "", date_returned: "", notes: "" });
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
@@ -1029,18 +1031,41 @@ const COMP_LOGOS = {
             async function deleteCheckoutEntry(id) {
               if (!confirm("Delete this checkout entry?")) return;
               await supabase.from("asset_checkouts").delete().eq("id", id);
-              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
-              if (data) setCheckoutEntries(data);
+              if (checkoutHistoryFor) {
+                const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
+                if (data) setCheckoutEntries(data);
+              }
+              loadData();
             }
 
             // One click: marks this checkout as returned today, and automatically flips the
-            // asset itself back to Available — no separate step needed.
+            // asset itself back to Available — no separate step needed. Works whether it's
+            // called from the page-level history table or the per-item history modal.
             async function markCheckoutReturned(entry) {
               const today = new Date().toISOString().split("T")[0];
               await supabase.from("asset_checkouts").update({ date_returned: today }).eq("id", entry.id);
               await supabase.from("assets").update({ status: "Available", date_returned: today }).eq("id", entry.asset_id);
-              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
-              if (data) setCheckoutEntries(data);
+              if (checkoutHistoryFor) {
+                const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
+                if (data) setCheckoutEntries(data);
+              }
+              loadData();
+            }
+
+            // Quick sheet-style entry: pick ANY item and log a checkout without opening that
+            // item's own History panel first. Same effect as addCheckoutEntry — creates a log
+            // row and syncs the asset's current status — just reachable from one button up top.
+            async function addQuickEntry() {
+              if (!quickEntryForm.asset_id || !quickEntryForm.held_by.trim()) return;
+              const payload = { asset_id: quickEntryForm.asset_id, held_by: quickEntryForm.held_by, date_taken: quickEntryForm.date_taken, date_returned: quickEntryForm.date_returned, notes: quickEntryForm.notes, created_by: user.id };
+              await supabase.from("asset_checkouts").insert(payload);
+              await supabase.from("assets").update({
+                held_by: quickEntryForm.held_by, date_taken: quickEntryForm.date_taken,
+                date_returned: quickEntryForm.date_returned, notes: quickEntryForm.notes,
+                status: quickEntryForm.date_returned ? "Available" : "In Use",
+              }).eq("id", quickEntryForm.asset_id);
+              setQuickEntryModal(false);
+              setQuickEntryForm({ asset_id: "", held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" });
               loadData();
             }
 
@@ -1053,6 +1078,8 @@ const COMP_LOGOS = {
                   </div>
                   {isAdmin && (
                     <div className="flex gap-2">
+                      <button onClick={() => { setQuickEntryModal(true); setQuickEntryForm({ asset_id: "", held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" }); }}
+                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700">+ Add Entry</button>
                       <button onClick={() => { setAssetModal("add"); setAssetForm({ code: "", name: "", category: "Video Properties", status: "Available", remark: "", held_by: "", date_taken: "", date_returned: "", notes: "" }); }}
                         className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg">+ Add item</button>
                       <button onClick={() => setAssetModal("stockcheck")}
@@ -1138,49 +1165,64 @@ const COMP_LOGOS = {
 
                 {/* Checkout History — every time an item was taken, by whom, and when it came back.
                     Sorted by date then asset, so multiple people taking the same item the same
-                    day show up right next to each other as a group. */}
-                {allCheckouts.length > 0 && (
-                  <div className="mt-6 bg-white rounded-xl border border-gray-100 overflow-hidden">
-                    <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
-                      <h3 className="text-sm font-semibold">Checkout History</h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-50 border-b border-gray-100">
-                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date</th>
-                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
-                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Asset</th>
-                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Who Took</th>
-                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Taken</th>
-                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Returned</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...allCheckouts]
-                            .sort((a, b) => (b.date_taken || "").localeCompare(a.date_taken || "") || (a.asset_id || "").localeCompare(b.asset_id || ""))
-                            .map(c => {
-                              const asset = assets.find(a => a.id === c.asset_id);
-                              return (
-                                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                  <td className="px-3 py-2 text-xs text-gray-500">{c.date_taken || "—"}</td>
-                                  <td className="px-3 py-2 font-mono text-xs text-gray-500">{asset?.code || "—"}</td>
-                                  <td className="px-3 py-2 text-xs text-gray-700">{asset?.name || "(deleted item)"}</td>
-                                  <td className="px-3 py-2 text-xs text-gray-700">{c.held_by}</td>
-                                  <td className="px-3 py-2 text-xs text-gray-400">{c.date_taken || "—"}</td>
-                                  <td className="px-3 py-2 text-xs">
-                                    {c.date_returned
-                                      ? <span className="text-green-600">{c.date_returned}</span>
-                                      : <span className="text-amber-600 font-medium">Not yet returned</span>}
+                    day show up right next to each other as a group. Fully self-contained: mark
+                    returned or delete an entry right here, no need to open a per-item panel. */}
+                <div className="mt-6 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Checkout History</h3>
+                    {isAdmin && (
+                      <button onClick={() => { setQuickEntryModal(true); setQuickEntryForm({ asset_id: "", held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" }); }}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium">+ Add Entry</button>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100">
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Asset</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Who Took</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Taken</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Returned</th>
+                          {isAdmin && <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-400 uppercase"></th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...allCheckouts]
+                          .sort((a, b) => (b.date_taken || "").localeCompare(a.date_taken || "") || (a.asset_id || "").localeCompare(b.asset_id || ""))
+                          .map(c => {
+                            const asset = assets.find(a => a.id === c.asset_id);
+                            return (
+                              <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                <td className="px-3 py-2 text-xs text-gray-500">{c.date_taken || "—"}</td>
+                                <td className="px-3 py-2 font-mono text-xs text-gray-500">{asset?.code || "—"}</td>
+                                <td className="px-3 py-2 text-xs text-gray-700">{asset?.name || "(deleted item)"}</td>
+                                <td className="px-3 py-2 text-xs text-gray-700">{c.held_by}</td>
+                                <td className="px-3 py-2 text-xs text-gray-400">{c.date_taken || "—"}</td>
+                                <td className="px-3 py-2 text-xs">
+                                  {c.date_returned
+                                    ? <span className="text-green-600">{c.date_returned}</span>
+                                    : <span className="text-amber-600 font-medium">Not yet returned</span>}
+                                </td>
+                                {isAdmin && (
+                                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                                    {!c.date_returned && (
+                                      <button onClick={() => markCheckoutReturned(c)} className="text-xs text-green-600 hover:text-green-800 font-medium mr-2">Mark Returned</button>
+                                    )}
+                                    <button onClick={() => deleteCheckoutEntry(c.id)} className="text-xs text-red-300 hover:text-red-600">✕</button>
                                   </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        {allCheckouts.length === 0 && (
+                          <tr><td colSpan={isAdmin ? 7 : 6} className="px-3 py-8 text-center text-sm text-gray-300">No checkout entries yet — click "+ Add Entry" to log one</td></tr>
+                        )}
+                      </tbody>
                       </table>
                     </div>
                   </div>
-                )}
 
                 {/* Add/Edit Modal */}
                 {assetModal && (
@@ -1380,6 +1422,47 @@ const COMP_LOGOS = {
                           </div>
                         ))}
                         {checkoutEntries.length === 0 && <p className="text-sm text-gray-300 text-center py-4">No checkouts logged yet</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Entry — log a checkout for ANY item without opening its own History
+                    panel first. Same effect as adding a checkout there, just one click away
+                    from anywhere on the page. */}
+                {quickEntryModal && (
+                  <div onClick={() => setQuickEntryModal(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[480px] max-w-[95%] shadow-xl">
+                      <h3 className="text-base font-semibold mb-4">Add Entry</h3>
+                      <div className="space-y-3">
+                        <select value={quickEntryForm.asset_id} onChange={e => setQuickEntryForm({ ...quickEntryForm, asset_id: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                          <option value="">Select item...</option>
+                          {[...assets].sort((a, b) => a.code.localeCompare(b.code)).map(a => (
+                            <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                          ))}
+                        </select>
+                        <input value={quickEntryForm.held_by} onChange={e => setQuickEntryForm({ ...quickEntryForm, held_by: e.target.value })} placeholder="Who's taking it?"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] text-gray-400">Date taken</span>
+                            <input type="date" value={quickEntryForm.date_taken} onChange={e => setQuickEntryForm({ ...quickEntryForm, date_taken: e.target.value })}
+                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] text-gray-400">Date returned</span>
+                            <input type="date" value={quickEntryForm.date_returned} onChange={e => setQuickEntryForm({ ...quickEntryForm, date_returned: e.target.value })}
+                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                          </label>
+                        </div>
+                        <input value={quickEntryForm.notes} onChange={e => setQuickEntryForm({ ...quickEntryForm, notes: e.target.value })} placeholder="Notes"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-2">If no return date is set, the item automatically shows as In Use. Set a return date (now or later) and it goes back to Available.</p>
+                      <div className="flex gap-2 mt-4">
+                        <button onClick={addQuickEntry} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Add Entry</button>
+                        <button onClick={() => setQuickEntryModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
                       </div>
                     </div>
                   </div>
