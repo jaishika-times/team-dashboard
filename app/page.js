@@ -1569,8 +1569,11 @@ function PendingBanner({ onGoToAdmin }) {
 // ===== PEOPLE (ONBOARDING / OFFBOARDING) =====
 const PROBATION_LABELS = { m1: "Month 1", m2: "Month 2", m3: "Month 3", m4: "Month 4", m5: "Month 5", m6: "Month 6" };
 const PEOPLE_LINK_LABELS = { staffFolder: "Staff Folder", hrRecording: "HR Recording", tlRecording: "TL Recording", plan: "Plan", confirmationLetter: "Confirmation Letter" };
-const STATUS_OPTIONS = { Onboarding: ["Probation", "Confirmed", "Extended", "Terminated"], Offboarding: ["Pending", "Exited"] };
-const STATUS_COLORS = { Probation: "bg-amber-50 text-amber-600", Confirmed: "bg-green-50 text-green-600", Extended: "bg-blue-50 text-blue-600", Terminated: "bg-red-50 text-red-500", Pending: "bg-amber-50 text-amber-600", Exited: "bg-red-50 text-red-500" };
+const STATUS_OPTIONS = { Onboarding: ["Probation", "Confirmed", "Extended", "Terminated"], Offboarding: ["Pending", "Exited", "Terminated"] };
+const STATUS_COLORS = { Probation: "bg-amber-50 text-amber-600", Confirmed: "bg-green-50 text-green-600", Extended: "bg-blue-50 text-blue-600", Terminated: "bg-red-50 text-red-500", Pending: "bg-amber-50 text-amber-600", Exited: "bg-blue-50 text-blue-600" };
+// Clearer wording shown to the user — underlying values stay the same so existing records
+// (and the confirmation dropdown's stored value) don't need any data migration.
+const STATUS_LABELS = { Probation: "Probation", Confirmed: "Confirmation", Extended: "Extended", Terminated: "Termination", Pending: "Pending", Exited: "Acceptance of Resignation" };
 const PROBATION_STATUS_COLORS = { Done: "bg-green-50 text-green-600", "In Progress": "bg-amber-50 text-amber-600", Scheduled: "bg-gray-100 text-gray-400" };
 
 function parseFlexDate(str) {
@@ -1729,6 +1732,11 @@ function PeoplePage({ isAdmin, userId }) {
     await supabase.from("people_lifecycle").update({ extension_months: n }).eq("id", r.id);
   }
 
+  async function changeKeyDate(id, value) {
+    setRecords(prev => prev.map(x => x.id === id ? { ...x, key_date: value } : x));
+    await supabase.from("people_lifecycle").update({ key_date: value }).eq("id", id);
+  }
+
   async function toggleProbationDone(r, key) {
     const current = r.probation?.[key] || {};
     const updated = { ...r.probation, [key]: { ...current, done: !current.done } };
@@ -1879,10 +1887,10 @@ function PeoplePage({ isAdmin, userId }) {
               {isAdmin ? (
                 <select value={r.status || STATUS_OPTIONS[r.type][0]} onClick={e => e.stopPropagation()} onChange={e => changeStatus(r.id, e.target.value)}
                   className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 border-0 cursor-pointer ${STATUS_COLORS[r.status] || STATUS_COLORS[STATUS_OPTIONS[r.type][0]]}`}>
-                  {STATUS_OPTIONS[r.type].map(s => <option key={s} value={s}>{s}</option>)}
+                  {STATUS_OPTIONS[r.type].map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                 </select>
               ) : (
-                <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${STATUS_COLORS[r.status] || STATUS_COLORS[STATUS_OPTIONS[r.type][0]]}`}>{r.status || STATUS_OPTIONS[r.type][0]}</span>
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${STATUS_COLORS[r.status] || STATUS_COLORS[STATUS_OPTIONS[r.type][0]]}`}>{STATUS_LABELS[r.status] || r.status || STATUS_OPTIONS[r.type][0]}</span>
               )}
               {isAdmin && (
                 <div className="flex gap-2 shrink-0" onClick={e => e.stopPropagation()}>
@@ -1911,7 +1919,7 @@ function PeoplePage({ isAdmin, userId }) {
                         <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${PROBATION_STATUS_COLORS[p.status]}`}>{p.status}</span>
                       </div>
                     ))}
-                    <div className="text-xs text-gray-600 pt-1">{r.type === "Onboarding" ? "Confirmation date" : "Last day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
+                    <div className="text-xs text-gray-600 pt-1">{r.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
                   </div>
                   {r.type === "Onboarding" && (
                     <div className="mt-3 pt-3 border-t border-gray-50">
@@ -1919,12 +1927,12 @@ function PeoplePage({ isAdmin, userId }) {
                       {isAdmin ? (
                         <select value={r.status || "Probation"} onChange={e => changeStatus(r.id, e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs">
                           <option value="Probation">Still on probation</option>
-                          <option value="Confirmed">Confirmed</option>
+                          <option value="Confirmed">{STATUS_LABELS.Confirmed}</option>
                           <option value="Extended">Extended</option>
-                          <option value="Terminated">Terminated</option>
+                          <option value="Terminated">{STATUS_LABELS.Terminated}</option>
                         </select>
                       ) : (
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${STATUS_COLORS[r.status] || STATUS_COLORS.Probation}`}>{r.status || "Probation"}</span>
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${STATUS_COLORS[r.status] || STATUS_COLORS.Probation}`}>{STATUS_LABELS[r.status] || r.status || "Probation"}</span>
                       )}
                       {r.status === "Extended" && (
                         <div className="mt-2 flex items-center gap-1.5">
@@ -1936,6 +1944,40 @@ function PeoplePage({ isAdmin, userId }) {
                             </button>
                           )) : (
                             <span className="text-[11px] text-gray-600">{r.extension_months || 1} {(r.extension_months || 1) === 1 ? "month" : "months"}</span>
+                          )}
+                        </div>
+                      )}
+                      {r.status === "Terminated" && (
+                        <div className="mt-2">
+                          <span className="text-[11px] text-gray-400 block mb-1">Last Working Day:</span>
+                          {isAdmin ? (
+                            <input type="date" value={r.key_date || ""} onChange={e => changeKeyDate(r.id, e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs" />
+                          ) : (
+                            <span className="text-xs text-gray-600">{r.key_date || "—"}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {r.type === "Offboarding" && (
+                    <div className="mt-3 pt-3 border-t border-gray-50">
+                      <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1.5">Outcome</p>
+                      {isAdmin ? (
+                        <select value={r.status || "Pending"} onChange={e => changeStatus(r.id, e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs">
+                          <option value="Pending">Pending</option>
+                          <option value="Exited">{STATUS_LABELS.Exited}</option>
+                          <option value="Terminated">{STATUS_LABELS.Terminated}</option>
+                        </select>
+                      ) : (
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${STATUS_COLORS[r.status] || STATUS_COLORS.Pending}`}>{STATUS_LABELS[r.status] || r.status || "Pending"}</span>
+                      )}
+                      {(r.status === "Exited" || r.status === "Terminated") && (
+                        <div className="mt-2">
+                          <span className="text-[11px] text-gray-400 block mb-1">Last Working Day:</span>
+                          {isAdmin ? (
+                            <input type="date" value={r.key_date || ""} onChange={e => changeKeyDate(r.id, e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs" />
+                          ) : (
+                            <span className="text-xs text-gray-600">{r.key_date || "—"}</span>
                           )}
                         </div>
                       )}
@@ -1970,7 +2012,7 @@ function PeoplePage({ isAdmin, userId }) {
               </div>
               <div>
                 <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  {STATUS_OPTIONS[form.type].map(s => <option key={s} value={s}>{s}</option>)}
+                  {STATUS_OPTIONS[form.type].map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -1978,7 +2020,7 @@ function PeoplePage({ isAdmin, userId }) {
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 <input value={form.join_date} onChange={e => setForm({ ...form, join_date: e.target.value })} placeholder="Join date"
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                <input value={form.key_date} onChange={e => setForm({ ...form, key_date: e.target.value })} placeholder={form.type === "Onboarding" ? "Confirmation date" : "Last day"}
+                <input value={form.key_date} onChange={e => setForm({ ...form, key_date: e.target.value })} placeholder={form.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
               </div>
 
