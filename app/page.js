@@ -63,6 +63,7 @@ export default function DashboardPage() {
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
   const [selectedProdTeam, setSelectedProdTeam] = useState(null);
+  const [expandedKpiRow, setExpandedKpiRow] = useState(null);
 
   useEffect(() => { init(); }, []);
 
@@ -762,8 +763,9 @@ const COMP_LOGOS = {
                     {/* Progress Report Table */}
                     {kpiTeams.length > 0 && (
                       <div className="mt-6 bg-white rounded-xl border border-gray-100 overflow-hidden">
-                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                           <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth} W{curWeek}</h3>
+                          <p className="text-[11px] text-gray-400">Click a row for the full summary</p>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
@@ -778,20 +780,47 @@ const COMP_LOGOS = {
                               </tr>
                             </thead>
                             <tbody>
-                              {kpiTeams.map((team, ti) => 
+                              {kpiTeams.map(team =>
                                 byTeam[team].map((e, i) => {
+                                  const rowKey = `${team}|${e.employee}|${i}`;
                                   const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
                                   const pctColor = pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600";
-                                  return (
-                                    <tr key={team + i} className="border-b border-gray-50 hover:bg-gray-50">
-                                      {i === 0 ? <td className="px-4 py-2.5 font-semibold align-top" rowSpan={byTeam[team].length}><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td> : null}
+                                  const isOpen = expandedKpiRow === rowKey;
+                                  const urls = extractUrls(e.links);
+                                  return [
+                                    <tr key={rowKey} onClick={() => setExpandedKpiRow(isOpen ? null : rowKey)}
+                                      className={`border-b border-gray-50 cursor-pointer hover:bg-gray-50 ${isOpen ? "bg-gray-50" : ""}`}>
+                                      <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td>
                                       <td className="px-4 py-2.5 font-medium">{e.employee}</td>
-                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.target}</td>
-                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.completed}</td>
+                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px] truncate">{e.target}</td>
+                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px] truncate">{e.completed}</td>
                                       <td className="px-4 py-2.5"><KpiDocs links={e.links} /></td>
                                       <td className={`px-4 py-2.5 text-right font-bold ${pctColor}`}>{pct !== null ? pct + "%" : "..."}</td>
-                                    </tr>
-                                  );
+                                    </tr>,
+                                    isOpen ? (
+                                      <tr key={rowKey + "-detail"} className="bg-gray-50/60 border-b border-gray-100">
+                                        <td colSpan={6} className="px-5 py-4">
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                            <div className="space-y-1.5">
+                                              <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Summary</p>
+                                              <div className="text-xs text-gray-600"><span className="text-gray-400">Target/Task: </span>{e.target || "—"}</div>
+                                              <div className="text-xs text-gray-600"><span className="text-gray-400">Completed: </span>{e.completed || "—"}</div>
+                                              {e.status && <div className="text-xs text-gray-600"><span className="text-gray-400">Status: </span>{e.status}</div>}
+                                              <div className="text-xs text-gray-600"><span className="text-gray-400">Notes: </span>{e.notes || "—"}</div>
+                                            </div>
+                                            <div>
+                                              <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1.5">Documents</p>
+                                              {urls.length > 0 ? (
+                                                <div className="space-y-1">
+                                                  {urls.map((u, ui) => <a key={ui} href={u} target="_blank" rel="noopener noreferrer" onClick={ev => ev.stopPropagation()} className="block text-xs text-blue-500 hover:underline truncate">📄 {u}</a>)}
+                                                </div>
+                                              ) : <p className="text-xs text-gray-300">No documents linked</p>}
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ) : null,
+                                  ];
                                 })
                               )}
                             </tbody>
