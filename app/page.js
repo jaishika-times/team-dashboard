@@ -1002,6 +1002,14 @@ const COMP_LOGOS = {
               loadData();
             }
 
+            // Wipes Held By / Date Taken / Date Returned / Notes back to blank — for tidying up
+            // an item that's already Available but still shows a stale "last holder" from before.
+            async function clearAssetFields(id) {
+              if (!confirm("Clear Held By, dates, and notes for this item? (Status stays as-is.)")) return;
+              await supabase.from("assets").update({ held_by: null, date_taken: null, date_returned: null, notes: null }).eq("id", id);
+              loadData();
+            }
+
             async function saveWeeklyLog() {
               const today = new Date().toISOString().split("T")[0];
               if (!confirm(`Save today's (${today}) asset status as this week's record?`)) return;
@@ -1178,6 +1186,7 @@ const COMP_LOGOS = {
                             {isAdmin && (
                               <td className="px-3 py-2 text-right whitespace-nowrap">
                                 <button onClick={() => openCheckoutHistory(a)} className="text-xs text-blue-500 hover:text-blue-700 mr-2">History</button>
+                                <button onClick={() => clearAssetFields(a.id)} className="text-xs text-gray-400 hover:text-gray-700 mr-2">Clear</button>
                                 <button onClick={() => deleteAsset(a.id)} className="text-xs text-red-400 hover:text-red-600">Del</button>
                               </td>
                             )}
