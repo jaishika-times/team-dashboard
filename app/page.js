@@ -1618,7 +1618,7 @@ function ResourceLibrary() {
 const KPI_PACKAGE_FOLDERS = [
   { name: "Account Managers", url: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_", live: true, emoji: "\ud83d\udcbc", gradient: "from-fuchsia-500 to-pink-600" },
   { name: "Content Curation Team", url: "https://drive.google.com/drive/folders/1EUFh1vrkQaaPxeCmO3et51PJInAI16We", emoji: "\ud83d\udcdd", gradient: "from-emerald-500 to-teal-600" },
-  { name: "Design Team", url: "https://drive.google.com/drive/folders/1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO", emoji: "\ud83c\udfa8", gradient: "from-indigo-500 to-purple-600" },
+  { name: "Design Team", url: "https://drive.google.com/drive/folders/1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO", live: true, emoji: "\ud83c\udfa8", gradient: "from-indigo-500 to-purple-600" },
   { name: "Operations", url: "https://drive.google.com/drive/folders/1x-paz_jOw2J0uh_3SRnoWHMTEaODN2tv", emoji: "\u2699\ufe0f", gradient: "from-slate-500 to-slate-700" },
   { name: "Sales Team", url: "https://drive.google.com/drive/folders/1Qsqf1BhS9tO8pf-nxPfkygmiHVVnqC-T", emoji: "\ud83d\udcc8", gradient: "from-violet-500 to-purple-600" },
   { name: "Social Team", url: "https://drive.google.com/drive/folders/1zb8vnZ7ikSIS88bGMK3pBuJ_u0Yej8mi", emoji: "\ud83d\udcf1", gradient: "from-amber-400 to-orange-500" },

@@ -21,6 +21,11 @@ const TEAM_CONFIG = {
     rootFolderId: "1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ",
     subfolderIds: [],
   },
+  "Design Team": {
+    type: "folder_scan",
+    rootFolderId: "1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO",
+    subfolderIds: [],
+  },
   // Account Managers has an actual maintained master summary sheet — Staff x Month, one
   // row per person — instead of relying on each person's own scattered, differently-shaped
   // KPI file. Far more reliable than folder-scanning their nested per-person subfolders.
@@ -109,19 +114,21 @@ async function getPersonScore(sheets, fileId, fileName) {
     }
   }
 
-  // Find the "KPI SCORE FOR THE MONTH" row and take up to months.length values after the
-  // label, left to right — capped at that count so an unrelated table sharing the same row
-  // (some sheets have a little rating-legend table butted up against it) never gets scooped in.
+  // Find the "KPI SCORE FOR THE MONTH" row. Take exactly one value per detected month, by
+  // strict column position (index 1 = month 1, index 2 = month 2, ...) — NOT "the next
+  // non-empty cell". If a month's score genuinely hasn't been filled in yet, that position
+  // must stay blank rather than accidentally absorbing a later cell (e.g. some sheets have a
+  // little rating-legend table sharing the same row just past the real values, like
+  // "...,100,Excellent,..." — skipping blanks would misattribute that legend value to
+  // whichever month happened to still be empty).
   const scoreByMonth = {};
   for (const row of rows) {
     const label = cellText(row, 0).trim().toLowerCase();
     if (label.includes("kpi score for the month") || label.includes("total kpi score")) {
-      const vals = [];
-      for (let i = 1; i < row.length && vals.length < months.length; i++) {
-        const v = row[i]?.formattedValue;
-        if (v && v.trim()) vals.push(v.trim());
-      }
-      months.forEach((m, idx) => { if (vals[idx]) scoreByMonth[m] = vals[idx]; });
+      months.forEach((m, idx) => {
+        const v = row[idx + 1]?.formattedValue;
+        if (v && v.trim()) scoreByMonth[m] = v.trim();
+      });
       break;
     }
   }
