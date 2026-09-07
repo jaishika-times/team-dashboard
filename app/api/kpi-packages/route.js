@@ -33,6 +33,9 @@ async function listSpreadsheetsIn(drive, folderId) {
     q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
     fields: "files(id, name)",
     pageSize: 100,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: "allDrives",
   });
   return res.data.files || [];
 }
