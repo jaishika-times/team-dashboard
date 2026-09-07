@@ -1629,24 +1629,35 @@ const KPI_PACKAGE_FOLDERS = [
 
 // A team whose live scores are built (currently just Edunexa) — click it and see each
 // person's name + current KPI score, pulled straight from their real scoring sheet.
+const MONTH_ORDER = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 function TeamPeopleCards({ team, folderUrl }) {
   const [people, setPeople] = useState(null); // null = loading
   const [error, setError] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setPeople(null);
     setError(null);
+    setSelectedMonth(null);
     fetch(`/api/kpi-packages?team=${encodeURIComponent(team)}`)
       .then(r => r.json())
       .then(data => {
         if (cancelled) return;
-        if (data.status === "ok") setPeople(data.people);
-        else setError(data.error || "Could not load live scores");
+        if (data.status === "ok") {
+          setPeople(data.people);
+          const allMonths = Array.from(new Set(data.people.flatMap(p => p.months.map(m => m.month))))
+            .sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
+          setSelectedMonth(allMonths[allMonths.length - 1] || null);
+        } else setError(data.error || "Could not load live scores");
       })
       .catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
   }, [team]);
+
+  const allMonths = people ? Array.from(new Set(people.flatMap(p => p.months.map(m => m.month))))
+    .sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b)) : [];
 
   return (
     <div className="mt-3 pl-2 border-l-2 border-gray-100">
@@ -1654,22 +1665,35 @@ function TeamPeopleCards({ team, folderUrl }) {
       {error && <p className="text-xs text-red-400 py-3">Couldn't load live scores: {error}</p>}
       {people && people.length === 0 && <p className="text-xs text-gray-300 py-3">No individual sheets found for this team.</p>}
       {people && people.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 py-2">
-          {people.map((p, i) => (
-            <a key={i} href={p.sheetUrl} target="_blank" rel="noopener noreferrer"
-              className="flex items-center justify-between px-3 py-2.5 bg-white rounded-lg border border-gray-100 hover:border-gray-200 text-sm">
-              <div>
-                <p className="font-medium text-gray-800">{p.name}</p>
-                <p className="text-[11px] text-gray-400">{p.month || "This month"}</p>
-              </div>
-              {p.score ? (
-                <span className="text-sm font-semibold text-gray-900">{p.score}</span>
-              ) : (
-                <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">Pending</span>
-              )}
-            </a>
-          ))}
-        </div>
+        <>
+          {allMonths.length > 0 && (
+            <select value={selectedMonth || ""} onChange={e => setSelectedMonth(e.target.value)}
+              className="text-xs px-2 py-1 border border-gray-200 rounded-lg mb-2 bg-white">
+              {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 py-2">
+            {people.map((p, i) => {
+              const entry = p.months.find(m => m.month === selectedMonth);
+              return (
+                <a key={i} href={p.sheetUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-between px-3 py-2.5 bg-white rounded-lg border border-gray-100 hover:border-gray-200 text-sm">
+                  <div>
+                    <p className="font-medium text-gray-800">{p.name}</p>
+                    <p className="text-[11px] text-gray-400">{selectedMonth || "—"}</p>
+                  </div>
+                  {!entry ? (
+                    <span className="text-[11px] text-gray-300">No data</span>
+                  ) : entry.score ? (
+                    <span className="text-sm font-semibold text-gray-900">{entry.score}</span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">Pending</span>
+                  )}
+                </a>
+              );
+            })}
+          </div>
+        </>
       )}
       <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-[11px] text-gray-400 hover:text-gray-600 mt-1 mb-2">Open team folder in Drive →</a>
     </div>

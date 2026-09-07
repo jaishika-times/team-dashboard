@@ -67,32 +67,37 @@ async function getPersonScore(sheets, fileId, fileName) {
   const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
   const rows = rowData.map(r => r.values || []);
 
-  // Find the current month label anywhere in the first few header rows.
-  let month = null;
-  for (let r = 0; r < Math.min(rows.length, 3) && !month; r++) {
+  // Detect every distinct month mentioned across the header rows, left to right, in the
+  // order they appear as columns — some teams' sheets add a new month's columns each month
+  // (so there can be several), others currently only have one.
+  const months = [];
+  for (let r = 0; r < Math.min(rows.length, 3); r++) {
     for (const cell of rows[r]) {
       const m = (cell.formattedValue || "").match(MONTH_RE);
-      if (m) { month = m[1]; break; }
+      if (m && !months.includes(m[1])) months.push(m[1]);
     }
   }
 
-  // Find the "KPI SCORE FOR THE MONTH" row; the score is the last non-empty cell in that row.
-  let score = null;
+  // Find the "KPI SCORE FOR THE MONTH" row and take up to months.length values after the
+  // label, left to right — capped at that count so an unrelated table sharing the same row
+  // (some sheets have a little rating-legend table butted up against it) never gets scooped in.
+  const scoreByMonth = {};
   for (const row of rows) {
     const label = cellText(row, 0).trim().toLowerCase();
     if (label.includes("kpi score for the month") || label.includes("total kpi score")) {
-      for (let i = row.length - 1; i >= 1; i--) {
+      const vals = [];
+      for (let i = 1; i < row.length && vals.length < months.length; i++) {
         const v = row[i]?.formattedValue;
-        if (v && v.trim()) { score = v.trim(); break; }
+        if (v && v.trim()) vals.push(v.trim());
       }
+      months.forEach((m, idx) => { if (vals[idx]) scoreByMonth[m] = vals[idx]; });
       break;
     }
   }
 
   return {
     name: nameFromTitle(fileName),
-    month,
-    score, // null means genuinely not scored yet this month — shown as "Pending"
+    months: months.map(m => ({ month: m, score: scoreByMonth[m] || null })), // null score = genuinely not scored yet
     sheetUrl: `https://docs.google.com/spreadsheets/d/${fileId}/edit`,
   };
 }
