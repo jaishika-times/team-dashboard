@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle } from "@/lib/parser";
+import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle, parseStaffMasterlist } from "@/lib/parser";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
 function normMonth(m) {
@@ -65,6 +65,7 @@ export default function DashboardPage() {
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
   const [empForm, setEmpForm] = useState({ name: "", company: "", department: "", date_joined: "", folder_url: "", status: "Probation" });
+  const [masterlistStatus, setMasterlistStatus] = useState(null);
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
   const [selectedProdTeam, setSelectedProdTeam] = useState(null);
@@ -254,6 +255,38 @@ const COMP_LOGOS = {
               if (data) setEmployees(data);
             }
 
+            function normalizeEmpName(name) { return String(name || "").trim().replace(/\s+/g, " ").toLowerCase(); }
+
+            // Imports the Staff Masterlist Excel file: matches each row to an existing employee
+            // by name (creating a new one if none exists), and fills in Date Joined, Folder link,
+            // and Status. Company/Department are also updated from the file so org changes stay
+            // in sync. Only these fields are read — the file's sensitive columns (NRIC, phone,
+            // address, birthday, gender, nationality, marital status) are never touched.
+            function handleMasterlistFile(e) {
+              const file = e.target.files?.[0]; if (!file) return;
+              const reader = new FileReader();
+              reader.onload = async (evt) => {
+                setMasterlistStatus({ busy: true, msg: "Importing..." });
+                try {
+                  const result = parseStaffMasterlist(evt.target.result, file.name);
+                  let created = 0, updated = 0;
+                  for (const rec of result.records) {
+                    const norm = normalizeEmpName(rec.name);
+                    const existing = employees.find(x => normalizeEmpName(x.name) === norm);
+                    const payload = { name: rec.name, company: rec.company, department: rec.department, date_joined: rec.date_joined, folder_url: rec.folder_url, status: rec.status };
+                    if (existing) { await supabase.from("employees").update(payload).eq("id", existing.id); updated++; }
+                    else { await supabase.from("employees").insert(payload); created++; }
+                  }
+                  const { data } = await supabase.from("employees").select("*").order("name");
+                  if (data) setEmployees(data);
+                  setMasterlistStatus({ busy: false, msg: `Imported ${result.count} staff — ${created} added, ${updated} updated.` });
+                } catch (err) {
+                  setMasterlistStatus({ busy: false, msg: err.message, error: true });
+                }
+              };
+              reader.readAsArrayBuffer(file);
+            }
+
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
@@ -266,9 +299,18 @@ const COMP_LOGOS = {
                         className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Edit</button>
                       <button onClick={() => setEmpModal("remove-pick")}
                         className="px-3 py-1.5 bg-white text-red-500 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50">Remove</button>
+                      <label className="cursor-pointer">
+                        <div className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Import Masterlist</div>
+                        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleMasterlistFile} className="hidden" />
+                      </label>
                     </div>
                   )}
                 </div>
+                {masterlistStatus && (
+                  <div className={`mb-4 p-3 rounded-xl text-xs ${masterlistStatus.error ? "bg-red-50 border border-red-200 text-red-600" : "bg-green-50 border border-green-200 text-green-700"}`}>
+                    {masterlistStatus.busy ? "Importing..." : (masterlistStatus.error ? masterlistStatus.msg : "✓ " + masterlistStatus.msg)}
+                  </div>
+                )}
                 {isAdmin && <PendingBanner onGoToAdmin={() => setPage("admin")} />}
 
                 {/* Breadcrumb */}
