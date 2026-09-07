@@ -63,7 +63,7 @@ export default function DashboardPage() {
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
   const [selectedProdTeam, setSelectedProdTeam] = useState(null);
-  const [expandedKpiRow, setExpandedKpiRow] = useState(null);
+  const [showKpiReport, setShowKpiReport] = useState(false);
 
   useEffect(() => { init(); }, []);
 
@@ -735,8 +735,14 @@ const COMP_LOGOS = {
                                 <div className="space-y-2 text-sm">
                                   <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Target</span><span className="font-medium text-right max-w-[60%]">{e.target || "..."}</span></div>
                                   <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Completed</span><span className="font-medium">{e.completed || "..."}</span></div>
-                                  {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="text-xs text-gray-500 text-right max-w-[60%]">{e.notes}</span></div>}
                                   {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
+                                  {(e.weightage || e.weightageScore) && (
+                                    <div className="flex justify-between py-1 border-b border-gray-50">
+                                      <span className="text-gray-400">Weightage</span>
+                                      <span className="font-medium">{e.weightage || "—"}{e.weightageScore ? ` (score: ${e.weightageScore})` : ""}</span>
+                                    </div>
+                                  )}
+                                  {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="text-xs text-gray-500 text-right max-w-[60%]">{e.notes}</span></div>}
                                   {e.links && (
                                     <div className="pt-1">
                                       <span className="text-gray-400 text-sm">Documents</span>
@@ -760,12 +766,18 @@ const COMP_LOGOS = {
                       </div>
                     )}
 
-                    {/* Progress Report Table */}
+                    {/* Progress Report Table — tucked away behind a small toggle instead of always open */}
                     {kpiTeams.length > 0 && (
-                      <div className="mt-6 bg-white rounded-xl border border-gray-100 overflow-hidden">
-                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                      <div className="mt-6 flex justify-end">
+                        <button onClick={() => setShowKpiReport(v => !v)} className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2">
+                          {showKpiReport ? "Hide full progress report" : "View full progress report"}
+                        </button>
+                      </div>
+                    )}
+                    {kpiTeams.length > 0 && showKpiReport && (
+                      <div className="mt-2 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
                           <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth} W{curWeek}</h3>
-                          <p className="text-[11px] text-gray-400">Click a row for the full summary</p>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
@@ -780,47 +792,20 @@ const COMP_LOGOS = {
                               </tr>
                             </thead>
                             <tbody>
-                              {kpiTeams.map(team =>
+                              {kpiTeams.map((team, ti) =>
                                 byTeam[team].map((e, i) => {
-                                  const rowKey = `${team}|${e.employee}|${i}`;
                                   const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
                                   const pctColor = pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600";
-                                  const isOpen = expandedKpiRow === rowKey;
-                                  const urls = extractUrls(e.links);
-                                  return [
-                                    <tr key={rowKey} onClick={() => setExpandedKpiRow(isOpen ? null : rowKey)}
-                                      className={`border-b border-gray-50 cursor-pointer hover:bg-gray-50 ${isOpen ? "bg-gray-50" : ""}`}>
-                                      <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td>
+                                  return (
+                                    <tr key={team + i} className="border-b border-gray-50 hover:bg-gray-50">
+                                      {i === 0 ? <td className="px-4 py-2.5 font-semibold align-top" rowSpan={byTeam[team].length}><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td> : null}
                                       <td className="px-4 py-2.5 font-medium">{e.employee}</td>
-                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px] truncate">{e.target}</td>
-                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px] truncate">{e.completed}</td>
+                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.target}</td>
+                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.completed}</td>
                                       <td className="px-4 py-2.5"><KpiDocs links={e.links} /></td>
                                       <td className={`px-4 py-2.5 text-right font-bold ${pctColor}`}>{pct !== null ? pct + "%" : "..."}</td>
-                                    </tr>,
-                                    isOpen ? (
-                                      <tr key={rowKey + "-detail"} className="bg-gray-50/60 border-b border-gray-100">
-                                        <td colSpan={6} className="px-5 py-4">
-                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                            <div className="space-y-1.5">
-                                              <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Summary</p>
-                                              <div className="text-xs text-gray-600"><span className="text-gray-400">Target/Task: </span>{e.target || "—"}</div>
-                                              <div className="text-xs text-gray-600"><span className="text-gray-400">Completed: </span>{e.completed || "—"}</div>
-                                              {e.status && <div className="text-xs text-gray-600"><span className="text-gray-400">Status: </span>{e.status}</div>}
-                                              <div className="text-xs text-gray-600"><span className="text-gray-400">Notes: </span>{e.notes || "—"}</div>
-                                            </div>
-                                            <div>
-                                              <p className="text-[11px] font-semibold text-gray-400 uppercase mb-1.5">Documents</p>
-                                              {urls.length > 0 ? (
-                                                <div className="space-y-1">
-                                                  {urls.map((u, ui) => <a key={ui} href={u} target="_blank" rel="noopener noreferrer" onClick={ev => ev.stopPropagation()} className="block text-xs text-blue-500 hover:underline truncate">📄 {u}</a>)}
-                                                </div>
-                                              ) : <p className="text-xs text-gray-300">No documents linked</p>}
-                                            </div>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    ) : null,
-                                  ];
+                                    </tr>
+                                  );
                                 })
                               )}
                             </tbody>
