@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle, parseStaffMasterlist } from "@/lib/parser";
+import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle } from "@/lib/parser";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
 function normMonth(m) {
@@ -64,8 +64,7 @@ export default function DashboardPage() {
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
-  const [empForm, setEmpForm] = useState({ name: "", company: "", department: "", date_joined: "", folder_url: "", status: "Probation" });
-  const [masterlistStatus, setMasterlistStatus] = useState(null);
+  const [empForm, setEmpForm] = useState({ name: "", company: "", department: "", date_joined: "", folder_url: "" });
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
   const [selectedProdTeam, setSelectedProdTeam] = useState(null);
@@ -237,13 +236,13 @@ const COMP_LOGOS = {
 
             async function saveEmployee() {
               if (!empForm.name || !empForm.company || !empForm.department) return;
-              const payload = { name: empForm.name, company: empForm.company, department: empForm.department, date_joined: empForm.date_joined || null, folder_url: empForm.folder_url || null, status: empForm.status || "Probation" };
+              const payload = { name: empForm.name, company: empForm.company, department: empForm.department, date_joined: empForm.date_joined || null, folder_url: empForm.folder_url || null };
               if (empModal === "add") {
                 await supabase.from("employees").insert(payload);
               } else {
                 await supabase.from("employees").update(payload).eq("id", empModal);
               }
-              setEmpModal(null); setEmpForm({ name: "", company: "", department: "", date_joined: "", folder_url: "", status: "Probation" });
+              setEmpModal(null); setEmpForm({ name: "", company: "", department: "", date_joined: "", folder_url: "" });
               const { data } = await supabase.from("employees").select("*").order("name");
               if (data) setEmployees(data);
             }
@@ -257,60 +256,21 @@ const COMP_LOGOS = {
 
             function normalizeEmpName(name) { return String(name || "").trim().replace(/\s+/g, " ").toLowerCase(); }
 
-            // Imports the Staff Masterlist Excel file: matches each row to an existing employee
-            // by name (creating a new one if none exists), and fills in Date Joined, Folder link,
-            // and Status. Company/Department are also updated from the file so org changes stay
-            // in sync. Only these fields are read — the file's sensitive columns (NRIC, phone,
-            // address, birthday, gender, nationality, marital status) are never touched.
-            function handleMasterlistFile(e) {
-              const file = e.target.files?.[0]; if (!file) return;
-              const reader = new FileReader();
-              reader.onload = async (evt) => {
-                setMasterlistStatus({ busy: true, msg: "Importing..." });
-                try {
-                  const result = parseStaffMasterlist(evt.target.result, file.name);
-                  let created = 0, updated = 0;
-                  for (const rec of result.records) {
-                    const norm = normalizeEmpName(rec.name);
-                    const existing = employees.find(x => normalizeEmpName(x.name) === norm);
-                    const payload = { name: rec.name, company: rec.company, department: rec.department, date_joined: rec.date_joined, folder_url: rec.folder_url, status: rec.status };
-                    if (existing) { await supabase.from("employees").update(payload).eq("id", existing.id); updated++; }
-                    else { await supabase.from("employees").insert(payload); created++; }
-                  }
-                  const { data } = await supabase.from("employees").select("*").order("name");
-                  if (data) setEmployees(data);
-                  setMasterlistStatus({ busy: false, msg: `Imported ${result.count} staff — ${created} added, ${updated} updated.` });
-                } catch (err) {
-                  setMasterlistStatus({ busy: false, msg: err.message, error: true });
-                }
-              };
-              reader.readAsArrayBuffer(file);
-            }
-
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
                   <h1 className="text-xl font-semibold">Overview</h1>
                   {isAdmin && (
                     <div className="flex gap-2">
-                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: companies[0] || "", department: "", date_joined: "", folder_url: "", status: "Probation" }); }}
+                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: companies[0] || "", department: "", date_joined: "", folder_url: "" }); }}
                         className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800">+ Add</button>
                       <button onClick={() => setEmpModal("edit-pick")}
                         className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Edit</button>
                       <button onClick={() => setEmpModal("remove-pick")}
                         className="px-3 py-1.5 bg-white text-red-500 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50">Remove</button>
-                      <label className="cursor-pointer">
-                        <div className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Import Masterlist</div>
-                        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleMasterlistFile} className="hidden" />
-                      </label>
                     </div>
                   )}
                 </div>
-                {masterlistStatus && (
-                  <div className={`mb-4 p-3 rounded-xl text-xs ${masterlistStatus.error ? "bg-red-50 border border-red-200 text-red-600" : "bg-green-50 border border-green-200 text-green-700"}`}>
-                    {masterlistStatus.busy ? "Importing..." : (masterlistStatus.error ? masterlistStatus.msg : "✓ " + masterlistStatus.msg)}
-                  </div>
-                )}
                 {isAdmin && <PendingBanner onGoToAdmin={() => setPage("admin")} />}
 
                 {/* Breadcrumb */}
@@ -386,7 +346,7 @@ const COMP_LOGOS = {
                 {selCompany && selDept && (
                   <>
                     {isAdmin && (
-                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: selCompany, department: selDept, date_joined: "", folder_url: "", status: "Probation" }); }}
+                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: selCompany, department: selDept, date_joined: "", folder_url: "" }); }}
                         className="mb-4 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800">
                         + Add employee
                       </button>
@@ -405,10 +365,9 @@ const COMP_LOGOS = {
                             {emp.folder_url && (
                               <a href={emp.folder_url} target="_blank" rel="noopener noreferrer" title="Open employee folder" className="text-xs text-gray-400 hover:text-gray-700">📁 Folder</a>
                             )}
-                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${emp.status === "Confirmed" ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600"}`}>{emp.status || "Probation"}</span>
                             {isAdmin && (
                               <div className="flex items-center gap-2">
-                                <button onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department, date_joined: emp.date_joined || "", folder_url: emp.folder_url || "", status: emp.status || "Probation" }); }}
+                                <button onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department, date_joined: emp.date_joined || "", folder_url: emp.folder_url || "" }); }}
                                   className="text-xs text-blue-500 hover:text-blue-700">Edit</button>
                                 <button onClick={() => deleteEmployee(emp.id)}
                                   className="text-xs text-red-400 hover:text-red-600">Remove</button>
@@ -455,20 +414,11 @@ const COMP_LOGOS = {
                             <datalist id="dept-list">
                               {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
                             </datalist>
-                            <div className="grid grid-cols-2 gap-3">
-                              <label className="flex flex-col gap-1">
-                                <span className="text-[11px] text-gray-400">Date joined</span>
-                                <input type="date" value={empForm.date_joined} onChange={e => setEmpForm({ ...empForm, date_joined: e.target.value })}
-                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                              </label>
-                              <label className="flex flex-col gap-1">
-                                <span className="text-[11px] text-gray-400">Status</span>
-                                <select value={empForm.status} onChange={e => setEmpForm({ ...empForm, status: e.target.value })}
-                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                                  <option>Probation</option><option>Confirmed</option>
-                                </select>
-                              </label>
-                            </div>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[11px] text-gray-400">Date joined</span>
+                              <input type="date" value={empForm.date_joined} onChange={e => setEmpForm({ ...empForm, date_joined: e.target.value })}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            </label>
                             <input value={empForm.folder_url} onChange={e => setEmpForm({ ...empForm, folder_url: e.target.value })} placeholder="Folder link (URL)"
                               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                           </div>
@@ -488,7 +438,7 @@ const COMP_LOGOS = {
                           <div className="space-y-1 max-h-[50vh] overflow-y-auto">
                             {employees.map(emp => (
                               <div key={emp.id} data-emp-row={emp.name}
-                                onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department, date_joined: emp.date_joined || "", folder_url: emp.folder_url || "", status: emp.status || "Probation" }); }}
+                                onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department, date_joined: emp.date_joined || "", folder_url: emp.folder_url || "" }); }}
                                 className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-50 text-sm">
                                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: COMP_COLORS[emp.company] || "#888" }}>{emp.name[0]}</div>
                                 <div className="flex-1 min-w-0">
@@ -517,20 +467,11 @@ const COMP_LOGOS = {
                             <datalist id="dept-list2">
                               {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
                             </datalist>
-                            <div className="grid grid-cols-2 gap-3">
-                              <label className="flex flex-col gap-1">
-                                <span className="text-[11px] text-gray-400">Date joined</span>
-                                <input type="date" value={empForm.date_joined} onChange={e => setEmpForm({ ...empForm, date_joined: e.target.value })}
-                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                              </label>
-                              <label className="flex flex-col gap-1">
-                                <span className="text-[11px] text-gray-400">Status</span>
-                                <select value={empForm.status} onChange={e => setEmpForm({ ...empForm, status: e.target.value })}
-                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                                  <option>Probation</option><option>Confirmed</option>
-                                </select>
-                              </label>
-                            </div>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[11px] text-gray-400">Date joined</span>
+                              <input type="date" value={empForm.date_joined} onChange={e => setEmpForm({ ...empForm, date_joined: e.target.value })}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            </label>
                             <input value={empForm.folder_url} onChange={e => setEmpForm({ ...empForm, folder_url: e.target.value })} placeholder="Folder link (URL)"
                               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                           </div>
