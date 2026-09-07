@@ -146,14 +146,26 @@ async function getPersonScore(sheets, fileId, fileName) {
 // score; others hold a status note instead (resigned, on leave, not updated yet) — those
 // are surfaced as a note rather than forced into a fake score.
 async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
+  // Fetch the real tab names first — if "tabName" doesn't match exactly (trailing space,
+  // different casing, sheet got renamed), this tells us that immediately instead of just
+  // silently returning nothing.
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
+  const availableTabs = (meta.data.sheets || []).map(s => s.properties.title);
+  const actualTab = availableTabs.find(t => t === tabName) || availableTabs.find(t => t.trim().toLowerCase() === tabName.trim().toLowerCase());
+  if (!actualTab) {
+    return { people: [], debug: { availableTabs, requestedTab: tabName, issue: "requested tab not found among the sheet's actual tabs" } };
+  }
+
   const res = await sheets.spreadsheets.get({
     spreadsheetId,
-    ranges: [tabName],
+    ranges: [actualTab],
     fields: "sheets.data.rowData.values(formattedValue)",
   });
   const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
   const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
-  if (!rows.length) return [];
+  if (!rows.length) {
+    return { people: [], debug: { availableTabs, requestedTab: tabName, matchedTab: actualTab, issue: "tab matched but returned zero rows" } };
+  }
 
   const header = rows[0];
   const monthCols = [];
@@ -184,7 +196,10 @@ async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
       sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
     });
   }
-  return people;
+  const debug = people.length === 0
+    ? { availableTabs, requestedTab: tabName, matchedTab: actualTab, rowCount: rows.length, headerRow: header, monthColsFound: monthCols.map(m => m.month), issue: "tab and rows found, but no row had a name in column A" }
+    : null;
+  return { people, debug };
 }
 
 export async function GET(request) {
@@ -200,8 +215,10 @@ export async function GET(request) {
     const sheets = google.sheets({ version: "v4", auth });
 
     if (config.type === "summary_sheet") {
-      const people = await getSummarySheetPeople(sheets, config.spreadsheetId, config.tabName);
-      return NextResponse.json({ status: "ok", team, people }, { headers: { "Cache-Control": "no-store" } });
+      const { people, debug } = await getSummarySheetPeople(sheets, config.spreadsheetId, config.tabName);
+      const payload = { status: "ok", team, people };
+      if (debug) payload.debug = [{ folderId: `spreadsheet ${config.spreadsheetId}`, filesFound: 0, names: [], error: JSON.stringify(debug) }];
+      return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
     }
 
     // folder_scan (default): each person has their own file, possibly nested in a subfolder.
