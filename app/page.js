@@ -14,10 +14,27 @@ const TEAM_COLORS = {Design:"#6366f1",Video:"#3b82f6",Content:"#10b981",Social:"
 const TEAM_ICONS = {Design:"🎨",Video:"🎬",Content:"✍️",Social:"📱",CSE:"🛠️",Sales:"💼",Knowledge:"📚",Finance:"💰"};
 const TEAM_GRADIENTS = {Design:"from-indigo-500 to-purple-600",Video:"from-blue-500 to-cyan-500",Content:"from-emerald-500 to-teal-500",Social:"from-amber-400 to-orange-500",CSE:"from-red-500 to-rose-500",Sales:"from-violet-500 to-purple-500",Knowledge:"from-cyan-500 to-blue-500",Finance:"from-pink-500 to-rose-500"};
 
-// Pulls just the URLs out of a KPI entry's raw "links" text (which may mix URLs with plain notes).
+// Pulls links out of a KPI entry's raw "links" text — handles both a plain URL on its own
+// line, and Markdown-style "[Label](url)" links (which the sheet also uses, with a
+// descriptive label instead of a bare URL). Returns {label, url} so real names can be shown
+// instead of a generic "Link 1"/"Link 2".
 function extractUrls(text) {
   if (!text) return [];
-  return String(text).split("\n").map(l => l.trim()).filter(l => l.startsWith("http"));
+  const results = [];
+  const mdLinkRe = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  String(text).split("\n").map(l => l.trim()).filter(Boolean).forEach(line => {
+    let matched = false;
+    let m;
+    mdLinkRe.lastIndex = 0;
+    while ((m = mdLinkRe.exec(line)) !== null) {
+      results.push({ label: m[1].trim(), url: m[2] });
+      matched = true;
+    }
+    if (!matched && line.startsWith("http")) {
+      results.push({ label: null, url: line });
+    }
+  });
+  return results;
 }
 
 // Compact clickable document icons for a table cell — used in the Weekly KPI progress report.
@@ -27,7 +44,7 @@ function KpiDocs({ links }) {
   return (
     <div className="flex items-center gap-1.5">
       {urls.slice(0, 3).map((u, i) => (
-        <a key={i} href={u} target="_blank" rel="noopener noreferrer" title={u} className="text-blue-500 hover:text-blue-700">📄</a>
+        <a key={i} href={u.url} target="_blank" rel="noopener noreferrer" title={u.label || u.url} className="text-blue-500 hover:text-blue-700">📄</a>
       ))}
       {urls.length > 3 && <span className="text-[10px] text-gray-400">+{urls.length - 3}</span>}
     </div>
@@ -842,10 +859,10 @@ const COMP_LOGOS = {
                                                 <td className="py-1.5 px-1.5 min-w-[100px]">
                                                   {t.status ? <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 whitespace-nowrap">{t.status}</span> : "—"}
                                                 </td>
-                                                <td className="py-1.5 px-1.5 min-w-[90px]">
+                                                <td className="py-1.5 px-1.5 min-w-[90px] max-w-[160px]">
                                                   {rowLinks.length > 0 ? (
                                                     <div className="flex flex-col gap-0.5">
-                                                      {rowLinks.map((u, ui) => <a key={ui} href={u} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">📄 Link {rowLinks.length > 1 ? ui + 1 : ""}</a>)}
+                                                      {rowLinks.map((u, ui) => <a key={ui} href={u.url} target="_blank" rel="noopener noreferrer" title={u.url} className="text-blue-500 hover:underline truncate">📄 {u.label || `Link ${rowLinks.length > 1 ? ui + 1 : ""}`}</a>)}
                                                     </div>
                                                   ) : "—"}
                                                 </td>
@@ -872,14 +889,9 @@ const COMP_LOGOS = {
                                         <div className="pt-1">
                                           <span className="text-gray-400 text-sm">Documents</span>
                                           <div className="mt-1 space-y-1">
-                                            {e.links.split("\n").filter(l => l.trim()).map((link, li) => {
-                                              const isUrl = link.trim().startsWith("http");
-                                              return isUrl ? (
-                                                <a key={li} href={link.trim()} target="_blank" rel="noopener" className="block text-xs text-blue-500 hover:underline truncate">📄 {link.trim()}</a>
-                                              ) : (
-                                                <p key={li} className="text-xs text-gray-500">{link.trim()}</p>
-                                              );
-                                            })}
+                                            {extractUrls(e.links).map((u, li) => (
+                                              <a key={li} href={u.url} target="_blank" rel="noopener noreferrer" title={u.url} className="block text-xs text-blue-500 hover:underline truncate">📄 {u.label || u.url}</a>
+                                            ))}
                                           </div>
                                         </div>
                                       )}
