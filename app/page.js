@@ -64,7 +64,7 @@ export default function DashboardPage() {
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
-  const [empForm, setEmpForm] = useState({ name: "", company: "", department: "" });
+  const [empForm, setEmpForm] = useState({ name: "", company: "", department: "", date_joined: "", folder_url: "", status: "Probation" });
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
   const [selectedProdTeam, setSelectedProdTeam] = useState(null);
@@ -236,12 +236,13 @@ const COMP_LOGOS = {
 
             async function saveEmployee() {
               if (!empForm.name || !empForm.company || !empForm.department) return;
+              const payload = { name: empForm.name, company: empForm.company, department: empForm.department, date_joined: empForm.date_joined || null, folder_url: empForm.folder_url || null, status: empForm.status || "Probation" };
               if (empModal === "add") {
-                await supabase.from("employees").insert({ name: empForm.name, company: empForm.company, department: empForm.department });
+                await supabase.from("employees").insert(payload);
               } else {
-                await supabase.from("employees").update({ name: empForm.name, company: empForm.company, department: empForm.department }).eq("id", empModal);
+                await supabase.from("employees").update(payload).eq("id", empModal);
               }
-              setEmpModal(null); setEmpForm({ name: "", company: "", department: "" });
+              setEmpModal(null); setEmpForm({ name: "", company: "", department: "", date_joined: "", folder_url: "", status: "Probation" });
               const { data } = await supabase.from("employees").select("*").order("name");
               if (data) setEmployees(data);
             }
@@ -259,7 +260,7 @@ const COMP_LOGOS = {
                   <h1 className="text-xl font-semibold">Overview</h1>
                   {isAdmin && (
                     <div className="flex gap-2">
-                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: companies[0] || "", department: "" }); }}
+                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: companies[0] || "", department: "", date_joined: "", folder_url: "", status: "Probation" }); }}
                         className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800">+ Add</button>
                       <button onClick={() => setEmpModal("edit-pick")}
                         className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Edit</button>
@@ -343,7 +344,7 @@ const COMP_LOGOS = {
                 {selCompany && selDept && (
                   <>
                     {isAdmin && (
-                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: selCompany, department: selDept }); }}
+                      <button onClick={() => { setEmpModal("add"); setEmpForm({ name: "", company: selCompany, department: selDept, date_joined: "", folder_url: "", status: "Probation" }); }}
                         className="mb-4 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800">
                         + Add employee
                       </button>
@@ -355,17 +356,23 @@ const COMP_LOGOS = {
                             <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: COMP_COLORS[selCompany] || "#888" }}>{emp.name[0]}</div>
                             <div>
                               <p className="text-sm font-semibold">{emp.name}</p>
-                              <p className="text-xs text-gray-400">{emp.department}</p>
+                              <p className="text-xs text-gray-400">{emp.department}{emp.date_joined ? ` · Joined ${emp.date_joined}` : ""}</p>
                             </div>
                           </div>
-                          {isAdmin && (
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department }); }}
-                                className="text-xs text-blue-500 hover:text-blue-700">Edit</button>
-                              <button onClick={() => deleteEmployee(emp.id)}
-                                className="text-xs text-red-400 hover:text-red-600">Remove</button>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-3">
+                            {emp.folder_url && (
+                              <a href={emp.folder_url} target="_blank" rel="noopener noreferrer" title="Open employee folder" className="text-xs text-gray-400 hover:text-gray-700">📁 Folder</a>
+                            )}
+                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${emp.status === "Confirmed" ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600"}`}>{emp.status || "Probation"}</span>
+                            {isAdmin && (
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department, date_joined: emp.date_joined || "", folder_url: emp.folder_url || "", status: emp.status || "Probation" }); }}
+                                  className="text-xs text-blue-500 hover:text-blue-700">Edit</button>
+                                <button onClick={() => deleteEmployee(emp.id)}
+                                  className="text-xs text-red-400 hover:text-red-600">Remove</button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -406,6 +413,22 @@ const COMP_LOGOS = {
                             <datalist id="dept-list">
                               {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
                             </datalist>
+                            <div className="grid grid-cols-2 gap-3">
+                              <label className="flex flex-col gap-1">
+                                <span className="text-[11px] text-gray-400">Date joined</span>
+                                <input type="date" value={empForm.date_joined} onChange={e => setEmpForm({ ...empForm, date_joined: e.target.value })}
+                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                              </label>
+                              <label className="flex flex-col gap-1">
+                                <span className="text-[11px] text-gray-400">Status</span>
+                                <select value={empForm.status} onChange={e => setEmpForm({ ...empForm, status: e.target.value })}
+                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                                  <option>Probation</option><option>Confirmed</option>
+                                </select>
+                              </label>
+                            </div>
+                            <input value={empForm.folder_url} onChange={e => setEmpForm({ ...empForm, folder_url: e.target.value })} placeholder="Folder link (URL)"
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                           </div>
                           <div className="flex gap-2 mt-4">
                             <button onClick={saveEmployee} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Add</button>
@@ -423,7 +446,7 @@ const COMP_LOGOS = {
                           <div className="space-y-1 max-h-[50vh] overflow-y-auto">
                             {employees.map(emp => (
                               <div key={emp.id} data-emp-row={emp.name}
-                                onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department }); }}
+                                onClick={() => { setEmpModal(emp.id); setEmpForm({ name: emp.name, company: emp.company, department: emp.department, date_joined: emp.date_joined || "", folder_url: emp.folder_url || "", status: emp.status || "Probation" }); }}
                                 className="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-50 text-sm">
                                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: COMP_COLORS[emp.company] || "#888" }}>{emp.name[0]}</div>
                                 <div className="flex-1 min-w-0">
@@ -452,6 +475,22 @@ const COMP_LOGOS = {
                             <datalist id="dept-list2">
                               {[...new Set(employees.map(e => e.department))].map(d => <option key={d} value={d} />)}
                             </datalist>
+                            <div className="grid grid-cols-2 gap-3">
+                              <label className="flex flex-col gap-1">
+                                <span className="text-[11px] text-gray-400">Date joined</span>
+                                <input type="date" value={empForm.date_joined} onChange={e => setEmpForm({ ...empForm, date_joined: e.target.value })}
+                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                              </label>
+                              <label className="flex flex-col gap-1">
+                                <span className="text-[11px] text-gray-400">Status</span>
+                                <select value={empForm.status} onChange={e => setEmpForm({ ...empForm, status: e.target.value })}
+                                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                                  <option>Probation</option><option>Confirmed</option>
+                                </select>
+                              </label>
+                            </div>
+                            <input value={empForm.folder_url} onChange={e => setEmpForm({ ...empForm, folder_url: e.target.value })} placeholder="Folder link (URL)"
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                           </div>
                           <div className="flex gap-2 mt-4">
                             <button onClick={saveEmployee} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Save</button>
