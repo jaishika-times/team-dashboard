@@ -95,10 +95,17 @@ export async function GET() {
       const h = String(header[c] || "");
       const m = h.match(/^(.+?)['\u2019]s\s+Tasks/i);
       if (m) {
-        const name = m[1].trim();
-        if (h.match(/\d\s*$/)) {
-          const pri = Object.keys(colMap).find(k => colMap[k].name.toLowerCase() === name.toLowerCase());
-          if (pri) dupCols[c] = parseInt(pri);
+        // Strip any trailing "(Company Name)" tag some form sections add, so the same
+        // person isn't treated as two different people just because their column header
+        // differs slightly between sections.
+        const name = m[1].trim().replace(/\s*\(.*?\)\s*$/, "").trim();
+        const pri = Object.keys(colMap).find(k => colMap[k].name.toLowerCase() === name.toLowerCase());
+        if (pri) {
+          // Same person already has a primary column — whether this is a numbered overflow
+          // column ("Jon's Tasks 2") or a genuine second column for them elsewhere in the
+          // form (e.g. duplicated under another company's section), fold it into the same
+          // one person instead of creating a second, separate entry.
+          dupCols[c] = parseInt(pri);
         } else {
           colMap[c] = { name, team: teamMap[name.toLowerCase()] || "Other" };
         }
