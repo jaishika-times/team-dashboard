@@ -741,7 +741,6 @@ const COMP_LOGOS = {
                                   </div>
                                 )}
                                 <div className="space-y-2 text-sm">
-                                  {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
                                   {e.tasks && e.tasks.length > 0 ? (
                                     <div className="overflow-x-auto -mx-1 mt-1">
                                       <table className="w-full text-xs border-collapse">
@@ -751,13 +750,14 @@ const COMP_LOGOS = {
                                             <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Completed</th>
                                             <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Weightage</th>
                                             <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Score</th>
+                                            <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Status</th>
                                             <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Links</th>
                                             <th className="py-1.5 px-1.5 text-[10px] uppercase tracking-wide">Notes</th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {e.tasks.map((t, ti) => {
-                                            const rowLinks = ti === 0 ? extractUrls(e.links) : [];
+                                            const rowLinks = extractUrls(t.links);
                                             return (
                                               <tr key={ti} className="border-b border-gray-50 align-top last:border-0">
                                                 <td className="py-1.5 px-1.5 text-gray-700 min-w-[110px]">
@@ -767,6 +767,9 @@ const COMP_LOGOS = {
                                                 <td className="py-1.5 px-1.5 text-gray-600">{t.completed || "—"}</td>
                                                 <td className="py-1.5 px-1.5 text-gray-400">{t.weightage || "—"}</td>
                                                 <td className="py-1.5 px-1.5 font-medium text-gray-700">{t.weightageScore || "—"}</td>
+                                                <td className="py-1.5 px-1.5 min-w-[100px]">
+                                                  {t.status ? <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 whitespace-nowrap">{t.status}</span> : "—"}
+                                                </td>
                                                 <td className="py-1.5 px-1.5 min-w-[90px]">
                                                   {rowLinks.length > 0 ? (
                                                     <div className="flex flex-col gap-0.5">
@@ -774,7 +777,7 @@ const COMP_LOGOS = {
                                                     </div>
                                                   ) : "—"}
                                                 </td>
-                                                <td className="py-1.5 px-1.5 text-gray-500 min-w-[160px]">{ti === 0 ? (e.notes || "—") : "—"}</td>
+                                                <td className="py-1.5 px-1.5 text-gray-500 min-w-[160px]">{t.notes || "—"}</td>
                                               </tr>
                                             );
                                           })}
@@ -783,6 +786,7 @@ const COMP_LOGOS = {
                                     </div>
                                   ) : (
                                     <>
+                                      {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
                                       <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Target</span><span className="font-medium text-right max-w-[60%]">{e.target || "..."}</span></div>
                                       <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Completed</span><span className="font-medium">{e.completed || "..."}</span></div>
                                       {(e.weightage || e.weightageScore) && (

@@ -64,10 +64,14 @@ function parseCSV(text) {
 // Weightage, Weightage Score, Progress, Notes, Status, Links.
 //
 // A person can span MULTIPLE rows: their first row has Name filled in, along with
-// their overall Progress %, Notes, Status and Links. Any rows directly below with a
-// BLANK Name (but a Task/Target filled in) are additional tasks for that SAME
-// person, and get grouped into one entry with a `tasks` array instead of being
-// dropped or treated as separate people.
+// their overall Progress % for the week. Any rows directly below with a BLANK Name
+// (but a Task/Target filled in) are additional tasks for that SAME person, and get
+// grouped into one entry with a `tasks` array.
+//
+// IMPORTANT: Notes/Status/Links are recorded PER TASK ROW, not once per person —
+// different weeks fill these in differently (some weeks give every task its own
+// status/links, others only fill the first task), so each task keeps whatever its
+// own row actually has, rather than assuming they belong to the person as a whole.
 export async function GET() {
   try {
     const res = await fetch(CSV_URL, { next: { revalidate: 60 } });
@@ -110,7 +114,6 @@ export async function GET() {
             employee: name,
             tasks: [],
             kpiPct: parseProgress(progressRaw),
-            notes, status, links,
           };
           people.push(current);
         } else {
@@ -119,15 +122,19 @@ export async function GET() {
       }
 
       if (taskText && current) {
-        current.tasks.push({ task: taskText, platform, completed, weightage, weightageScore });
+        current.tasks.push({ task: taskText, platform, completed, weightage, weightageScore, notes, status, links });
       }
     }
 
-    // Backward-compatible flat summary fields, used by the Progress Report table.
+    // Backward-compatible flat summary fields, used by the Progress Report table
+    // (which shows one row per person, not per task).
     const entries = people.map(p => ({
       ...p,
       target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
       completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
+      notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
+      status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",
+      links: p.tasks.map(t => t.links).filter(Boolean).join("\n"),
     }));
 
     if (!entries.length) throw new Error("No KPI rows found in sheet");
