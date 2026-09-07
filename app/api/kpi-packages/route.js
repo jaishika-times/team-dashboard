@@ -183,10 +183,17 @@ async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
     return { people: [], debug: { availableTabs, requestedTab: tabName, matchedTab: actualTab, rowCount: rows.length, first5Rows: rows.slice(0, 5), issue: "scanned the first 5 rows but found no row with recognizable month headers" } };
   }
 
+  // The name column isn't necessarily column 0 either — look for a header cell literally
+  // saying "Staff"/"Name"; failing that, fall back to whatever sits just left of the first
+  // detected month column (the normal layout), and only default to 0 as a last resort.
+  const headerRow = rows[headerRowIdx];
+  let nameCol = headerRow.findIndex(h => /^(staff|name)$/i.test((h || "").trim()));
+  if (nameCol === -1) nameCol = Math.max(0, monthCols[0].col - 1);
+
   const people = [];
   for (let r = headerRowIdx + 1; r < rows.length; r++) {
     const row = rows[r];
-    const name = (row[0] || "").trim();
+    const name = (row[nameCol] || "").trim();
     if (!name) continue;
     const months = monthCols.map(({ month, col }) => {
       const raw = (row[col] || "").trim();
@@ -206,7 +213,7 @@ async function getSummarySheetPeople(sheets, spreadsheetId, tabName) {
     });
   }
   const debug = people.length === 0
-    ? { availableTabs, requestedTab: tabName, matchedTab: actualTab, rowCount: rows.length, headerRowIdx, monthColsFound: monthCols.map(m => m.month), issue: "found header row but no data row had a name in column A" }
+    ? { availableTabs, requestedTab: tabName, matchedTab: actualTab, rowCount: rows.length, headerRowIdx, nameCol, headerRow, monthColsFound: monthCols.map(m => m.month), sampleDataRows: rows.slice(headerRowIdx + 1, headerRowIdx + 4), issue: "found header row and name column but no data row had a name there" }
     : null;
   return { people, debug };
 }
