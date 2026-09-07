@@ -61,12 +61,14 @@ export default function DashboardPage() {
   const [checkoutHistoryFor, setCheckoutHistoryFor] = useState(null); // asset object currently viewing history for
   const [checkoutEntries, setCheckoutEntries] = useState([]);
   const [checkoutForm, setCheckoutForm] = useState({ held_by: "", date_taken: "", date_returned: "", notes: "" });
+  const [allCheckouts, setAllCheckouts] = useState([]);
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
   const [empForm, setEmpForm] = useState({ name: "", company: "", department: "", date_joined: "", folder_url: "" });
   const [kpiData, setKpiData] = useState(null);
   const [kpiPeriod, setKpiPeriod] = useState("");
+  const [kpiViewMode, setKpiViewMode] = useState("weekly"); // "weekly" | "monthly"
   const [selectedProdTeam, setSelectedProdTeam] = useState(null);
   const [showKpiReport, setShowKpiReport] = useState(false);
 
@@ -102,6 +104,8 @@ export default function DashboardPage() {
     if (assetRows) setAssets(assetRows);
     const { data: assetLogRows } = await supabase.from("asset_weekly_logs").select("id, week_ending, recorded_at").order("week_ending", { ascending: false });
     if (assetLogRows) setAssetLogs(assetLogRows);
+    const { data: checkoutRows } = await supabase.from("asset_checkouts").select("*").order("date_taken", { ascending: false });
+    if (checkoutRows) setAllCheckouts(checkoutRows);
     if (empRows) setEmployees(empRows);
 
     // Weekly KPI: merge the live-synced sheets with anything manually uploaded/pasted.
@@ -677,7 +681,32 @@ const COMP_LOGOS = {
             const weeksForMonth = Array.from(weeksPerMonth[curMonth] || []).sort((a,b) => parseInt(a) - parseInt(b));
             const curWeek = kpiPeriod.split("|")[1] || weeksForMonth[weeksForMonth.length - 1] || "";
 
-            const filtered = entries.filter(e => e.month === curMonth && String(e.week) === String(curWeek));
+            // Monthly view: one aggregated "entry" per person for the whole month — averages
+            // their weekly % and merges every week's tasks (each labeled "W<n>: ...") into one
+            // list, so it can reuse the exact same team-card / member-card / report-table
+            // rendering that the weekly view uses, with no separate UI needed.
+            function buildMonthlyEntries() {
+              const monthEntries = entries.filter(e => e.month === curMonth);
+              const byPerson = {};
+              monthEntries.forEach(e => {
+                const key = `${e.team}|${e.employee}`;
+                if (!byPerson[key]) byPerson[key] = { team: e.team, employee: e.employee, tasks: [], pcts: [] };
+                if (e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct)) byPerson[key].pcts.push(e.kpiPct);
+                (e.tasks && e.tasks.length > 0 ? e.tasks : [{ task: e.target, completed: e.completed, weightage: "", weightageScore: "", status: e.status, links: e.links, notes: e.notes }])
+                  .forEach(t => byPerson[key].tasks.push({ ...t, task: `W${e.week}: ${t.task || ""}` }));
+              });
+              return Object.values(byPerson).map(p => ({
+                team: p.team, employee: p.employee, tasks: p.tasks,
+                kpiPct: p.pcts.length ? p.pcts.reduce((a, b) => a + b, 0) / p.pcts.length : null,
+                target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
+                completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
+                notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
+                status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",
+                links: p.tasks.map(t => t.links).filter(Boolean).join("\n"),
+              }));
+            }
+
+            const filtered = kpiViewMode === "monthly" ? buildMonthlyEntries() : entries.filter(e => e.month === curMonth && String(e.week) === String(curWeek));
             const byTeam = {};
             filtered.forEach(e => { const t = e.team || "Other"; if (!byTeam[t]) byTeam[t] = []; byTeam[t].push(e); });
             const teamOrder = ["Design", "Video", "Content", "Social", "CSE", "Sales", "Knowledge", "Finance"];
@@ -695,17 +724,26 @@ const COMP_LOGOS = {
                   <>
                     <div className="flex gap-3 items-end flex-wrap mb-5">
                       <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">View</label>
+                        <div className="flex bg-gray-100 rounded-lg p-0.5">
+                          <button onClick={() => setKpiViewMode("weekly")} className={`px-3 py-1 rounded-md text-sm font-medium ${kpiViewMode === "weekly" ? "bg-white shadow-sm" : "text-gray-500"}`}>Weekly</button>
+                          <button onClick={() => setKpiViewMode("monthly")} className={`px-3 py-1 rounded-md text-sm font-medium ${kpiViewMode === "monthly" ? "bg-white shadow-sm" : "text-gray-500"}`}>Monthly</button>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-gray-400 uppercase tracking-wide">Month</label>
                         <select value={curMonth} onChange={e => { const w = Array.from(weeksPerMonth[e.target.value] || []); setKpiPeriod(e.target.value + "|" + (w[w.length-1] || "")); }} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
                           {months.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                       </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">Week</label>
-                        <select value={curWeek} onChange={e => setKpiPeriod(curMonth + "|" + e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
-                          {weeksForMonth.map(w => <option key={w} value={w}>W{w}</option>)}
-                        </select>
-                      </div>
+                      {kpiViewMode === "weekly" && (
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wide">Week</label>
+                          <select value={curWeek} onChange={e => setKpiPeriod(curMonth + "|" + e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                            {weeksForMonth.map(w => <option key={w} value={w}>W{w}</option>)}
+                          </select>
+                        </div>
+                      )}
                       {isAdmin && <SmallUpload type="kpi" onRecorded={loadData} userId={user.id} />}
                     </div>
 
@@ -748,7 +786,7 @@ const COMP_LOGOS = {
                       <div>
                         <div className="flex items-center gap-2 mb-4">
                           <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[selectedTeam] || "from-gray-400 to-gray-500"} flex items-center justify-center text-sm`}>{TEAM_ICONS[selectedTeam] || "📋"}</div>
-                          <span className="text-sm font-semibold">{selectedTeam} Team - {curMonth} W{curWeek}</span>
+                          <span className="text-sm font-semibold">{selectedTeam} Team - {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</span>
                           <button onClick={() => setSelectedTeam(null)} className="ml-2 text-xs text-gray-400 hover:text-gray-600">Close</button>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -863,7 +901,7 @@ const COMP_LOGOS = {
                     {kpiTeams.length > 0 && showKpiReport && (
                       <div className="mt-2 bg-white rounded-xl border border-gray-100 overflow-hidden">
                         <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
-                          <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth} W{curWeek}</h3>
+                          <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</h3>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
@@ -900,7 +938,7 @@ const COMP_LOGOS = {
                       </div>
                     )}
 
-                    {kpiTeams.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No data for {curMonth} W{curWeek}</p>}
+                    {kpiTeams.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No data for {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</p>}
                   </>
                 ) : isAdmin ? <InlineUpload type="kpi" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📋" text="No KPI data yet" />}
 
@@ -965,7 +1003,7 @@ const COMP_LOGOS = {
 
             async function openCheckoutHistory(asset) {
               setCheckoutHistoryFor(asset);
-              setCheckoutForm({ held_by: "", date_taken: "", date_returned: "", notes: "" });
+              setCheckoutForm({ held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" });
               const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", asset.id).order("date_taken", { ascending: false });
               if (data) setCheckoutEntries(data);
             }
@@ -981,7 +1019,7 @@ const COMP_LOGOS = {
                 date_returned: checkoutForm.date_returned, notes: checkoutForm.notes,
                 status: checkoutForm.date_returned ? "Available" : "In Use",
               }).eq("id", checkoutHistoryFor.id);
-              setCheckoutForm({ held_by: "", date_taken: "", date_returned: "", notes: "" });
+              setCheckoutForm({ held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" });
               const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
               if (data) setCheckoutEntries(data);
               loadData();
@@ -992,6 +1030,17 @@ const COMP_LOGOS = {
               await supabase.from("asset_checkouts").delete().eq("id", id);
               const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
               if (data) setCheckoutEntries(data);
+            }
+
+            // One click: marks this checkout as returned today, and automatically flips the
+            // asset itself back to Available — no separate step needed.
+            async function markCheckoutReturned(entry) {
+              const today = new Date().toISOString().split("T")[0];
+              await supabase.from("asset_checkouts").update({ date_returned: today }).eq("id", entry.id);
+              await supabase.from("assets").update({ status: "Available", date_returned: today }).eq("id", entry.asset_id);
+              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
+              if (data) setCheckoutEntries(data);
+              loadData();
             }
 
             return (
@@ -1085,6 +1134,52 @@ const COMP_LOGOS = {
                   </div>
                   {filtered.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No items found</p>}
                 </div>
+
+                {/* Checkout History — every time an item was taken, by whom, and when it came back.
+                    Sorted by date then asset, so multiple people taking the same item the same
+                    day show up right next to each other as a group. */}
+                {allCheckouts.length > 0 && (
+                  <div className="mt-6 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                    <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                      <h3 className="text-sm font-semibold">Checkout History</h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b border-gray-100">
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date</th>
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Asset</th>
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Who Took</th>
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Taken</th>
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Returned</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...allCheckouts]
+                            .sort((a, b) => (b.date_taken || "").localeCompare(a.date_taken || "") || (a.asset_id || "").localeCompare(b.asset_id || ""))
+                            .map(c => {
+                              const asset = assets.find(a => a.id === c.asset_id);
+                              return (
+                                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                  <td className="px-3 py-2 text-xs text-gray-500">{c.date_taken || "—"}</td>
+                                  <td className="px-3 py-2 font-mono text-xs text-gray-500">{asset?.code || "—"}</td>
+                                  <td className="px-3 py-2 text-xs text-gray-700">{asset?.name || "(deleted item)"}</td>
+                                  <td className="px-3 py-2 text-xs text-gray-700">{c.held_by}</td>
+                                  <td className="px-3 py-2 text-xs text-gray-400">{c.date_taken || "—"}</td>
+                                  <td className="px-3 py-2 text-xs">
+                                    {c.date_returned
+                                      ? <span className="text-green-600">{c.date_returned}</span>
+                                      : <span className="text-amber-600 font-medium">Not yet returned</span>}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* Add/Edit Modal */}
                 {assetModal && (
@@ -1277,6 +1372,9 @@ const COMP_LOGOS = {
                               <p className="text-gray-400">{c.date_taken || "?"} → {c.date_returned || "not yet returned"}</p>
                               {c.notes && <p className="text-gray-400 truncate">{c.notes}</p>}
                             </div>
+                            {!c.date_returned && (
+                              <button onClick={() => markCheckoutReturned(c)} className="text-green-600 hover:text-green-800 shrink-0 font-medium">Mark Returned</button>
+                            )}
                             <button onClick={() => deleteCheckoutEntry(c.id)} className="text-red-300 hover:text-red-600 shrink-0">✕</button>
                           </div>
                         ))}
@@ -1477,7 +1575,7 @@ function ResourceLibrary() {
                 {isOpen && (
                   <div className="border-t border-gray-50 divide-y divide-gray-50">
                     {files.map((f, i) => (
-                      <a key={i} href={encodeURI(f.path)} target="_blank" rel="noopener noreferrer" download
+                      <a key={i} href={encodeURI(f.path)} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50">
                         <span className="shrink-0">{RESOURCE_ICONS[f.ext] || "📎"}</span>
                         <span className="flex-1 min-w-0 truncate text-gray-700">{f.name}</span>
