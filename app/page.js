@@ -733,15 +733,45 @@ const COMP_LOGOS = {
                                   </div>
                                 )}
                                 <div className="space-y-2 text-sm">
-                                  <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Target</span><span className="font-medium text-right max-w-[60%]">{e.target || "..."}</span></div>
-                                  <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Completed</span><span className="font-medium">{e.completed || "..."}</span></div>
-                                  {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
-                                  {(e.weightage || e.weightageScore) && (
-                                    <div className="flex justify-between py-1 border-b border-gray-50">
-                                      <span className="text-gray-400">Weightage</span>
-                                      <span className="font-medium">{e.weightage || "—"}{e.weightageScore ? ` (score: ${e.weightageScore})` : ""}</span>
+                                  {e.tasks && e.tasks.length > 0 ? (
+                                    <div className="overflow-x-auto -mx-1 mb-1">
+                                      <table className="w-full text-xs">
+                                        <thead>
+                                          <tr className="text-left text-gray-400 border-b border-gray-100">
+                                            <th className="py-1.5 px-1 text-[10px] uppercase tracking-wide">Task</th>
+                                            <th className="py-1.5 px-1 text-[10px] uppercase tracking-wide">Completed</th>
+                                            <th className="py-1.5 px-1 text-[10px] uppercase tracking-wide">Weightage</th>
+                                            <th className="py-1.5 px-1 text-right text-[10px] uppercase tracking-wide">Score</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {e.tasks.map((t, ti) => (
+                                            <tr key={ti} className="border-b border-gray-50 last:border-0">
+                                              <td className="py-1.5 px-1 text-gray-700">
+                                                {t.task}
+                                                {t.platform && <span className="text-gray-400"> ({t.platform})</span>}
+                                              </td>
+                                              <td className="py-1.5 px-1 text-gray-600">{t.completed || "—"}</td>
+                                              <td className="py-1.5 px-1 text-gray-400">{t.weightage || "—"}</td>
+                                              <td className="py-1.5 px-1 text-right font-medium text-gray-700">{t.weightageScore || "—"}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
                                     </div>
+                                  ) : (
+                                    <>
+                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Target</span><span className="font-medium text-right max-w-[60%]">{e.target || "..."}</span></div>
+                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Completed</span><span className="font-medium">{e.completed || "..."}</span></div>
+                                      {(e.weightage || e.weightageScore) && (
+                                        <div className="flex justify-between py-1 border-b border-gray-50">
+                                          <span className="text-gray-400">Weightage</span>
+                                          <span className="font-medium">{e.weightage || "—"}{e.weightageScore ? ` (score: ${e.weightageScore})` : ""}</span>
+                                        </div>
+                                      )}
+                                    </>
                                   )}
+                                  {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
                                   {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="text-xs text-gray-500 text-right max-w-[60%]">{e.notes}</span></div>}
                                   {e.links && (
                                     <div className="pt-1">

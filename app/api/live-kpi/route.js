@@ -60,8 +60,14 @@ function parseCSV(text) {
   return rows;
 }
 
-// Sheet columns: Month, Week, Date, Name, Task/Target, (spacer), Completed,
-// Weightage, Weightage Score, Progress, Notes, Status, Links
+// Sheet columns: Month, Week, Date, Name, Task/Target, Platform, Completed,
+// Weightage, Weightage Score, Progress, Notes, Status, Links.
+//
+// A person can span MULTIPLE rows: their first row has Name filled in, along with
+// their overall Progress %, Notes, Status and Links. Any rows directly below with a
+// BLANK Name (but a Task/Target filled in) are additional tasks for that SAME
+// person, and get grouped into one entry with a `tasks` array instead of being
+// dropped or treated as separate people.
 export async function GET() {
   try {
     const res = await fetch(CSV_URL, { next: { revalidate: 60 } });
@@ -70,39 +76,59 @@ export async function GET() {
     const rows = parseCSV(text);
     if (rows.length < 2) throw new Error("No data");
 
-    const entries = [];
+    const people = [];
     let lastMonth = "", lastWeek = "";
+    let current = null; // the person entry currently being built
+
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.every(c => !c && c !== 0)) continue;
 
-      const month = row[0] ? String(row[0]).trim() : "";
+      const monthRaw = row[0] ? String(row[0]).trim() : "";
       const weekRaw = row[1] ? String(row[1]).trim() : "";
       const name = row[3] ? String(row[3]).trim() : "";
-      const target = row[4] ? String(row[4]).trim() : "";
+      const taskText = row[4] ? String(row[4]).trim() : "";
+      const platform = row[5] ? String(row[5]).trim() : "";
       const completed = row[6] !== undefined && row[6] !== null ? String(row[6]).trim() : "";
       const weightage = row[7] ? String(row[7]).trim() : "";
       const weightageScore = row[8] ? String(row[8]).trim() : "";
+      const progressRaw = row[9];
       const notes = row[10] ? String(row[10]).trim() : "";
       const status = row[11] ? String(row[11]).trim() : "";
       const links = row[12] ? String(row[12]).trim() : "";
 
-      if (month) lastMonth = normalizeMonth(month);
+      if (monthRaw) lastMonth = normalizeMonth(monthRaw);
       if (weekRaw) lastWeek = (weekRaw.match(/\d+/) || [weekRaw])[0];
 
-      if (!name) continue;
-      if (!lastMonth || !lastWeek) continue;
+      if (!name && !taskText) continue; // fully blank row
 
-      entries.push({
-        month: lastMonth, week: lastWeek,
-        team: teamForName(name),
-        employee: name,
-        target, completed,
-        kpiPct: parseProgress(row[9]),
-        notes, status, links,
-        weightage, weightageScore,
-      });
+      if (name) {
+        if (lastMonth && lastWeek) {
+          current = {
+            month: lastMonth, week: lastWeek,
+            team: teamForName(name),
+            employee: name,
+            tasks: [],
+            kpiPct: parseProgress(progressRaw),
+            notes, status, links,
+          };
+          people.push(current);
+        } else {
+          current = null;
+        }
+      }
+
+      if (taskText && current) {
+        current.tasks.push({ task: taskText, platform, completed, weightage, weightageScore });
+      }
     }
+
+    // Backward-compatible flat summary fields, used by the Progress Report table.
+    const entries = people.map(p => ({
+      ...p,
+      target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
+      completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
+    }));
 
     if (!entries.length) throw new Error("No KPI rows found in sheet");
     return NextResponse.json({ entries });
