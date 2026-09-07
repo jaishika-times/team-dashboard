@@ -1335,6 +1335,177 @@ const thCR = thC + " text-right";
 const tdC = "px-3 py-2";
 const tdCR = tdC + " text-right";
 
+const RESOURCE_FILES = [
+  { category: "SOP", folder: null, name: "SOP_OFFBOARDING (WIP)", ext: "docx", path: "/resources/sop/SOP_OFFBOARDING (WIP).docx" },
+  { category: "SOP", folder: null, name: "CLAIM SUBMISSION PROCEDURE_UPDATED 2024", ext: "pdf", path: "/resources/sop/CLAIM SUBMISSION PROCEDURE_UPDATED 2024.pdf" },
+  { category: "SOP", folder: null, name: "CLAIM SUBMISSION PROCEDURE_UPDATED 2025", ext: "docx", path: "/resources/sop/CLAIM SUBMISSION PROCEDURE_UPDATED 2025.docx" },
+  { category: "SOP", folder: "PROBATIONARY EVALUATION", name: "SOP - Probationary Evaluation", ext: "docx", path: "/resources/sop/PROBATIONARY EVALUATION/SOP - Probationary Evaluation.docx" },
+  { category: "SOP", folder: "OFFER FOR HIRE", name: "SOP - OFFER FOR HIRE", ext: "docx", path: "/resources/sop/OFFER FOR HIRE/SOP - OFFER FOR HIRE.docx" },
+  { category: "SOP", folder: "ONBOARDING", name: "SOP - THUMBPRINT FOR ACCESS(WIP)", ext: "docx", path: "/resources/sop/ONBOARDING/SOP - THUMBPRINT FOR ACCESS(WIP).docx" },
+  { category: "SOP", folder: "ONBOARDING", name: "SOP - KAKITANGAN", ext: "docx", path: "/resources/sop/ONBOARDING/SOP - KAKITANGAN.docx" },
+  { category: "SOP", folder: "ONBOARDING", name: "SOP - ONBOARDING FOR MALAYSIAN STAFF_", ext: "docx", path: "/resources/sop/ONBOARDING/SOP - ONBOARDING FOR MALAYSIAN STAFF_.docx" },
+  { category: "SOP", folder: "ONBOARDING", name: "SOP - ONBOARDING FOR REMOTE STAFF_", ext: "docx", path: "/resources/sop/ONBOARDING/SOP - ONBOARDING FOR REMOTE STAFF_.docx" },
+  { category: "SOP", folder: "SOURCING & SCREENING", name: "SOP - PROCESSING APPLICANTS from Job Portals_", ext: "docx", path: "/resources/sop/SOURCING & SCREENING/SOP - PROCESSING APPLICANTS from Job Portals_.docx" },
+  { category: "SOP", folder: "EXPATS", name: "MSC_FKW_PROJECTION", ext: "pdf", path: "/resources/sop/EXPATS/MSC_FKW_PROJECTION.pdf" },
+  { category: "SOP", folder: "EXPATS", name: "USER MANUAL FOR  eSP APPLICATION", ext: "pdf", path: "/resources/sop/EXPATS/USER MANUAL FOR  eSP APPLICATION.pdf" },
+  { category: "SOP", folder: "EXPATS", name: "User_Management_Module", ext: "pdf", path: "/resources/sop/EXPATS/User_Management_Module.pdf" },
+  { category: "SOP", folder: "EXPATS", name: "MSC_FKW_REGISTRATION", ext: "pdf", path: "/resources/sop/EXPATS/MSC_FKW_REGISTRATION.pdf" },
+  { category: "Template", folder: null, name: "Template - Questionnaire for Reference Check_", ext: "docx", path: "/resources/templates/Template - Questionnaire for Reference Check_.docx" },
+  { category: "Template", folder: null, name: "Template - Authorisation Letter", ext: "docx", path: "/resources/templates/Template - Authorisation Letter.docx" },
+  { category: "Template", folder: null, name: "Template - Health Declaration", ext: "docx", path: "/resources/templates/Template - Health Declaration.docx" },
+  { category: "Template", folder: null, name: "TEMPLATE - (Name) Offboarding & Handover", ext: "xlsx", path: "/resources/templates/TEMPLATE - (Name) Offboarding & Handover.xlsx" },
+  { category: "Template", folder: null, name: "Template - Company Property Return Acknowledgement_", ext: "docx", path: "/resources/templates/Template - Company Property Return Acknowledgement_.docx" },
+  { category: "Template", folder: null, name: "Template - Salary Increment 2025 - 1__", ext: "docx", path: "/resources/templates/Template - Salary Increment 2025 - 1__.docx" },
+  { category: "Template", folder: null, name: "Template - Probationary Offer Letter", ext: "docx", path: "/resources/templates/Template - Probationary Offer Letter.docx" },
+  { category: "Template", folder: null, name: "Template - Media Schedule and Media Order Approval Policy Acknowledgement Document", ext: "docx", path: "/resources/templates/Template - Media Schedule and Media Order Approval Policy Acknowledgement Document.docx" },
+  { category: "Template", folder: null, name: "Template - Promotion & Salary Revision", ext: "docx", path: "/resources/templates/Template - Promotion & Salary Revision.docx" },
+  { category: "Template", folder: null, name: "Template - Salary Increment 2025 - Non KPI_", ext: "docx", path: "/resources/templates/Template - Salary Increment 2025 - Non KPI_.docx" },
+  { category: "Template", folder: null, name: "Template - Job Requisition Form", ext: "docx", path: "/resources/templates/Template - Job Requisition Form.docx" },
+  { category: "Template", folder: null, name: "Staff Folder- Check List (TEMPLATE)", ext: "docx", path: "/resources/templates/Staff Folder- Check List (TEMPLATE).docx" },
+  { category: "Template", folder: null, name: "Template - Salary Increment", ext: "docx", path: "/resources/templates/Template - Salary Increment.docx" },
+  { category: "Template", folder: null, name: "Template Transfer Letter", ext: "docx", path: "/resources/templates/Template Transfer Letter.docx" },
+  { category: "Template", folder: null, name: "Template - Salary Increment 2025 - 5__", ext: "docx", path: "/resources/templates/Template - Salary Increment 2025 - 5__.docx" },
+  { category: "Template", folder: null, name: "Letterhead", ext: "docx", path: "/resources/templates/Letterhead.docx" },
+  { category: "Template", folder: "Probation Assessment", name: "Content Writer_Probation Confirmation Assesstment", ext: "xlsx", path: "/resources/templates/Probation Assessment/Content Writer_Probation Confirmation Assesstment.xlsx" },
+  { category: "Template", folder: "Probation Assessment", name: "CSE_Probation Confirmation Assesstment Form", ext: "xlsx", path: "/resources/templates/Probation Assessment/CSE_Probation Confirmation Assesstment Form.xlsx" },
+  { category: "Template", folder: "Template - Interview Sheet", name: "Recruiter - Remote_Interview Sheet", ext: "docx", path: "/resources/templates/Template - Interview Sheet/Recruiter - Remote_Interview Sheet.docx" },
+  { category: "Template", folder: "Template - Interview Sheet", name: "Web Developer_Interview Sheet", ext: "docx", path: "/resources/templates/Template - Interview Sheet/Web Developer_Interview Sheet.docx" },
+  { category: "Template", folder: "Template - Interview Sheet", name: "Creative Designer - Intern_Interview Sheet", ext: "docx", path: "/resources/templates/Template - Interview Sheet/Creative Designer - Intern_Interview Sheet.docx" },
+  { category: "Template", folder: "Template - Interview Sheet", name: "Videographer_Interview Sheet", ext: "docx", path: "/resources/templates/Template - Interview Sheet/Videographer_Interview Sheet.docx" },
+  { category: "Template", folder: "Template - Interview Sheet", name: "Creative Designer_Interview Sheet", ext: "docx", path: "/resources/templates/Template - Interview Sheet/Creative Designer_Interview Sheet.docx" },
+  { category: "Template", folder: "Template - Interview Sheet", name: "Account Manager - Remote_Interview Sheet", ext: "docx", path: "/resources/templates/Template - Interview Sheet/Account Manager - Remote_Interview Sheet.docx" },
+  { category: "Template", folder: "Template - Interview Sheet", name: "Administrative Assistant_Interview Sheet", ext: "docx", path: "/resources/templates/Template - Interview Sheet/Administrative Assistant_Interview Sheet.docx" },
+  { category: "Template", folder: "Template - Acceptance of Resignation", name: "Times Media_Template - Acceptance of Resignation Letter", ext: "docx", path: "/resources/templates/Template - Acceptance of Resignation/Times Media_Template - Acceptance of Resignation Letter.docx" },
+  { category: "Template", folder: "Template - Acceptance of Resignation", name: "Times Digicliff_Template - Acceptance of Resignation Letter", ext: "docx", path: "/resources/templates/Template - Acceptance of Resignation/Times Digicliff_Template - Acceptance of Resignation Letter.docx" },
+  { category: "Template", folder: "Template - Acceptance of Resignation", name: "Times Digicliff_Template - Early Resignation Acceptance", ext: "docx", path: "/resources/templates/Template - Acceptance of Resignation/Times Digicliff_Template - Early Resignation Acceptance.docx" },
+  { category: "Template", folder: "Template - Acceptance of Resignation", name: "Times Guides - Acceptance of Resignation Letter", ext: "docx", path: "/resources/templates/Template - Acceptance of Resignation/Times Guides - Acceptance of Resignation Letter.docx" },
+  { category: "Template", folder: "Template - Acceptance of Resignation", name: "Apply Radar_Template - Acceptance of Resignation", ext: "docx", path: "/resources/templates/Template - Acceptance of Resignation/Apply Radar_Template - Acceptance of Resignation.docx" },
+  { category: "Template", folder: "Template - Acceptance of Resignation", name: "XCalibur - Acceptance of Resignation Letter", ext: "docx", path: "/resources/templates/Template - Acceptance of Resignation/XCalibur - Acceptance of Resignation Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Copy of Appoitment Letter - Annas_June2020", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Copy of Appoitment Letter - Annas_June2020.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Xcalibur_Jeremy Joshua_Internship Appointment Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Xcalibur_Jeremy Joshua_Internship Appointment Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Times Guides - Internship Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Times Guides - Internship Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "TIMES DIGICLIFF_Internship Appointment Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/TIMES DIGICLIFF_Internship Appointment Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Xcalibur - Internship Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Xcalibur - Internship Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Xcalibur_Internship Appointment Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Xcalibur_Internship Appointment Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "REMOTE WORKING_Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/REMOTE WORKING_Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Part-time_Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Part-time_Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Letter of Extension_XCalibur Digital_Template", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Letter of Extension_XCalibur Digital_Template.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Letter of Extension_Apply Radar", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Letter of Extension_Apply Radar.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Xcalibur - Probationary Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Xcalibur - Probationary Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Apply Radar - Probationary Offer Letter(1)", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Apply Radar - Probationary Offer Letter(1).docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Apply Radar - Probationary Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Apply Radar - Probationary Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Times Digicliff - Probationary Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Times Digicliff - Probationary Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Shafiq_Probationary Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Shafiq_Probationary Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Times Media - Probationary Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Times Media - Probationary Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Confirmation_1 Year Auto Renewal_Apply Radar", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Confirmation_1 Year Auto Renewal_Apply Radar.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Aiman- Confirmation_Times", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Aiman- Confirmation_Times.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "1 Year Auto Renewal_Apply Radar_Freelance_", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/1 Year Auto Renewal_Apply Radar_Freelance_.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Template Confirmation-Times Media", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Template Confirmation-Times Media.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Rosie_Confirmation Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Rosie_Confirmation Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Confirmation_1 Year Auto Renewal_Times Guides", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Confirmation_1 Year Auto Renewal_Times Guides.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Expatriate_1 Year Auto Renewal_XCalibur Digital", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Expatriate_1 Year Auto Renewal_XCalibur Digital.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Aliff Aliff- Contract_Xcalibur_", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Aliff Aliff- Contract_Xcalibur_.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Confirmation_1 Year Auto Renewal_Times Digicliff", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Confirmation_1 Year Auto Renewal_Times Digicliff.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Remote Employee_Confirmation_XCalibur Digital", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Remote Employee_Confirmation_XCalibur Digital.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "TIMES MEDIA_Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/TIMES MEDIA_Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "Xcalibur Digital_Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/Xcalibur Digital_Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "TIMES DIGICLIFF_Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/TIMES DIGICLIFF_Offer Letter.docx" },
+  { category: "Template", folder: "Template - LOA-RENEWAL-CONFIRMATION", name: "TIMES GUIDES_Offer Letter", ext: "docx", path: "/resources/templates/Template - LOA-RENEWAL-CONFIRMATION/TIMES GUIDES_Offer Letter.docx" },
+  { category: "Template", folder: "Template - Interview Record & Hiring Recommendations", name: "Template - (EXPERIENCED) Interview Record & Hiring Recommendations", ext: "docx", path: "/resources/templates/Template - Interview Record & Hiring Recommendations/Template - (EXPERIENCED) Interview Record & Hiring Recommendations.docx" },
+  { category: "Template", folder: "Template - Interview Record & Hiring Recommendations", name: "Template- (Fresh Graduate)Interview Record & Hiring Recommendations", ext: "docx", path: "/resources/templates/Template - Interview Record & Hiring Recommendations/Template- (Fresh Graduate)Interview Record & Hiring Recommendations.docx" },
+  { category: "Template", folder: "Template - Interview Record & Hiring Recommendations", name: "(Fresh Graduate)Interview Record & Hiring Recommendations", ext: "docx", path: "/resources/templates/Template - Interview Record & Hiring Recommendations/(Fresh Graduate)Interview Record & Hiring Recommendations.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "BEFORE ONBOARDING - Email to Remote Candidate", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/BEFORE ONBOARDING - Email to Remote Candidate.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Staff Hiring Incentive Form", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/Staff Hiring Incentive Form.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Template - Onboarding Document", ext: "xlsx", path: "/resources/templates/Template - Onboarding Related Docs/Template - Onboarding Document.xlsx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "BEFORE ONBOARDING - Email to Malaysian Candidate", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/BEFORE ONBOARDING - Email to Malaysian Candidate.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Employment Information Form", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/Employment Information Form.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Times Media_ Company Property Acknowledgement  Document", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/Times Media_ Company Property Acknowledgement  Document.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Apply Radar_ Company Property Acknowledgement  Document", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/Apply Radar_ Company Property Acknowledgement  Document.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Times Digicliff _ Company Property Acknowledgement  Document", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/Times Digicliff _ Company Property Acknowledgement  Document.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "XCalibur Digital_ Company Property Acknowledgement  Document", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/XCalibur Digital_ Company Property Acknowledgement  Document.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Munirah_Company Property Acknowledgement", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/Munirah_Company Property Acknowledgement.docx" },
+  { category: "Template", folder: "Template - Onboarding Related Docs", name: "Times Guides_ Company Property Acknowledgement  Document", ext: "docx", path: "/resources/templates/Template - Onboarding Related Docs/Times Guides_ Company Property Acknowledgement  Document.docx" },
+  { category: "Template", folder: "Promotion & Salary Revision", name: "Times Guides Template - Promotion & Salary Revision", ext: "docx", path: "/resources/templates/Promotion & Salary Revision/Times Guides Template - Promotion & Salary Revision.docx" },
+  { category: "Template", folder: "Promotion & Salary Revision", name: "Xcalibur Digital - Promotion & Salary Revision", ext: "docx", path: "/resources/templates/Promotion & Salary Revision/Xcalibur Digital - Promotion & Salary Revision.docx" },
+  { category: "Template", folder: "Promotion & Salary Revision", name: "Time Media Template - Promotion & Salary Revision", ext: "docx", path: "/resources/templates/Promotion & Salary Revision/Time Media Template - Promotion & Salary Revision.docx" },
+  { category: "Template", folder: "Promotion & Salary Revision", name: "Times Guides Template - Salary Revision", ext: "docx", path: "/resources/templates/Promotion & Salary Revision/Times Guides Template - Salary Revision.docx" },
+];
+
+// Groups files by category then folder, with search and file-type icons.
+const RESOURCE_ICONS = { docx: "📝", doc: "📝", xlsx: "📊", xls: "📊", pdf: "📄" };
+
+function ResourceLibrary() {
+  const [search, setSearch] = useState("");
+  const [openFolders, setOpenFolders] = useState(new Set());
+
+  const q = search.trim().toLowerCase();
+  const filtered = q ? RESOURCE_FILES.filter(f => f.name.toLowerCase().includes(q) || (f.folder || "").toLowerCase().includes(q)) : RESOURCE_FILES;
+
+  function groupBy(category) {
+    const files = filtered.filter(f => f.category === category);
+    const groups = {};
+    files.forEach(f => {
+      const key = f.folder || "General";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(f);
+    });
+    return groups;
+  }
+
+  function toggleFolder(key) {
+    setOpenFolders(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; });
+  }
+
+  function renderSection(title, category) {
+    const groups = groupBy(category);
+    const folderKeys = Object.keys(groups).sort((a, b) => (a === "General" ? -1 : b === "General" ? 1 : a.localeCompare(b)));
+    if (folderKeys.length === 0) return null;
+    return (
+      <div className="mb-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{title}</p>
+        <div className="space-y-1.5">
+          {folderKeys.map(key => {
+            const files = groups[key];
+            const groupId = `${category}-${key}`;
+            const isOpen = q ? true : openFolders.has(groupId);
+            return (
+              <div key={groupId} className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+                <button onClick={() => toggleFolder(groupId)} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50">
+                  <span className="text-sm font-medium">{key}</span>
+                  <span className="text-[11px] text-gray-400">{files.length} file{files.length !== 1 ? "s" : ""} {isOpen ? "▲" : "▼"}</span>
+                </button>
+                {isOpen && (
+                  <div className="border-t border-gray-50 divide-y divide-gray-50">
+                    {files.map((f, i) => (
+                      <a key={i} href={encodeURI(f.path)} target="_blank" rel="noopener noreferrer" download
+                        className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50">
+                        <span className="shrink-0">{RESOURCE_ICONS[f.ext] || "📎"}</span>
+                        <span className="flex-1 min-w-0 truncate text-gray-700">{f.name}</span>
+                        <span className="text-gray-300 uppercase text-[10px] shrink-0">{f.ext}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <h3 className="text-sm font-semibold mb-3">Templates &amp; SOPs</h3>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files or folders..."
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3" />
+      {renderSection("SOPs", "SOP")}
+      {renderSection("Templates", "Template")}
+      {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-6">No files match your search</p>}
+    </div>
+  );
+}
+
 // ===== ADMIN PANEL =====
 function AdminPanel({ user, onDataUpdated }) {
   const [users, setUsers] = useState([]);
@@ -1416,6 +1587,8 @@ function AdminPanel({ user, onDataUpdated }) {
         </label>
         {pendingAtt && <button onClick={recordAtt} disabled={recording} className="mt-2 w-full py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl disabled:opacity-50">{recording ? "Recording..." : "Record"}</button>}
       </div>
+
+      <ResourceLibrary />
 
       <DataManager onDataUpdated={onDataUpdated} userId={user.id} />
     </>
