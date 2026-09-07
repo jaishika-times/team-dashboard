@@ -1424,6 +1424,10 @@ function AdminPanel({ user, onDataUpdated }) {
 
 // Lets an admin see every recorded Attendance month and every Weekly KPI entry individually,
 // and pick exactly what to delete instead of only having an all-or-nothing wipe.
+// Teams with a live sheet feed — nothing in Admin needs to manage their KPI entries,
+// since any stored record here is stale and has no effect on what the KPI page shows.
+const LIVE_COVERED_TEAMS = new Set(["Content", "Video", "Design"]);
+
 function DataManager({ onDataUpdated, userId }) {
   const [attRecords, setAttRecords] = useState([]);
   const [kpiRowId, setKpiRowId] = useState(null);
@@ -1440,7 +1444,7 @@ function DataManager({ onDataUpdated, userId }) {
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
     if (kpiRows?.length) {
       setKpiRowId(kpiRows[0].id);
-      setKpiEntries((kpiRows[0].data?.entries || []).map((e, idx) => ({ ...e, idx })));
+      setKpiEntries((kpiRows[0].data?.entries || []).map((e, idx) => ({ ...e, idx })).filter(e => !LIVE_COVERED_TEAMS.has(e.team)));
     } else { setKpiRowId(null); setKpiEntries([]); }
     setSelectedKpi(new Set());
     setLoading(false);
@@ -1453,6 +1457,9 @@ function DataManager({ onDataUpdated, userId }) {
     onDataUpdated();
   }
 
+  // Rewrites the whole weekly_kpi row from what's left. Note: since Content/Video/Design
+  // entries are filtered out of view above, saving here also drops any of those from storage
+  // as a side effect — harmless, since that data is never read (live always wins for those teams).
   async function saveKpiEntries(remaining) {
     await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     if (remaining.length) await supabase.from("weekly_kpi").insert({ data: { entries: remaining.map(({ idx, ...rest }) => rest) }, uploaded_by: userId });
@@ -1522,7 +1529,7 @@ function DataManager({ onDataUpdated, userId }) {
       {/* Weekly KPI */}
       <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase">Weekly KPI entries (uploaded &amp; pasted)</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase">Weekly KPI entries — manual teams only (Content/Video/Design are live)</p>
           {selectedKpi.size > 0 && (
             <button onClick={deleteSelectedKpi} className="text-xs px-2.5 py-1 bg-red-500 text-white rounded-md font-medium hover:bg-red-600">
               Delete selected ({selectedKpi.size})
