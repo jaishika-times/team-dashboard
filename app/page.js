@@ -97,12 +97,14 @@ export default function DashboardPage() {
     if (assetRows) setAssets(assetRows);
     if (empRows) setEmployees(empRows);
 
-    // Weekly KPI: merge the live-synced sheet with anything manually uploaded/pasted.
-    // Live wins over manual for the same person/week — this is what surfaces the real
-    // task breakdown and links from the sheet. Manual/pasted entries only fill in people
-    // or weeks the live sheet doesn't cover at all (e.g. before live sync existed).
+    // Weekly KPI: merge the live-synced sheets with anything manually uploaded/pasted.
+    // Content, Video, and Design are now FULLY live-synced from their own published
+    // tabs, so any leftover manual entry for those teams is guaranteed stale/duplicate
+    // and gets dropped entirely. Manual entries only apply to teams that don't have a
+    // live feed at all yet (Social, CSE, Sales, Knowledge, Finance).
+    const LIVE_COVERED_TEAMS = new Set(["Content", "Video", "Design"]);
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
-    const manualEntries = kpiRows?.length ? (kpiRows[0].data?.entries || []) : [];
+    const manualEntries = (kpiRows?.length ? (kpiRows[0].data?.entries || []) : []).filter(e => !LIVE_COVERED_TEAMS.has(e.team));
     let liveKpiEntries = [];
     try {
       const liveKpiRes = await fetch("/api/live-kpi");
