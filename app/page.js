@@ -1643,6 +1643,18 @@ function initials(name) {
   return (name || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join("");
 }
 
+// Default to whichever month actually has the most real data, not just the chronologically
+// latest one mentioned anywhere — a single person's stray leftover column for an odd month
+// shouldn't make the whole team's default view look empty.
+function pickDefaultMonth(people, allMonths) {
+  let best = null, bestCount = -1;
+  for (const month of allMonths) {
+    const count = people.filter(p => p.months.some(m => m.month === month && (m.score || m.note))).length;
+    if (count > bestCount) { bestCount = count; best = month; }
+  }
+  return best || allMonths[allMonths.length - 1] || null;
+}
+
 // A team whose live scores are built — click it and see each person's name + current KPI
 // score, pulled straight from their real scoring sheet (or a maintained summary sheet).
 function TeamPeopleCards({ team, folderUrl, gradient }) {
@@ -1666,7 +1678,7 @@ function TeamPeopleCards({ team, folderUrl, gradient }) {
           if (data.debug) setDebug(data.debug);
           const allMonths = Array.from(new Set(data.people.flatMap(p => p.months.map(m => m.month))))
             .sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
-          setSelectedMonth(allMonths[allMonths.length - 1] || null);
+          setSelectedMonth(pickDefaultMonth(data.people, allMonths));
         } else setError(data.error || "Could not load live scores");
       })
       .catch(e => { if (!cancelled) setError(e.message); });
