@@ -88,8 +88,24 @@ export default function DashboardPage() {
     const { data: assetRows } = await supabase.from("assets").select("*").order("code");
     if (assetRows) setAssets(assetRows);
     if (empRows) setEmployees(empRows);
+
+    // Weekly KPI: merge the live-synced sheet with anything manually uploaded/pasted.
+    // Manual entries win when they cover the same person/month/week (so a manual
+    // correction always takes priority over the live feed).
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
-    if (kpiRows?.length) { setKpiData(kpiRows[0].data); }
+    const manualEntries = kpiRows?.length ? (kpiRows[0].data?.entries || []) : [];
+    let liveKpiEntries = [];
+    try {
+      const liveKpiRes = await fetch("/api/live-kpi");
+      const liveKpiJson = await liveKpiRes.json();
+      if (liveKpiJson.entries?.length) liveKpiEntries = liveKpiJson.entries;
+    } catch (e) { console.log("KPI sheet fetch error"); }
+    const kpiKey = e => `${e.month}|${e.week}|${e.team}|${e.employee}`;
+    const mergedKpi = new Map();
+    liveKpiEntries.forEach(e => mergedKpi.set(kpiKey(e), e));
+    manualEntries.forEach(e => mergedKpi.set(kpiKey(e), e));
+    setKpiData({ entries: Array.from(mergedKpi.values()) });
+
     const { data: attRows } = await supabase.from("attendance_records").select("*").order("month_key", { ascending: false });
     if (attRows?.length) { setAttIndex(attRows.map(r => ({ key: r.month_key, label: r.month_label }))); const map = {}; attRows.forEach(r => { map[r.month_key] = r.data; }); setAttData(map); setAttMonth(attRows[0].month_key); }
   }
@@ -624,7 +640,11 @@ const COMP_LOGOS = {
             const filtered = entries.filter(e => e.month === curMonth && String(e.week) === String(curWeek));
             const byTeam = {};
             filtered.forEach(e => { const t = e.team || "Other"; if (!byTeam[t]) byTeam[t] = []; byTeam[t].push(e); });
-            const kpiTeams = ["Content", "Video", "Design"].filter(t => byTeam[t]);
+            const teamOrder = ["Design", "Video", "Content", "Social", "CSE", "Sales", "Knowledge", "Finance"];
+            const kpiTeams = Object.keys(byTeam).sort((a, b) => {
+              const ai = teamOrder.indexOf(a), bi = teamOrder.indexOf(b);
+              return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+            });
 
             return (
               <>
@@ -650,7 +670,7 @@ const COMP_LOGOS = {
                     </div>
 
                     {/* Team cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                       {kpiTeams.map(team => {
                         const members = byTeam[team];
                         const withPct = members.filter(m => m.kpiPct !== null && !isNaN(m.kpiPct));
