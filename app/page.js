@@ -1616,7 +1616,6 @@ function ResourceLibrary() {
 // point straight at Drive (not copies), whatever gets added each month just shows up —
 // nothing here needs to be re-synced or re-uploaded.
 const KPI_PACKAGE_FOLDERS = [
-  { name: "All Teams — Target & KPI 2026", url: "https://drive.google.com/drive/folders/1MvWKmuOJUVgsk7vFs3K-hjHltgxof3WX" },
   { name: "Acc Mnmgt Team", url: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_" },
   { name: "Content Curation Team", url: "https://drive.google.com/drive/folders/1EUFh1vrkQaaPxeCmO3et51PJInAI16We" },
   { name: "Design Team", url: "https://drive.google.com/drive/folders/1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO" },
@@ -1625,30 +1624,94 @@ const KPI_PACKAGE_FOLDERS = [
   { name: "Social Team", url: "https://drive.google.com/drive/folders/1zb8vnZ7ikSIS88bGMK3pBuJ_u0Yej8mi" },
   { name: "Tech Team", url: "https://drive.google.com/drive/folders/1bOQ8vVrbNWG-YpNXcbvpnzxh2KsLwFQp" },
   { name: "Video Team", url: "https://drive.google.com/drive/folders/1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ" },
-  { name: "Edunexa", url: "https://drive.google.com/drive/folders/1-w4pfSZVErco_3xbI21eL5utU94GaLOw" },
+  { name: "Edunexa", url: "https://drive.google.com/drive/folders/1-w4pfSZVErco_3xbI21eL5utU94GaLOw", live: true },
 ];
+
+// A team whose live scores are built (currently just Edunexa) — click it and see each
+// person's name + current KPI score, pulled straight from their real scoring sheet.
+function TeamPeopleCards({ team, folderUrl }) {
+  const [people, setPeople] = useState(null); // null = loading
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPeople(null);
+    setError(null);
+    fetch(`/api/kpi-packages?team=${encodeURIComponent(team)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return;
+        if (data.status === "ok") setPeople(data.people);
+        else setError(data.error || "Could not load live scores");
+      })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [team]);
+
+  return (
+    <div className="mt-3 pl-2 border-l-2 border-gray-100">
+      {people === null && !error && <p className="text-xs text-gray-300 py-3">Loading live scores…</p>}
+      {error && <p className="text-xs text-red-400 py-3">Couldn't load live scores: {error}</p>}
+      {people && people.length === 0 && <p className="text-xs text-gray-300 py-3">No individual sheets found for this team.</p>}
+      {people && people.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 py-2">
+          {people.map((p, i) => (
+            <a key={i} href={p.sheetUrl} target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-between px-3 py-2.5 bg-white rounded-lg border border-gray-100 hover:border-gray-200 text-sm">
+              <div>
+                <p className="font-medium text-gray-800">{p.name}</p>
+                <p className="text-[11px] text-gray-400">{p.month || "This month"}</p>
+              </div>
+              {p.score ? (
+                <span className="text-sm font-semibold text-gray-900">{p.score}</span>
+              ) : (
+                <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">Pending</span>
+              )}
+            </a>
+          ))}
+        </div>
+      )}
+      <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-[11px] text-gray-400 hover:text-gray-600 mt-1 mb-2">Open team folder in Drive →</a>
+    </div>
+  );
+}
 
 function TeamKpiPackages() {
   const [search, setSearch] = useState("");
+  const [openTeam, setOpenTeam] = useState(null);
   const q = search.trim().toLowerCase();
   const filtered = q ? KPI_PACKAGE_FOLDERS.filter(f => f.name.toLowerCase().includes(q)) : KPI_PACKAGE_FOLDERS;
 
   return (
     <>
       <h1 className="text-xl font-semibold mb-1">KPI Packages</h1>
-      <p className="text-sm text-gray-400 mb-5">Each team's individual member KPI scoring sheets, targets, and monthly source docs — live from Drive.</p>
+      <p className="text-sm text-gray-400 mb-5">Team-by-team, live from each person's real KPI scoring sheet.</p>
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teams..."
         className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm mb-4 focus:outline-none focus:border-gray-400" />
-      <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-        {filtered.map((f, i) => (
-          <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-gray-50">
-            <span className="shrink-0">📁</span>
-            <span className="flex-1 min-w-0 truncate text-gray-700">{f.name}</span>
-            <span className="text-gray-300 text-xs shrink-0">Open in Drive →</span>
-          </a>
-        ))}
-        {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-6">No teams match your search</p>}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {filtered.map((f, i) => {
+          const isOpen = openTeam === f.name;
+          return (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
+              <button onClick={() => setOpenTeam(isOpen ? null : f.name)} className="w-full flex items-center justify-between text-left">
+                <span className="text-sm font-semibold">{f.name}</span>
+                {f.live ? (
+                  <span className="text-[10px] font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded">Live {isOpen ? "▲" : "▼"}</span>
+                ) : (
+                  <span className="text-[10px] text-gray-300">{isOpen ? "▲" : "▼"}</span>
+                )}
+              </button>
+              {isOpen && (f.live
+                ? <TeamPeopleCards team={f.name} folderUrl={f.url} />
+                : <div className="mt-3 pl-2 border-l-2 border-gray-100 py-2">
+                    <p className="text-xs text-gray-400 mb-2">Live scores for this team aren't built yet — for now, browse the sheets directly.</p>
+                    <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700">Open team folder in Drive →</a>
+                  </div>
+              )}
+            </div>
+          );
+        })}
+        {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-6 col-span-2">No teams match your search</p>}
       </div>
     </>
   );

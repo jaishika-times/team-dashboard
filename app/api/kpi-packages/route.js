@@ -1,0 +1,134 @@
+import { NextResponse } from "next/server";
+import { google } from "googleapis";
+
+// Each team's KPI files live in a genuinely different arrangement — some flat, some nested,
+// some one tab per month, some one tab labeled with whatever the current month is. This route
+// is built team-by-team (not one generic parser) so each team's real layout gets verified
+// before being trusted. Currently implemented: Edunexa. Others return "not_built_yet" and the
+// dashboard falls back to a plain Drive folder link for those.
+const TEAM_CONFIG = {
+  Edunexa: {
+    rootFolderId: "1-w4pfSZVErco_3xbI21eL5utU94GaLOw",
+    // one known subfolder that also holds people directly (Knowledge Engineers)
+    subfolderIds: ["1XqxjEJdAb6m-blLGslBHakCNcIrmaaIY"],
+  },
+};
+
+function getAuth() {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set");
+  const creds = JSON.parse(raw);
+  return new google.auth.JWT({
+    email: creds.client_email,
+    key: creds.private_key,
+    scopes: [
+      "https://www.googleapis.com/auth/spreadsheets.readonly",
+      "https://www.googleapis.com/auth/drive.readonly",
+    ],
+  });
+}
+
+async function listSpreadsheetsIn(drive, folderId) {
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+    fields: "files(id, name)",
+    pageSize: 100,
+  });
+  return res.data.files || [];
+}
+
+// "(KPI Jon) ..." / "KPI 2026 (JON) - Edunexa Product Manager" -> "Jon"
+function nameFromTitle(title) {
+  let m = title.match(/\(KPI\s+([^)]+)\)/i);
+  if (m) return m[1].trim();
+  m = title.match(/\(([A-Z]{2,})\)/); // e.g. "(JON)"
+  if (m) return m[1].charAt(0) + m[1].slice(1).toLowerCase();
+  return title;
+}
+
+const MONTH_RE = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/i;
+
+function cellText(row, c) {
+  return row?.[c]?.formattedValue || "";
+}
+
+async function getPersonScore(sheets, fileId, fileName) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: "sheets.properties.title" });
+  const titles = (meta.data.sheets || []).map(s => s.properties.title);
+  // Prefer a tab literally called "KPI Scores"; otherwise first tab matching that prefix.
+  const tabToUse = titles.find(t => /^KPI Scores$/i.test(t)) || titles.find(t => /^KPI Scores/i.test(t)) || titles[0];
+  if (!tabToUse) return null;
+
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: fileId,
+    ranges: [tabToUse],
+    fields: "sheets.data.rowData.values(formattedValue)",
+  });
+  const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
+  const rows = rowData.map(r => r.values || []);
+
+  // Find the current month label anywhere in the first few header rows.
+  let month = null;
+  for (let r = 0; r < Math.min(rows.length, 3) && !month; r++) {
+    for (const cell of rows[r]) {
+      const m = (cell.formattedValue || "").match(MONTH_RE);
+      if (m) { month = m[1]; break; }
+    }
+  }
+
+  // Find the "KPI SCORE FOR THE MONTH" row; the score is the last non-empty cell in that row.
+  let score = null;
+  for (const row of rows) {
+    const label = cellText(row, 0).trim().toLowerCase();
+    if (label.includes("kpi score for the month") || label.includes("total kpi score")) {
+      for (let i = row.length - 1; i >= 1; i--) {
+        const v = row[i]?.formattedValue;
+        if (v && v.trim()) { score = v.trim(); break; }
+      }
+      break;
+    }
+  }
+
+  return {
+    name: nameFromTitle(fileName),
+    month,
+    score, // null means genuinely not scored yet this month — shown as "Pending"
+    sheetUrl: `https://docs.google.com/spreadsheets/d/${fileId}/edit`,
+  };
+}
+
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const team = searchParams.get("team");
+  const config = TEAM_CONFIG[team];
+  if (!config) {
+    return NextResponse.json({ status: "not_built_yet" });
+  }
+
+  try {
+    const auth = getAuth();
+    const drive = google.drive({ version: "v3", auth });
+    const sheets = google.sheets({ version: "v4", auth });
+
+    const folderIds = [config.rootFolderId, ...(config.subfolderIds || [])];
+    const files = [];
+    for (const id of folderIds) {
+      const found = await listSpreadsheetsIn(drive, id);
+      files.push(...found);
+    }
+
+    const people = [];
+    for (const f of files) {
+      try {
+        const p = await getPersonScore(sheets, f.id, f.name);
+        if (p) people.push(p);
+      } catch (e) {
+        people.push({ name: nameFromTitle(f.name), month: null, score: null, sheetUrl: `https://docs.google.com/spreadsheets/d/${f.id}/edit`, error: e.message });
+      }
+    }
+
+    return NextResponse.json({ status: "ok", team, people });
+  } catch (e) {
+    return NextResponse.json({ status: "error", error: e.message }, { status: 500 });
+  }
+}
