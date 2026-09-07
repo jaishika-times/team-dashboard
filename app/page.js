@@ -1788,7 +1788,6 @@ function TeamKpiPackages() {
               )}
             </div>
           );
-        })}          );
         })}
         {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-6 col-span-2">No teams match your search</p>}
       </div>
