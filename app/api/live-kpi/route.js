@@ -1,9 +1,75 @@
 import { NextResponse } from "next/server";
+import { google } from "googleapis";
 
-const BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTeS9rrzeJzv7GY_7PbAgWJn3QwBOA6LG3rJxD7uvZWLjrUlRWBbrQrw3cCOCrbuJwodiAmGhGfaUJI/pub?output=csv";
-const CONTENT_CSV_URL = `${BASE}&gid=1006821855&single=true`;
-const VIDEO_CSV_URL = `${BASE}&gid=1050988634&single=true`;
-const DESIGN_CSV_URL = `${BASE}&gid=1107694641&single=true`;
+// The actual Google Sheet behind Content/Video/Design — found via Drive, same file for all
+// three tabs. Using the Sheets API (not CSV) is what lets this preserve real hyperlinks,
+// including cells where several different links sit inside one multi-line cell.
+const SPREADSHEET_ID = "1eUXBgpVgrkEEyo7UXzdArRRvZPsvYdlGQk1S8XAAnAI";
+
+function getAuth() {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set");
+  const creds = JSON.parse(raw);
+  return new google.auth.JWT({
+    email: creds.client_email,
+    key: creds.private_key,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  });
+}
+
+// Fetches one tab as a grid of cell objects (not plain strings) — each cell carries its
+// formatted display text plus real hyperlink data, which a CSV export would have stripped.
+async function fetchSheetGrid(sheetTitle) {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    ranges: [sheetTitle],
+    fields: "sheets.data.rowData.values(formattedValue,hyperlink,textFormatRuns)",
+  });
+  const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
+  return rowData.map(r => (r.values || []).map(v => v || {}));
+}
+
+function cellText(grid, r, c) {
+  return grid[r]?.[c]?.formattedValue || "";
+}
+
+// Turns a cell's real hyperlink data into the same "[Label](url)" / plain-URL text format
+// the rest of the app already knows how to render — so nothing downstream needs to change.
+// Handles three cases: (1) the whole cell is one hyperlink, (2) the cell has several
+// different links on different lines/phrases (Sheets "rich text" runs), (3) no links at all.
+function cellLinksString(cell) {
+  if (!cell) return "";
+  const text = cell.formattedValue || "";
+  if (!text) return "";
+
+  if (cell.hyperlink) {
+    const t = text.trim();
+    if (t === cell.hyperlink.trim()) return t; // the visible text already IS the URL
+    return `[${text.replace(/\n/g, " ").trim()}](${cell.hyperlink})`;
+  }
+
+  if (cell.textFormatRuns && cell.textFormatRuns.length) {
+    const runs = cell.textFormatRuns;
+    const parts = [];
+    if ((runs[0].startIndex || 0) > 0) {
+      const pre = text.slice(0, runs[0].startIndex).trim();
+      if (pre) parts.push(pre);
+    }
+    for (let i = 0; i < runs.length; i++) {
+      const start = runs[i].startIndex || 0;
+      const end = i + 1 < runs.length ? runs[i + 1].startIndex : text.length;
+      const uri = runs[i].format?.link?.uri;
+      const label = text.slice(start, end).trim();
+      if (!label) continue;
+      parts.push(uri ? `[${label}](${uri})` : label);
+    }
+    return parts.join("\n");
+  }
+
+  return text;
+}
 
 function normalizeMonth(m) {
   const s = String(m || "").trim().toLowerCase();
@@ -11,7 +77,6 @@ function normalizeMonth(m) {
   return map[s] || m;
 }
 
-// Sheet stores progress either as a fraction (0.85) or a whole percent (85) — normalize to a fraction.
 function parseProgress(raw) {
   if (raw === undefined || raw === null || raw === "") return null;
   const n = parseFloat(String(raw).trim().replace("%", ""));
@@ -19,69 +84,28 @@ function parseProgress(raw) {
   return n > 1 ? n / 100 : n;
 }
 
-function parseCSV(text) {
-  const rows = [];
-  let current = [];
-  let inQuotes = false;
-  let field = "";
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"') {
-      if (inQuotes && text[i + 1] === '"') { field += '"'; i++; }
-      else { inQuotes = !inQuotes; }
-    } else if (ch === ',' && !inQuotes) {
-      current.push(field); field = "";
-    } else if (ch === '\n' && !inQuotes) {
-      current.push(field); field = "";
-      rows.push(current); current = [];
-    } else if (ch === '\r' && !inQuotes) {
-      // skip
-    } else {
-      field += ch;
-    }
-  }
-  if (field || current.length) { current.push(field); rows.push(current); }
-  return rows;
-}
-
-async function fetchCSV(url) {
-  const res = await fetch(url, { next: { revalidate: 60 } });
-  if (!res.ok) throw new Error("Failed to fetch sheet");
-  return parseCSV(await res.text());
-}
-
-// Content / Video sheet columns: Month, Week, Date, Name, Task/Target, Platform,
-// Completed, Weightage, Weightage Score, Progress, Notes, Status, Links.
-//
-// A person can span MULTIPLE rows: their first row has Name filled in, along with
-// their overall Progress % for the week. Any rows directly below with a BLANK Name
-// (but a Task/Target filled in) are additional tasks for that SAME person, grouped
-// into one entry with a `tasks` array.
-//
-// Status/Notes/Links are recorded PER TASK ROW, not once per person — different
-// weeks fill these in differently (some give every task its own status/links,
-// others only fill the first task), so each task keeps whatever its own row has.
-function parseTaskSheet(rows, team) {
+// Content / Video sheet columns: Month(0), Week(1), Date(2), Name(3), Task/Target(4),
+// Platform(5), Completed(6), Weightage(7), Weightage Score(8), Progress(9), Notes(10),
+// Status(11), Links(12). Same row-grouping rules as before: a person can span multiple
+// rows (blank Name = another task for the same person); Status/Notes/Links are per task row.
+function parseTaskSheet(grid, team) {
   const people = [];
   let lastMonth = "", lastWeek = "";
   let current = null;
 
-  for (let i = 2; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || row.every(c => !c && c !== 0)) continue;
-
-    const monthRaw = row[0] ? String(row[0]).trim() : "";
-    const weekRaw = row[1] ? String(row[1]).trim() : "";
-    const name = row[3] ? String(row[3]).trim() : "";
-    const taskText = row[4] ? String(row[4]).trim() : "";
-    const platform = row[5] ? String(row[5]).trim() : "";
-    const completed = row[6] !== undefined && row[6] !== null ? String(row[6]).trim() : "";
-    const weightage = row[7] ? String(row[7]).trim() : "";
-    const weightageScore = row[8] ? String(row[8]).trim() : "";
-    const progressRaw = row[9];
-    const notes = row[10] ? String(row[10]).trim() : "";
-    const status = row[11] ? String(row[11]).trim() : "";
-    const links = row[12] ? String(row[12]).trim() : "";
+  for (let r = 2; r < grid.length; r++) {
+    const monthRaw = cellText(grid, r, 0);
+    const weekRaw = cellText(grid, r, 1);
+    const name = cellText(grid, r, 3).trim();
+    const taskText = cellText(grid, r, 4).trim();
+    const platform = cellText(grid, r, 5).trim();
+    const completed = cellText(grid, r, 6).trim();
+    const weightage = cellText(grid, r, 7).trim();
+    const weightageScore = cellText(grid, r, 8).trim();
+    const progressRaw = cellText(grid, r, 9);
+    const notes = cellText(grid, r, 10).trim();
+    const status = cellText(grid, r, 11).trim();
+    const links = cellLinksString(grid[r]?.[12]);
 
     if (monthRaw) lastMonth = normalizeMonth(monthRaw);
     if (weekRaw) lastWeek = (weekRaw.match(/\d+/) || [weekRaw])[0];
@@ -90,12 +114,7 @@ function parseTaskSheet(rows, team) {
 
     if (name) {
       if (lastMonth && lastWeek) {
-        current = {
-          month: lastMonth, week: lastWeek,
-          team, employee: name,
-          tasks: [],
-          kpiPct: parseProgress(progressRaw),
-        };
+        current = { month: lastMonth, week: lastWeek, team, employee: name, tasks: [], kpiPct: parseProgress(progressRaw) };
         people.push(current);
       } else {
         current = null;
@@ -109,31 +128,27 @@ function parseTaskSheet(rows, team) {
   return people;
 }
 
-// Design sheet columns: Month, Week, Date, Name, Total Task/Target, Total Estimated
-// Time, Total Time Produced, Efficiency, Weightage, Weightage Score, Progress,
-// Notes, Status, Link. One row per person per week (no task grouping needed).
-// Weightage/Progress are mostly unused for this team — Efficiency is their real KPI.
-function parseDesignSheet(rows) {
+// Design sheet columns: Month(0), Week(1), Date(2), Name(3), Total Task/Target(4),
+// Total Estimated Time(5), Total Time Produced(6), Efficiency(7), Weightage(8),
+// Weightage Score(9), Progress(10), Notes(11), Status(12), Link(13).
+function parseDesignSheet(grid) {
   const people = [];
   let lastMonth = "", lastWeek = "";
 
-  for (let i = 2; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || row.every(c => !c && c !== 0)) continue;
-
-    const monthRaw = row[0] ? String(row[0]).trim() : "";
-    const weekRaw = row[1] ? String(row[1]).trim() : "";
-    const name = row[3] ? String(row[3]).trim() : "";
-    const taskTarget = row[4] ? String(row[4]).trim() : "";
-    const estTime = row[5] ? String(row[5]).trim() : "";
-    const producedTime = row[6] ? String(row[6]).trim() : "";
-    const efficiencyRaw = row[7];
-    const weightage = row[8] ? String(row[8]).trim() : "";
-    const weightageScore = row[9] ? String(row[9]).trim() : "";
-    const progressRaw = row[10];
-    const notes = row[11] ? String(row[11]).trim() : "";
-    const status = row[12] ? String(row[12]).trim() : "";
-    const links = row[13] ? String(row[13]).trim() : "";
+  for (let r = 2; r < grid.length; r++) {
+    const monthRaw = cellText(grid, r, 0);
+    const weekRaw = cellText(grid, r, 1);
+    const name = cellText(grid, r, 3).trim();
+    const taskTarget = cellText(grid, r, 4).trim();
+    const estTime = cellText(grid, r, 5).trim();
+    const producedTime = cellText(grid, r, 6).trim();
+    const efficiencyRaw = cellText(grid, r, 7);
+    const weightage = cellText(grid, r, 8).trim();
+    const weightageScore = cellText(grid, r, 9).trim();
+    const progressRaw = cellText(grid, r, 10);
+    const notes = cellText(grid, r, 11).trim();
+    const status = cellText(grid, r, 12).trim();
+    const links = cellLinksString(grid[r]?.[13]);
 
     if (monthRaw) lastMonth = normalizeMonth(monthRaw);
     if (weekRaw) lastWeek = (weekRaw.match(/\d+/) || [weekRaw])[0];
@@ -144,13 +159,10 @@ function parseDesignSheet(rows) {
     let kpiPct = parseProgress(progressRaw);
     if ((kpiPct === null || kpiPct === 0) && !weightage) kpiPct = parseProgress(efficiencyRaw);
 
-    const completed = producedTime || estTime
-      ? `${producedTime || "—"}h produced / ${estTime || "—"}h est.`
-      : "";
+    const completed = producedTime || estTime ? `${producedTime || "—"}h produced / ${estTime || "—"}h est.` : "";
 
     people.push({
-      month: lastMonth, week: lastWeek,
-      team: "Design", employee: name,
+      month: lastMonth, week: lastWeek, team: "Design", employee: name,
       tasks: [{ task: taskTarget, platform: "", completed, weightage, weightageScore, notes, status, links }],
       kpiPct,
     });
@@ -160,19 +172,17 @@ function parseDesignSheet(rows) {
 
 export async function GET() {
   try {
-    const [contentRows, videoRows, designRows] = await Promise.allSettled([
-      fetchCSV(CONTENT_CSV_URL),
-      fetchCSV(VIDEO_CSV_URL),
-      fetchCSV(DESIGN_CSV_URL),
+    const [contentGrid, videoGrid, designGrid] = await Promise.allSettled([
+      fetchSheetGrid("Content"),
+      fetchSheetGrid("Video"),
+      fetchSheetGrid("Design"),
     ]);
 
     let people = [];
-    if (contentRows.status === "fulfilled") people = people.concat(parseTaskSheet(contentRows.value, "Content"));
-    if (videoRows.status === "fulfilled") people = people.concat(parseTaskSheet(videoRows.value, "Video"));
-    if (designRows.status === "fulfilled") people = people.concat(parseDesignSheet(designRows.value));
+    if (contentGrid.status === "fulfilled") people = people.concat(parseTaskSheet(contentGrid.value, "Content"));
+    if (videoGrid.status === "fulfilled") people = people.concat(parseTaskSheet(videoGrid.value, "Video"));
+    if (designGrid.status === "fulfilled") people = people.concat(parseDesignSheet(designGrid.value));
 
-    // Backward-compatible flat summary fields, used by the Progress Report table
-    // (which shows one row per person, not per task).
     const entries = people.map(p => ({
       ...p,
       target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
@@ -182,7 +192,10 @@ export async function GET() {
       links: p.tasks.map(t => t.links).filter(Boolean).join("\n"),
     }));
 
-    if (!entries.length) throw new Error("No KPI rows found in any sheet");
+    if (!entries.length) {
+      const errors = [contentGrid, videoGrid, designGrid].filter(r => r.status === "rejected").map(r => r.reason?.message);
+      throw new Error(errors.length ? errors.join("; ") : "No KPI rows found in any sheet");
+    }
     return NextResponse.json({ entries });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
