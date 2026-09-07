@@ -1574,14 +1574,24 @@ function ResourceLibrary() {
                 </button>
                 {isOpen && (
                   <div className="border-t border-gray-50 divide-y divide-gray-50">
-                    {files.map((f, i) => (
-                      <a key={i} href={encodeURI(f.path)} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50">
-                        <span className="shrink-0">{RESOURCE_ICONS[f.ext] || "📎"}</span>
-                        <span className="flex-1 min-w-0 truncate text-gray-700">{f.name}</span>
-                        <span className="text-gray-300 uppercase text-[10px] shrink-0">{f.ext}</span>
-                      </a>
-                    ))}
+                    {files.map((f, i) => {
+                      // Browsers have no native renderer for docx/xlsx — any link to those force-downloads
+                      // regardless of markup. Routing them through Office's web viewer opens them in a
+                      // new tab instead, same as PDFs already do natively.
+                      const absoluteUrl = (typeof window !== "undefined" ? window.location.origin : "") + f.path;
+                      const isOffice = f.ext === "docx" || f.ext === "doc" || f.ext === "xlsx" || f.ext === "xls";
+                      const href = isOffice
+                        ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(absoluteUrl)}`
+                        : encodeURI(f.path);
+                      return (
+                        <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50">
+                          <span className="shrink-0">{RESOURCE_ICONS[f.ext] || "📎"}</span>
+                          <span className="flex-1 min-w-0 truncate text-gray-700">{f.name}</span>
+                          <span className="text-gray-300 uppercase text-[10px] shrink-0">{f.ext}</span>
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
               </div>
