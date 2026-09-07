@@ -921,7 +921,7 @@ const COMP_LOGOS = {
             async function saveWeeklyLog() {
               const today = new Date().toISOString().split("T")[0];
               if (!confirm(`Save today's (${today}) asset status as this week's record?`)) return;
-              const snapshot = assets.map(a => ({ code: a.code, name: a.name, status: a.status, held_by: a.held_by || "", notes: a.notes || "" }));
+              const snapshot = assets.map(a => ({ code: a.code, name: a.name, status: a.status, held_by: a.held_by || "", date_taken: a.date_taken || "", date_returned: a.date_returned || "", notes: a.notes || "" }));
               await supabase.from("asset_weekly_logs").upsert({ week_ending: today, data: snapshot, recorded_by: user.id }, { onConflict: "week_ending" });
               loadData();
             }
@@ -1079,20 +1079,28 @@ const COMP_LOGOS = {
                         </div>
                         <button onClick={() => setAssetModal(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
                       </div>
-                      <p className="text-xs text-gray-400 mb-3">Update each item: who has it, status, and any notes. Changes save immediately.</p>
+                      <p className="text-xs text-gray-400 mb-3">Update each item: who has it, status, dates, and any notes. Changes save immediately.</p>
                       <div className="space-y-2">
                         {assets.filter(a => a.status !== "Cannot Use").map(a => (
-                          <div key={a.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
-                            <span className="font-mono text-xs text-gray-500 w-12 shrink-0">{a.code}</span>
-                            <span className="flex-1 min-w-0 truncate text-xs">{a.name}</span>
-                            <input defaultValue={a.held_by || ""} placeholder="Who has it?" onBlur={e => { if (e.target.value !== (a.held_by || "")) supabase.from("assets").update({ held_by: e.target.value }).eq("id", a.id).then(() => loadData()); }}
-                              className="w-28 px-2 py-1 border border-gray-200 rounded text-xs" />
-                            <select defaultValue={a.status} onChange={e => supabase.from("assets").update({ status: e.target.value }).eq("id", a.id).then(() => loadData())}
-                              className={`w-20 px-1 py-1 border-0 rounded text-[11px] font-medium ${a.status === "Available" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>
-                              <option>Available</option><option>In Use</option>
-                            </select>
-                            <input defaultValue={a.notes || ""} placeholder="Notes" onBlur={e => { if (e.target.value !== (a.notes || "")) supabase.from("assets").update({ notes: e.target.value }).eq("id", a.id).then(() => loadData()); }}
-                              className="w-32 px-2 py-1 border border-gray-200 rounded text-xs" />
+                          <div key={a.id} className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs text-gray-500 w-12 shrink-0">{a.code}</span>
+                              <span className="flex-1 min-w-0 truncate text-xs font-medium">{a.name}</span>
+                              <select defaultValue={a.status} onChange={e => supabase.from("assets").update({ status: e.target.value }).eq("id", a.id).then(() => loadData())}
+                                className={`w-24 px-1 py-1 border-0 rounded text-[11px] font-medium ${a.status === "Available" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>
+                                <option>Available</option><option>In Use</option>
+                              </select>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <input defaultValue={a.held_by || ""} placeholder="Who has it?" onBlur={e => { if (e.target.value !== (a.held_by || "")) supabase.from("assets").update({ held_by: e.target.value }).eq("id", a.id).then(() => loadData()); }}
+                                className="w-28 px-2 py-1 border border-gray-200 rounded text-xs" />
+                              <input defaultValue={a.date_taken || ""} placeholder="Date taken" onBlur={e => { if (e.target.value !== (a.date_taken || "")) supabase.from("assets").update({ date_taken: e.target.value }).eq("id", a.id).then(() => loadData()); }}
+                                className="w-24 px-2 py-1 border border-gray-200 rounded text-xs" />
+                              <input defaultValue={a.date_returned || ""} placeholder="Date returned" onBlur={e => { if (e.target.value !== (a.date_returned || "")) supabase.from("assets").update({ date_returned: e.target.value }).eq("id", a.id).then(() => loadData()); }}
+                                className="w-24 px-2 py-1 border border-gray-200 rounded text-xs" />
+                              <input defaultValue={a.notes || ""} placeholder="Notes" onBlur={e => { if (e.target.value !== (a.notes || "")) supabase.from("assets").update({ notes: e.target.value }).eq("id", a.id).then(() => loadData()); }}
+                                className="flex-1 min-w-[100px] px-2 py-1 border border-gray-200 rounded text-xs" />
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1146,6 +1154,8 @@ const COMP_LOGOS = {
                               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Item Name</th>
                               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
                               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Held By</th>
+                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date Taken</th>
+                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date Returned</th>
                               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Notes</th>
                             </tr>
                           </thead>
@@ -1156,6 +1166,8 @@ const COMP_LOGOS = {
                                 <td className="px-3 py-2 text-sm">{a.name}</td>
                                 <td className="px-3 py-2"><span className={`text-[11px] font-medium px-2 py-0.5 rounded ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{a.status}</span></td>
                                 <td className="px-3 py-2 text-xs text-gray-600">{a.held_by || "-"}</td>
+                                <td className="px-3 py-2 text-xs text-gray-400">{a.date_taken || "-"}</td>
+                                <td className="px-3 py-2 text-xs text-gray-400">{a.date_returned || "-"}</td>
                                 <td className="px-3 py-2 text-xs text-gray-400">{a.notes || "-"}</td>
                               </tr>
                             ))}
