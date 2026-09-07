@@ -91,8 +91,9 @@ export default function DashboardPage() {
     if (empRows) setEmployees(empRows);
 
     // Weekly KPI: merge the live-synced sheet with anything manually uploaded/pasted.
-    // Manual entries win when they cover the same person/month/week (so a manual
-    // correction always takes priority over the live feed).
+    // Live wins over manual for the same person/week — this is what surfaces the real
+    // task breakdown and links from the sheet. Manual/pasted entries only fill in people
+    // or weeks the live sheet doesn't cover at all (e.g. before live sync existed).
     const { data: kpiRows } = await supabase.from("weekly_kpi").select("*").order("uploaded_at", { ascending: false }).limit(1);
     const manualEntries = kpiRows?.length ? (kpiRows[0].data?.entries || []) : [];
     let liveKpiEntries = [];
@@ -103,8 +104,8 @@ export default function DashboardPage() {
     } catch (e) { console.log("KPI sheet fetch error"); }
     const kpiKey = e => `${e.month}|${e.week}|${e.team}|${e.employee}`;
     const mergedKpi = new Map();
-    liveKpiEntries.forEach(e => mergedKpi.set(kpiKey(e), e));
     manualEntries.forEach(e => mergedKpi.set(kpiKey(e), e));
+    liveKpiEntries.forEach(e => mergedKpi.set(kpiKey(e), e));
     setKpiData({ entries: Array.from(mergedKpi.values()) });
 
     const { data: attRows } = await supabase.from("attendance_records").select("*").order("month_key", { ascending: false });
