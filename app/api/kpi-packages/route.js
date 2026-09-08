@@ -281,17 +281,22 @@ async function getPersonScore(sheets, fileId, fileName) {
     const breakdown = [];
     let totalRow = null;
     for (const row of rows) {
-      const label0 = row[0].trim().toLowerCase();
+      // A row with zero cell data at all (a blank spacer row — common between sections in
+      // real sheets) makes row[0] undefined here, not an empty string, and .trim() on
+      // undefined throws. That exception was getting caught by the outer try/catch and
+      // silently turning into a blank "No data" card with no explanation — this guard is
+      // what was actually missing.
+      const label0 = (row[0] || "").trim().toLowerCase();
       if (label0.includes("kpi score for the month") || label0.includes("total kpi score")) {
         totalRow = row;
         continue;
       }
       let wIdx = -1;
       for (let i = 0; i < Math.min(row.length, 4); i++) {
-        if (/^\d+(\.\d+)?%$/.test(row[i].trim())) { wIdx = i; break; }
+        if (/^\d+(\.\d+)?%$/.test((row[i] || "").trim())) { wIdx = i; break; }
       }
       if (wIdx === -1) continue;
-      const category = row[0].split("\n")[0].trim();
+      const category = (row[0] || "").split("\n")[0].trim();
       if (!category) continue;
       const weightage = row[wIdx].trim();
       const perMonth = [];

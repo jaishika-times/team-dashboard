@@ -1613,6 +1613,9 @@ function TeamPeopleCards({ team, folderUrl, gradient }) {
                           debug: tabs={p.debug.allTabs?.join(", ")} · matched={p.debug.matchedTabs?.join(", ") || "none"}{p.debug.perTab?.[0]?.issue ? ` · ${p.debug.perTab[0].issue}` : ""}
                         </p>
                       )}
+                      {p.error && (
+                        <p className="text-[10px] text-red-500 font-mono truncate" title={p.error}>error: {p.error}</p>
+                      )}
                     </div>
                     {!entry || (!entry.score && !entry.note) ? (
                       <span className="text-[11px] text-gray-300 shrink-0">No data</span>
