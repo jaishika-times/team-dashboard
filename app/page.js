@@ -985,8 +985,8 @@ const COMP_LOGOS = {
                                           <p className="text-lg font-bold text-gray-800">{e.taskCount || "—"}</p>
                                         </div>
                                         <div className="bg-gray-50 rounded-lg p-2.5">
-                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Completed</p>
-                                          <p className="text-lg font-bold text-gray-800">{e.completedTasks || "—"}</p>
+                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
+                                          <p className={`text-sm font-bold ${isGood ? "text-green-600" : isBad ? "text-red-600" : "text-amber-600"}`}>{e.status || "—"}</p>
                                         </div>
                                         <div className="bg-gray-50 rounded-lg p-2.5">
                                           <p className="text-[10px] text-gray-400 uppercase tracking-wide">Est. Time</p>
