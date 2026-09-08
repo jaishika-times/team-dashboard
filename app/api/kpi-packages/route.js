@@ -98,8 +98,12 @@ async function getAMPersonMonths(sheets, fileId) {
     let totalScore = null;
     for (let r = headerIdx + 1; r < rows.length; r++) {
       const row = rows[r];
-      const label0 = (row[0] || "").trim().toLowerCase();
-      if (label0.includes("kpi score for the month")) {
+      // The label sits in the same column as every category name (categoryCol) — not
+      // necessarily column 0. Jev's file has a blank leading column, which silently broke
+      // this check when it assumed row[0]: the total row was never recognized as special,
+      // so it got treated as one more (fake) category, doubling the displayed total.
+      const label = ((categoryCol >= 0 ? row[categoryCol] : row[0]) || "").trim().toLowerCase();
+      if (label.includes("kpi score for the month") || label.includes("total kpi score")) {
         // Read the total from the exact same "KPI Score" column used for every category row
         // below, rather than scanning the row for "the last non-empty cell" — that scan was
         // unreliable against this row's merged cells and any stray trailing content.
