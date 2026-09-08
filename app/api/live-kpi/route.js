@@ -160,20 +160,28 @@ function parseDesignSheet(grid) {
   const people = [];
   let lastMonth = "", lastWeek = "";
 
+  // Real columns: Month(0) Week(1) Date(2) Name(3) Total Task/Target(4) Tasks(5)
+  // Total Estimated Time(6) Total Time Produced(7) Efficiency(8) Weightage(9)
+  // Weightage Score(10) Progress(11) Notes(12) Status(13) Link(14) — a "Tasks" column sits
+  // between Total Task/Target and Total Estimated Time that wasn't previously accounted for,
+  // which had shifted every column read after it by one. Verified against the real sheet
+  // before fixing.
   for (let r = 2; r < grid.length; r++) {
     const monthRaw = cellText(grid, r, 0);
     const weekRaw = cellText(grid, r, 1);
     const name = cellText(grid, r, 3).trim();
     const taskTarget = cellText(grid, r, 4).trim();
-    const estTime = cellText(grid, r, 5).trim();
-    const producedTime = cellText(grid, r, 6).trim();
-    const efficiencyRaw = cellText(grid, r, 7);
-    const weightage = cellText(grid, r, 8).trim();
-    const weightageScore = cellText(grid, r, 9).trim();
-    const progressRaw = cellText(grid, r, 10);
-    const notes = cellText(grid, r, 11).trim();
-    const status = cellText(grid, r, 12).trim();
-    const links = cellLinksString(grid[r]?.[13]);
+    const taskCount = taskTarget; // Design reports this as a plain number of tasks
+    const completedTasks = cellText(grid, r, 5).trim();
+    const estTime = cellText(grid, r, 6).trim();
+    const producedTime = cellText(grid, r, 7).trim();
+    const efficiencyRaw = cellText(grid, r, 8);
+    const weightage = cellText(grid, r, 9).trim();
+    const weightageScore = cellText(grid, r, 10).trim();
+    const progressRaw = cellText(grid, r, 11);
+    const notes = cellText(grid, r, 12).trim();
+    const status = cellText(grid, r, 13).trim();
+    const links = cellLinksString(grid[r]?.[14]);
 
     if (monthRaw) lastMonth = normalizeMonth(monthRaw);
     if (weekRaw) lastWeek = (weekRaw.match(/\d+/) || [weekRaw])[0];
@@ -181,8 +189,11 @@ function parseDesignSheet(grid) {
     if (!name) continue;
     if (!lastMonth || !lastWeek) continue;
 
-    let kpiPct = parseProgress(progressRaw);
-    if ((kpiPct === null || kpiPct === 0) && !weightage) kpiPct = parseProgress(efficiencyRaw);
+    // Design doesn't really use Progress (it's consistently 0% or blank in the real sheet) —
+    // Efficiency is the number that actually reflects their work, so it's the primary source
+    // for kpiPct, with Progress only as a fallback if it's ever genuinely populated.
+    let kpiPct = parseProgress(efficiencyRaw);
+    if (kpiPct === null) kpiPct = parseProgress(progressRaw);
 
     // Just the rating itself (Meeting/Exceeding/Below expectation) when there is one,
     // otherwise fall back to whatever the task/target field says (covers weeks with no
@@ -191,7 +202,7 @@ function parseDesignSheet(grid) {
 
     people.push({
       month: lastMonth, week: lastWeek, team: "Design", employee: name,
-      tasks: [{ task: taskTarget, platform: "", completed, weightage, weightageScore, notes, status, links, estTime, producedTime }],
+      tasks: [{ task: taskTarget, platform: "", completed, weightage, weightageScore, notes, status, links, estTime, producedTime, taskCount, completedTasks }],
       kpiPct,
     });
   }
@@ -216,6 +227,8 @@ export async function GET() {
       target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
       estTime: p.tasks.map(t => t.estTime).filter(Boolean).join(", "),
       producedTime: p.tasks.map(t => t.producedTime).filter(Boolean).join(", "),
+      taskCount: p.tasks.map(t => t.taskCount).filter(Boolean).join(", "),
+      completedTasks: p.tasks.map(t => t.completedTasks).filter(Boolean).join(", "),
       completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
       notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
       status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",

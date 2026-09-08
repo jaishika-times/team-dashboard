@@ -863,6 +863,8 @@ const COMP_LOGOS = {
                 target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
                 estTime: p.tasks.map(t => t.estTime).filter(Boolean).join(", "),
                 producedTime: p.tasks.map(t => t.producedTime).filter(Boolean).join(", "),
+                taskCount: p.tasks.map(t => t.taskCount).filter(Boolean).join(", "),
+                completedTasks: p.tasks.map(t => t.completedTasks).filter(Boolean).join(", "),
                 completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
                 notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
                 status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",
@@ -974,7 +976,30 @@ const COMP_LOGOS = {
                                   </div>
                                 )}
                                 <div className="space-y-2 text-sm">
-                                  {e.tasks && e.tasks.length > 0 ? (
+                                  {selectedTeam === "Design" ? (
+                                    <>
+                                      <div className="grid grid-cols-2 gap-2 mb-2">
+                                        <div className="bg-gray-50 rounded-lg p-2.5">
+                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">No. of Tasks</p>
+                                          <p className="text-lg font-bold text-gray-800">{e.taskCount || "—"}</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded-lg p-2.5">
+                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Completed Tasks</p>
+                                          <p className="text-lg font-bold text-gray-800">{e.completedTasks || "—"}</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded-lg p-2.5">
+                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Est. / Produced Time</p>
+                                          <p className="text-lg font-bold text-gray-800">{e.estTime || "—"}h <span className="text-gray-300">/</span> {e.producedTime || "—"}h</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded-lg p-2.5">
+                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Efficiency</p>
+                                          <p className="text-lg font-bold" style={{ color: clr }}>{pct !== null ? pct + "%" : "—"}</p>
+                                        </div>
+                                      </div>
+                                      {e.status && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Status</span><span className={`text-xs font-medium px-2 py-0.5 rounded ${isGood ? "bg-green-50 text-green-600" : isBad ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>{e.status}</span></div>}
+                                      {e.notes && <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Notes</span><span className="font-medium text-right max-w-[60%]">{e.notes}</span></div>}
+                                    </>
+                                  ) : e.tasks && e.tasks.length > 0 ? (
                                     <div className="overflow-x-auto -mx-1 mt-1">
                                       <table className="w-full text-xs border-collapse">
                                         <thead>
