@@ -159,7 +159,7 @@ export default function DashboardPage() {
     const manualEntries = (kpiRows?.length ? (kpiRows[0].data?.entries || []) : []).filter(e => !LIVE_COVERED_TEAMS.has(e.team));
     let liveKpiEntries = [];
     try {
-      const liveKpiRes = await fetch("/api/live-kpi");
+      const liveKpiRes = await fetch("/api/live-kpi", { cache: "no-store" });
       const liveKpiJson = await liveKpiRes.json();
       if (liveKpiJson.entries?.length) liveKpiEntries = liveKpiJson.entries;
     } catch (e) { console.log("KPI sheet fetch error"); }

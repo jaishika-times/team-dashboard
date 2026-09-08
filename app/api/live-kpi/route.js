@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 
+// Without this, Next.js can treat this route as fully static (no dynamic params, no
+// request-derived data) and cache its output at build time — meaning updates to the actual
+// Google Sheet would never show up no matter how often the sheet changes, only reflecting
+// whatever it looked like at the last deploy. Forcing dynamic + no-store guarantees this
+// route actually re-fetches from Google on every request.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // The actual Google Sheet behind Content/Video/Design — found via Drive, same file for all
 // three tabs. Using the Sheets API (not CSV) is what lets this preserve real hyperlinks,
 // including cells where several different links sit inside one multi-line cell.
@@ -196,7 +204,7 @@ export async function GET() {
       const errors = [contentGrid, videoGrid, designGrid].filter(r => r.status === "rejected").map(r => r.reason?.message);
       throw new Error(errors.length ? errors.join("; ") : "No KPI rows found in any sheet");
     }
-    return NextResponse.json({ entries });
+    return NextResponse.json({ entries }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
