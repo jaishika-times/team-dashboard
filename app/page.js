@@ -70,6 +70,10 @@ function isNextDay(dateStr, nextStr) {
   d.setDate(d.getDate() + 1);
   return d.toISOString().split("T")[0] === nextStr;
 }
+function daysBetween(a, b) {
+  const d1 = new Date(a + "T00:00:00"), d2 = new Date(b + "T00:00:00");
+  return Math.round((d2 - d1) / 86400000);
+}
 // Turns the actual recorded dates into ranges like "Sep 1 - Sep 4" whenever they're
 // back-to-back calendar days — so a period you've already entered shows up as one
 // quick-pick option, not something you have to remember and retype into From/To.
@@ -1229,14 +1233,17 @@ const COMP_LOGOS = {
                           ))}
                         </select>
                       )}
-                      <label className="flex items-center gap-1 bg-white/15 px-2 py-1 rounded-lg">
-                        <span className="text-[10px] text-white/70">From</span>
-                        <input type="date" value={activeFrom} onChange={e => setRangeFrom(e.target.value)} className="text-xs px-1.5 py-1 rounded text-gray-800 border-0" />
-                      </label>
-                      <label className="flex items-center gap-1 bg-white/15 px-2 py-1 rounded-lg">
-                        <span className="text-[10px] text-white/70">To</span>
-                        <input type="date" value={activeTo} onChange={e => setRangeTo(e.target.value)} className="text-xs px-1.5 py-1 rounded text-gray-800 border-0" />
-                      </label>
+                      <div className="flex items-center bg-white rounded-lg overflow-hidden shadow-sm">
+                        <label className="flex flex-col px-2.5 py-1 border-r border-gray-200">
+                          <span className="text-[9px] text-gray-400 uppercase tracking-wide">Check-in</span>
+                          <input type="date" value={activeFrom} onChange={e => setRangeFrom(e.target.value)} className="text-xs text-gray-800 border-0 p-0 focus:outline-none" />
+                        </label>
+                        <span className="text-gray-300 px-1">→</span>
+                        <label className="flex flex-col px-2.5 py-1">
+                          <span className="text-[9px] text-gray-400 uppercase tracking-wide">Check-out</span>
+                          <input type="date" value={activeTo} onChange={e => setRangeTo(e.target.value)} className="text-xs text-gray-800 border-0 p-0 focus:outline-none" />
+                        </label>
+                      </div>
                       {isAdmin && (
                         <button onClick={() => setShowNewDatePicker(true)} className="text-xs font-semibold bg-white/25 hover:bg-white/35 px-3 py-1.5 rounded-lg">+ New Date</button>
                       )}
@@ -1256,35 +1263,49 @@ const COMP_LOGOS = {
                           </tr>
                         </thead>
                         <tbody>
-                          {entriesForPeriod.map(c => {
-                            const asset = assets.find(a => a.id === c.asset_id);
-                            const people = c.held_by.split(",").map(p => p.trim()).filter(Boolean);
-                            return (
-                              <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                <td className="px-2 py-2.5">
-                                  <p className="text-sm font-semibold text-gray-800">{asset?.name || "(deleted item)"}</p>
-                                  <p className="text-gray-400 font-mono text-[11px]">{asset?.code}</p>
-                                </td>
-                                <td className="px-2 py-2.5">
-                                  <div className="flex flex-wrap gap-1">
-                                    {people.map((p, i) => (
-                                      <span key={i} className="text-[11px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{p}</span>
-                                    ))}
-                                  </div>
-                                </td>
-                                <td className="px-2 py-2.5 text-gray-500 text-xs whitespace-nowrap">{c.date_taken}</td>
-                                <td className="px-2 py-2.5">
-                                  {isAdmin ? (
-                                    <input type="date" value={c.date_returned || ""} onChange={e => updateReturn(c.id, e.target.value)}
-                                      className="text-xs px-2 py-1 border border-gray-200 rounded-lg" />
-                                  ) : (
-                                    <span className="text-xs text-gray-500">{c.date_returned || "Not yet"}</span>
-                                  )}
-                                </td>
-                                {isAdmin && <td className="px-2 py-2.5"><button onClick={() => deleteEntry(c.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button></td>}
-                              </tr>
-                            );
-                          })}
+                          {(() => {
+                            let lastWeek = null;
+                            const rows = [];
+                            entriesForPeriod.forEach(c => {
+                              const weekNum = Math.floor(daysBetween(activeFrom, c.date_taken) / 7) + 1;
+                              if (weekNum !== lastWeek) {
+                                lastWeek = weekNum;
+                                rows.push(
+                                  <tr key={`week-${weekNum}`} className="bg-indigo-50/50">
+                                    <td colSpan={isAdmin ? 5 : 4} className="px-2 py-1.5 text-[11px] font-semibold text-indigo-500 uppercase tracking-wide">Week {weekNum}</td>
+                                  </tr>
+                                );
+                              }
+                              const asset = assets.find(a => a.id === c.asset_id);
+                              const people = c.held_by.split(",").map(p => p.trim()).filter(Boolean);
+                              rows.push(
+                                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                  <td className="px-2 py-2.5">
+                                    <p className="text-sm font-semibold text-gray-800">{asset?.name || "(deleted item)"}</p>
+                                    <p className="text-gray-400 font-mono text-[11px]">{asset?.code}</p>
+                                  </td>
+                                  <td className="px-2 py-2.5">
+                                    <div className="flex flex-wrap gap-1">
+                                      {people.map((p, i) => (
+                                        <span key={i} className="text-[11px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{p}</span>
+                                      ))}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-2.5 text-gray-500 text-xs whitespace-nowrap">{c.date_taken}</td>
+                                  <td className="px-2 py-2.5">
+                                    {isAdmin ? (
+                                      <input type="date" value={c.date_returned || ""} onChange={e => updateReturn(c.id, e.target.value)}
+                                        className="text-xs px-2 py-1 border border-gray-200 rounded-lg" />
+                                    ) : (
+                                      <span className="text-xs text-gray-500">{c.date_returned || "Not yet"}</span>
+                                    )}
+                                  </td>
+                                  {isAdmin && <td className="px-2 py-2.5"><button onClick={() => deleteEntry(c.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button></td>}
+                                </tr>
+                              );
+                            });
+                            return rows;
+                          })()}
                           {entriesForPeriod.length === 0 && (
                             <tr><td colSpan={isAdmin ? 5 : 4} className="text-center text-sm text-gray-300 py-6">No assets recorded for {activeFrom} to {activeTo} yet.</td></tr>
                           )}
