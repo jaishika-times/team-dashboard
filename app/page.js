@@ -221,9 +221,7 @@ export default function DashboardPage() {
   const [assetForm, setAssetForm] = useState({ code: "", name: "" });
   const [allCheckouts, setAllCheckouts] = useState([]);
   const [assetPeriods, setAssetPeriods] = useState([]);
-  const [selectedEntryMonth, setSelectedEntryMonth] = useState(null); // "YYYY-MM"
-  const [rangeFrom, setRangeFrom] = useState(null);
-  const [rangeTo, setRangeTo] = useState(null);
+  const [selectedPeriodId, setSelectedPeriodId] = useState(null);
   const [showNewDatePicker, setShowNewDatePicker] = useState(false);
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
@@ -1124,9 +1122,8 @@ const COMP_LOGOS = {
               assetSearch ? (a.code + " " + a.name).toLowerCase().includes(assetSearch.toLowerCase()) : true
             );
 
-            // No more manually-toggled status field — "In Use" is simply whatever has an
-            // open (not-yet-returned) entry in the dated log below. One source of truth,
-            // nothing to keep in sync by hand.
+            // No manually-toggled status field — "In Use" is simply whatever has an open
+            // (not-yet-returned) entry below. One source of truth, nothing to sync by hand.
             function statusFor(assetId) {
               const open = allCheckouts.find(c => c.asset_id === assetId && !c.date_returned);
               return open ? "In Use" : "Available";
@@ -1151,26 +1148,33 @@ const COMP_LOGOS = {
               loadData();
             }
 
-            // Months and weeks are derived purely from whatever dates already exist in the
-            // log — nothing fixed, grows naturally as real entries get added.
-            const monthsWithData = Array.from(new Set(allCheckouts.map(c => monthKeyOf(c.date_taken)).filter(Boolean)));
-            const allMonths = fullMonthRange(monthsWithData);
-            const activeMonth = selectedEntryMonth || monthsWithData.sort((a, b) => b.localeCompare(a))[0] || allMonths[Math.floor(allMonths.length / 2)];
-            const activeFrom = rangeFrom || firstDayOfMonth(activeMonth);
-            const activeTo = rangeTo || lastDayOfMonth(activeMonth);
-            const entriesForPeriod = allCheckouts
-              .filter(c => c.date_taken && c.date_taken >= activeFrom && c.date_taken <= activeTo)
-              .sort((a, b) => (a.date_taken || "").localeCompare(b.date_taken || ""));
+            // The date ranges you've actually created — this is the ONE list that matters.
+            // Newest first. Each one is a real row you made, not a guess reconstructed from
+            // individual dates.
+            const periods = [...assetPeriods].sort((a, b) => (b.from_date || "").localeCompare(a.from_date || ""));
+            const activePeriod = periods.find(p => p.id === selectedPeriodId) || periods[0] || null;
+            const entriesForPeriod = activePeriod
+              ? allCheckouts.filter(c => c.date_taken && c.date_taken >= activePeriod.from_date && c.date_taken <= activePeriod.to_date)
+                  .sort((a, b) => (a.date_taken || "").localeCompare(b.date_taken || ""))
+              : [];
+            function countFor(p) {
+              return allCheckouts.filter(c => c.date_taken && c.date_taken >= p.from_date && c.date_taken <= p.to_date).length;
+            }
 
-            // The actual From/To ranges you've chosen and used (not a guess reconstructed
-            // from individual dates) — newest first, so a period you already worked with is
-            // one click away instead of retyping it into From/To.
-            const recordedRanges = [...assetPeriods].sort((a, b) => (b.from_date || "").localeCompare(a.from_date || ""));
-            const activeRangeKey = `${activeFrom}|${activeTo}`;
-
-            async function saveCurrentPeriod(from, to) {
+            async function createPeriod(from, to) {
               if (!from || !to) return;
-              await supabase.from("asset_periods").upsert({ from_date: from, to_date: to, created_by: user.id }, { onConflict: "from_date,to_date", ignoreDuplicates: true });
+              const { data, error } = await supabase.from("asset_periods")
+                .upsert({ from_date: from, to_date: to, created_by: user.id }, { onConflict: "from_date,to_date" })
+                .select().single();
+              if (data) setSelectedPeriodId(data.id);
+              loadData();
+            }
+
+            async function deletePeriod(id) {
+              if (!confirm("Delete this date range? The individual entries inside it stay on record — this only removes it from the dropdown.")) return;
+              await supabase.from("asset_periods").delete().eq("id", id);
+              if (selectedPeriodId === id) setSelectedPeriodId(null);
+              loadData();
             }
 
             async function addRowForPeriod(row) {
@@ -1179,9 +1183,6 @@ const COMP_LOGOS = {
                 asset_id: row.asset_id, held_by: row.held_by.trim(), date_taken: row.date_taken,
                 date_returned: row.date_returned || null, created_by: user.id,
               });
-              // Remember the From/To range you were viewing when this entry was added, so it
-              // shows up as its own pick in "Recorded periods" going forward.
-              await saveCurrentPeriod(activeFrom, activeTo);
               loadData();
             }
 
@@ -1199,7 +1200,7 @@ const COMP_LOGOS = {
             return (
               <>
                 <h1 className="text-xl font-semibold mb-1">Assets</h1>
-                <p className="text-sm text-gray-400 mb-5">Pick a month and week to see what was recorded, or start a new date.</p>
+                <p className="text-sm text-gray-400 mb-5">Pick a date range to see what was recorded, or create a new one.</p>
 
                 <div className="grid grid-cols-2 gap-3 mb-6">
                   <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-sm">
@@ -1215,118 +1216,105 @@ const COMP_LOGOS = {
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
                   <div className="px-5 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between flex-wrap gap-3">
                     <span className="text-base font-bold">📋 Entries</span>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <select value={activeMonth} onChange={e => { setSelectedEntryMonth(e.target.value); setRangeFrom(null); setRangeTo(null); }}
-                        className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-                        {allMonths.map(m => <option key={m} value={m}>{monthLabel(m)}{monthsWithData.includes(m) ? "" : " (empty)"}</option>)}
+                    <div className="flex items-center gap-2">
+                      <select value={activePeriod?.id || ""} onChange={e => setSelectedPeriodId(e.target.value)}
+                        className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium min-w-[220px]">
+                        {periods.length === 0 && <option value="">No date ranges yet</option>}
+                        {periods.map(p => (
+                          <option key={p.id} value={p.id}>{rangeLabel({ start: p.from_date, end: p.to_date })} — {countFor(p)} entr{countFor(p) === 1 ? "y" : "ies"}</option>
+                        ))}
                       </select>
-                      {recordedRanges.length > 0 && (
-                        <select value={activeRangeKey} onChange={e => {
-                          if (!e.target.value) return;
-                          const [f, t] = e.target.value.split("|");
-                          setSelectedEntryMonth(monthKeyOf(f));
-                          setRangeFrom(f); setRangeTo(t);
-                        }} className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-                          <option value="">Recorded periods...</option>
-                          {recordedRanges.map(g => (
-                            <option key={g.id} value={`${g.from_date}|${g.to_date}`}>{rangeLabel({ start: g.from_date, end: g.to_date })}</option>
-                          ))}
-                        </select>
-                      )}
-                      <div className="flex items-center bg-white rounded-lg overflow-hidden shadow-sm">
-                        <label className="flex flex-col px-2.5 py-1 border-r border-gray-200">
-                          <span className="text-[9px] text-gray-400 uppercase tracking-wide">Check-in</span>
-                          <input type="date" value={activeFrom} onChange={e => setRangeFrom(e.target.value)} className="text-xs text-gray-800 border-0 p-0 focus:outline-none" />
-                        </label>
-                        <span className="text-gray-300 px-1">→</span>
-                        <label className="flex flex-col px-2.5 py-1">
-                          <span className="text-[9px] text-gray-400 uppercase tracking-wide">Check-out</span>
-                          <input type="date" value={activeTo} onChange={e => setRangeTo(e.target.value)} className="text-xs text-gray-800 border-0 p-0 focus:outline-none" />
-                        </label>
-                      </div>
                       {isAdmin && (
-                        <button onClick={() => setShowNewDatePicker(true)} className="text-xs font-semibold bg-white/25 hover:bg-white/35 px-3 py-1.5 rounded-lg">+ New Date</button>
+                        <button onClick={() => setShowNewDatePicker(true)} className="text-xs font-semibold bg-white/25 hover:bg-white/35 px-3 py-1.5 rounded-lg">+ New Date Range</button>
                       )}
                     </div>
                   </div>
 
                   <div className="p-5">
-                    <div className="overflow-x-auto mb-3">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-100">
-                            <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Item</th>
-                            <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Who Took</th>
-                            <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Taken</th>
-                            <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Returned</th>
-                            {isAdmin && <th className="px-2 py-2"></th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(() => {
-                            let lastWeek = null;
-                            const rows = [];
-                            entriesForPeriod.forEach(c => {
-                              const weekNum = Math.floor(daysBetween(activeFrom, c.date_taken) / 7) + 1;
-                              if (weekNum !== lastWeek) {
-                                lastWeek = weekNum;
-                                rows.push(
-                                  <tr key={`week-${weekNum}`} className="bg-indigo-50/50">
-                                    <td colSpan={isAdmin ? 5 : 4} className="px-2 py-1.5 text-[11px] font-semibold text-indigo-500 uppercase tracking-wide">Week {weekNum}</td>
+                    {!activePeriod && (
+                      <p className="text-sm text-gray-300 text-center py-8">No date ranges yet — click "+ New Date Range" to create your first one.</p>
+                    )}
+                    {activePeriod && (
+                      <>
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-semibold text-gray-700">{rangeLabel({ start: activePeriod.from_date, end: activePeriod.to_date })}</p>
+                          {isAdmin && <button onClick={() => deletePeriod(activePeriod.id)} className="text-xs text-red-300 hover:text-red-600">Delete this date range</button>}
+                        </div>
+                        <div className="overflow-x-auto mb-3">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-gray-100">
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Item</th>
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Who Took</th>
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Taken</th>
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Returned</th>
+                                {isAdmin && <th className="px-2 py-2"></th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entriesForPeriod.map(c => {
+                                const asset = assets.find(a => a.id === c.asset_id);
+                                const people = c.held_by.split(",").map(p => p.trim()).filter(Boolean);
+                                return (
+                                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                    <td className="px-2 py-2.5">
+                                      <p className="text-sm font-semibold text-gray-800">{asset?.name || "(deleted item)"}</p>
+                                      <p className="text-gray-400 font-mono text-[11px]">{asset?.code}</p>
+                                    </td>
+                                    <td className="px-2 py-2.5">
+                                      <div className="flex flex-wrap gap-1">
+                                        {people.map((p, i) => (
+                                          <span key={i} className="text-[11px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{p}</span>
+                                        ))}
+                                      </div>
+                                    </td>
+                                    <td className="px-2 py-2.5 text-gray-500 text-xs whitespace-nowrap">{c.date_taken}</td>
+                                    <td className="px-2 py-2.5">
+                                      {isAdmin ? (
+                                        <input type="date" value={c.date_returned || ""} onChange={e => updateReturn(c.id, e.target.value)}
+                                          className="text-xs px-2 py-1 border border-gray-200 rounded-lg" />
+                                      ) : (
+                                        <span className="text-xs text-gray-500">{c.date_returned || "Not yet"}</span>
+                                      )}
+                                    </td>
+                                    {isAdmin && <td className="px-2 py-2.5"><button onClick={() => deleteEntry(c.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button></td>}
                                   </tr>
                                 );
-                              }
-                              const asset = assets.find(a => a.id === c.asset_id);
-                              const people = c.held_by.split(",").map(p => p.trim()).filter(Boolean);
-                              rows.push(
-                                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                  <td className="px-2 py-2.5">
-                                    <p className="text-sm font-semibold text-gray-800">{asset?.name || "(deleted item)"}</p>
-                                    <p className="text-gray-400 font-mono text-[11px]">{asset?.code}</p>
-                                  </td>
-                                  <td className="px-2 py-2.5">
-                                    <div className="flex flex-wrap gap-1">
-                                      {people.map((p, i) => (
-                                        <span key={i} className="text-[11px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{p}</span>
-                                      ))}
-                                    </div>
-                                  </td>
-                                  <td className="px-2 py-2.5 text-gray-500 text-xs whitespace-nowrap">{c.date_taken}</td>
-                                  <td className="px-2 py-2.5">
-                                    {isAdmin ? (
-                                      <input type="date" value={c.date_returned || ""} onChange={e => updateReturn(c.id, e.target.value)}
-                                        className="text-xs px-2 py-1 border border-gray-200 rounded-lg" />
-                                    ) : (
-                                      <span className="text-xs text-gray-500">{c.date_returned || "Not yet"}</span>
-                                    )}
-                                  </td>
-                                  {isAdmin && <td className="px-2 py-2.5"><button onClick={() => deleteEntry(c.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button></td>}
-                                </tr>
-                              );
-                            });
-                            return rows;
-                          })()}
-                          {entriesForPeriod.length === 0 && (
-                            <tr><td colSpan={isAdmin ? 5 : 4} className="text-center text-sm text-gray-300 py-6">No assets recorded for {activeFrom} to {activeTo} yet.</td></tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    {isAdmin && <AddEntryRow assets={assets} onAdd={addRowForPeriod} defaultDate={activeFrom} />}
+                              })}
+                              {entriesForPeriod.length === 0 && (
+                                <tr><td colSpan={isAdmin ? 5 : 4} className="text-center text-sm text-gray-300 py-6">No assets recorded in this range yet.</td></tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                        {isAdmin && <AddEntryRow assets={assets} onAdd={addRowForPeriod} defaultDate={activePeriod.from_date} />}
+                      </>
+                    )}
                   </div>
                 </div>
 
                 {showNewDatePicker && (
                   <div onClick={() => setShowNewDatePicker(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
                     <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[360px] max-w-[95%] shadow-xl">
-                      <h3 className="text-base font-semibold mb-3">New entry date</h3>
-                      <input type="date" id="newAssetDateInput" defaultValue={new Date().toISOString().split("T")[0]}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-4" />
-                      <div className="flex gap-2">
+                      <h3 className="text-base font-semibold mb-3">New date range</h3>
+                      <div className="space-y-3">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-gray-500">From</span>
+                          <input type="date" id="newRangeFrom" defaultValue={new Date().toISOString().split("T")[0]}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-gray-500">To</span>
+                          <input type="date" id="newRangeTo" defaultValue={new Date().toISOString().split("T")[0]}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </label>
+                      </div>
+                      <div className="flex gap-2 mt-4">
                         <button onClick={() => {
-                          const val = document.getElementById("newAssetDateInput").value;
-                          if (val) { setSelectedEntryMonth(monthKeyOf(val)); setRangeFrom(val); setRangeTo(val); setShowNewDatePicker(false); }
-                        }} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Go</button>
+                          const from = document.getElementById("newRangeFrom").value;
+                          const to = document.getElementById("newRangeTo").value;
+                          if (from && to) { createPeriod(from, to); setShowNewDatePicker(false); }
+                        }} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Create</button>
                         <button onClick={() => setShowNewDatePicker(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
                       </div>
                     </div>
@@ -1383,6 +1371,7 @@ const COMP_LOGOS = {
               </>
             );
           })()}
+
 
 
           {/* ===== PEOPLE ===== */}
