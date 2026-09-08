@@ -41,14 +41,26 @@ function extractUrls(text) {
 // Compact clickable document icons for a table cell — used in the Weekly KPI progress report.
 // One draft row for adding a new asset checkout to the currently selected date — supports
 // several people on one item by just typing their names comma-separated.
-function AddEntryRow({ assets, onAdd }) {
+const MONTH_NAMES_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function monthKeyOf(dateStr) { return (dateStr || "").slice(0, 7); } // "YYYY-MM"
+function monthLabel(monthKey) {
+  const [y, m] = (monthKey || "").split("-");
+  return m ? `${MONTH_NAMES_FULL[parseInt(m, 10) - 1]} ${y}` : monthKey;
+}
+function weekOfMonth(dateStr) {
+  const day = parseInt((dateStr || "").slice(8, 10), 10);
+  return isNaN(day) ? 1 : Math.ceil(day / 7);
+}
+
+function AddEntryRow({ assets, onAdd, defaultDate }) {
   const [assetId, setAssetId] = useState("");
   const [peopleInput, setPeopleInput] = useState("");
+  const [dateTaken, setDateTaken] = useState(defaultDate || new Date().toISOString().split("T")[0]);
   const [dateReturned, setDateReturned] = useState("");
 
   function submit() {
-    if (!assetId || !peopleInput.trim()) return;
-    onAdd({ asset_id: assetId, held_by: peopleInput, date_returned: dateReturned });
+    if (!assetId || !peopleInput.trim() || !dateTaken) return;
+    onAdd({ asset_id: assetId, held_by: peopleInput, date_taken: dateTaken, date_returned: dateReturned });
     setAssetId(""); setPeopleInput(""); setDateReturned("");
   }
 
@@ -61,9 +73,17 @@ function AddEntryRow({ assets, onAdd }) {
       </select>
       <input value={peopleInput} onChange={e => setPeopleInput(e.target.value)} placeholder="Who took it? (comma-separate for multiple)"
         className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg flex-1 min-w-[200px] bg-white" />
-      <input type="date" value={dateReturned} onChange={e => setDateReturned(e.target.value)}
-        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white" title="Return date (optional)" />
-      <button onClick={submit} className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg">+ Add</button>
+      <label className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-gray-400">Date taken</span>
+        <input type="date" value={dateTaken} onChange={e => setDateTaken(e.target.value)}
+          className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white" />
+      </label>
+      <label className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-gray-400">Returned (optional)</span>
+        <input type="date" value={dateReturned} onChange={e => setDateReturned(e.target.value)}
+          className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white" />
+      </label>
+      <button onClick={submit} className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg self-end">+ Add</button>
     </div>
   );
 }
@@ -157,7 +177,8 @@ export default function DashboardPage() {
   const [assetModal, setAssetModal] = useState(null);
   const [assetForm, setAssetForm] = useState({ code: "", name: "" });
   const [allCheckouts, setAllCheckouts] = useState([]);
-  const [selectedEntryDate, setSelectedEntryDate] = useState(null);
+  const [selectedEntryMonth, setSelectedEntryMonth] = useState(null); // "YYYY-MM"
+  const [selectedEntryWeek, setSelectedEntryWeek] = useState(null); // 1-5, week-of-month
   const [showNewDatePicker, setShowNewDatePicker] = useState(false);
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
@@ -1083,19 +1104,24 @@ const COMP_LOGOS = {
               loadData();
             }
 
-            // Dates that actually have entries recorded, newest first — this list only grows
-            // as real entries get added, exactly like a running log rather than a fixed
-            // weekly cadence.
-            const allDates = Array.from(new Set(allCheckouts.map(c => c.date_taken).filter(Boolean))).sort((a, b) => b.localeCompare(a));
-            const activeDate = selectedEntryDate || allDates[0] || null;
-            const entriesForDate = activeDate ? allCheckouts.filter(c => c.date_taken === activeDate) : [];
+            // Months and weeks are derived purely from whatever dates already exist in the
+            // log — nothing fixed, grows naturally as real entries get added.
+            const allMonths = Array.from(new Set(allCheckouts.map(c => monthKeyOf(c.date_taken)).filter(Boolean))).sort((a, b) => b.localeCompare(a));
+            const activeMonth = selectedEntryMonth || allMonths[0] || null;
+            const weeksInMonth = Array.from(new Set(allCheckouts.filter(c => monthKeyOf(c.date_taken) === activeMonth).map(c => weekOfMonth(c.date_taken)))).sort((a, b) => a - b);
+            const activeWeek = selectedEntryWeek || weeksInMonth[weeksInMonth.length - 1] || null;
+            const entriesForPeriod = activeMonth && activeWeek
+              ? allCheckouts.filter(c => monthKeyOf(c.date_taken) === activeMonth && weekOfMonth(c.date_taken) === activeWeek).sort((a, b) => (a.date_taken || "").localeCompare(b.date_taken || ""))
+              : [];
 
-            async function addRowForDate(row) {
-              if (!row.asset_id || !row.held_by.trim()) return;
+            async function addRowForPeriod(row) {
+              if (!row.asset_id || !row.held_by.trim() || !row.date_taken) return;
               await supabase.from("asset_checkouts").insert({
-                asset_id: row.asset_id, held_by: row.held_by.trim(), date_taken: activeDate,
+                asset_id: row.asset_id, held_by: row.held_by.trim(), date_taken: row.date_taken,
                 date_returned: row.date_returned || null, created_by: user.id,
               });
+              setSelectedEntryMonth(monthKeyOf(row.date_taken));
+              setSelectedEntryWeek(weekOfMonth(row.date_taken));
               loadData();
             }
 
@@ -1113,7 +1139,7 @@ const COMP_LOGOS = {
             return (
               <>
                 <h1 className="text-xl font-semibold mb-1">Assets</h1>
-                <p className="text-sm text-gray-400 mb-5">Pick a date to see what was recorded, or start a new one.</p>
+                <p className="text-sm text-gray-400 mb-5">Pick a month and week to see what was recorded, or start a new date.</p>
 
                 <div className="grid grid-cols-2 gap-3 mb-6">
                   <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-sm">
@@ -1130,11 +1156,17 @@ const COMP_LOGOS = {
                   <div className="px-5 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between flex-wrap gap-3">
                     <span className="text-base font-bold">📋 Entries</span>
                     <div className="flex items-center gap-2">
-                      {allDates.length > 0 && (
-                        <select value={activeDate || ""} onChange={e => setSelectedEntryDate(e.target.value)}
-                          className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-                          {allDates.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
+                      {allMonths.length > 0 && (
+                        <>
+                          <select value={activeMonth || ""} onChange={e => { setSelectedEntryMonth(e.target.value); setSelectedEntryWeek(null); }}
+                            className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                            {allMonths.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                          </select>
+                          <select value={activeWeek || ""} onChange={e => setSelectedEntryWeek(parseInt(e.target.value, 10))}
+                            className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                            {weeksInMonth.map(w => <option key={w} value={w}>Week {w}</option>)}
+                          </select>
+                        </>
                       )}
                       {isAdmin && (
                         <button onClick={() => setShowNewDatePicker(true)} className="text-xs font-semibold bg-white/25 hover:bg-white/35 px-3 py-1.5 rounded-lg">+ New Date</button>
@@ -1143,41 +1175,57 @@ const COMP_LOGOS = {
                   </div>
 
                   <div className="p-5">
-                    {!activeDate && <p className="text-sm text-gray-300 text-center py-8">No dated entries yet — click "+ New Date" to start one.</p>}
-                    {activeDate && (
+                    {!activeMonth && <p className="text-sm text-gray-300 text-center py-8">No dated entries yet — click "+ New Date" to start one.</p>}
+                    {activeMonth && (
                       <>
-                        <div className="space-y-2 mb-3">
-                          {entriesForDate.map(c => {
-                            const asset = assets.find(a => a.id === c.asset_id);
-                            const people = c.held_by.split(",").map(p => p.trim()).filter(Boolean);
-                            return (
-                              <div key={c.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-gray-800">
-                                    {asset?.name || "(deleted item)"} <span className="text-gray-400 font-mono text-xs font-normal">{asset?.code}</span>
-                                  </p>
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {people.map((p, i) => (
-                                      <span key={i} className="text-[11px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{p}</span>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="flex flex-col items-end gap-0.5 shrink-0">
-                                  <span className="text-[10px] text-gray-400">Returned</span>
-                                  {isAdmin ? (
-                                    <input type="date" value={c.date_returned || ""} onChange={e => updateReturn(c.id, e.target.value)}
-                                      className="text-xs px-2 py-1 border border-gray-200 rounded-lg" />
-                                  ) : (
-                                    <span className="text-xs text-gray-500">{c.date_returned || "Not yet"}</span>
-                                  )}
-                                </div>
-                                {isAdmin && <button onClick={() => deleteEntry(c.id)} className="text-red-300 hover:text-red-600 text-xs shrink-0">✕</button>}
-                              </div>
-                            );
-                          })}
-                          {entriesForDate.length === 0 && <p className="text-sm text-gray-300 text-center py-4">No assets recorded for this date yet.</p>}
+                        <div className="overflow-x-auto mb-3">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-gray-100">
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Item</th>
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Who Took</th>
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Taken</th>
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Returned</th>
+                                {isAdmin && <th className="px-2 py-2"></th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entriesForPeriod.map(c => {
+                                const asset = assets.find(a => a.id === c.asset_id);
+                                const people = c.held_by.split(",").map(p => p.trim()).filter(Boolean);
+                                return (
+                                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                    <td className="px-2 py-2.5">
+                                      <p className="text-sm font-semibold text-gray-800">{asset?.name || "(deleted item)"}</p>
+                                      <p className="text-gray-400 font-mono text-[11px]">{asset?.code}</p>
+                                    </td>
+                                    <td className="px-2 py-2.5">
+                                      <div className="flex flex-wrap gap-1">
+                                        {people.map((p, i) => (
+                                          <span key={i} className="text-[11px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{p}</span>
+                                        ))}
+                                      </div>
+                                    </td>
+                                    <td className="px-2 py-2.5 text-gray-500 text-xs whitespace-nowrap">{c.date_taken}</td>
+                                    <td className="px-2 py-2.5">
+                                      {isAdmin ? (
+                                        <input type="date" value={c.date_returned || ""} onChange={e => updateReturn(c.id, e.target.value)}
+                                          className="text-xs px-2 py-1 border border-gray-200 rounded-lg" />
+                                      ) : (
+                                        <span className="text-xs text-gray-500">{c.date_returned || "Not yet"}</span>
+                                      )}
+                                    </td>
+                                    {isAdmin && <td className="px-2 py-2.5"><button onClick={() => deleteEntry(c.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button></td>}
+                                  </tr>
+                                );
+                              })}
+                              {entriesForPeriod.length === 0 && (
+                                <tr><td colSpan={isAdmin ? 5 : 4} className="text-center text-sm text-gray-300 py-6">No assets recorded for this week yet.</td></tr>
+                              )}
+                            </tbody>
+                          </table>
                         </div>
-                        {isAdmin && <AddEntryRow assets={assets} onAdd={addRowForDate} />}
+                        {isAdmin && <AddEntryRow assets={assets} onAdd={addRowForPeriod} defaultDate={`${activeMonth}-${String((activeWeek - 1) * 7 + 1).padStart(2, "0")}`} />}
                       </>
                     )}
                   </div>
@@ -1192,8 +1240,8 @@ const COMP_LOGOS = {
                       <div className="flex gap-2">
                         <button onClick={() => {
                           const val = document.getElementById("newAssetDateInput").value;
-                          if (val) { setSelectedEntryDate(val); setShowNewDatePicker(false); }
-                        }} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Start</button>
+                          if (val) { setSelectedEntryMonth(monthKeyOf(val)); setSelectedEntryWeek(weekOfMonth(val)); setShowNewDatePicker(false); }
+                        }} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Go</button>
                         <button onClick={() => setShowNewDatePicker(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
                       </div>
                     </div>
