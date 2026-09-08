@@ -216,6 +216,7 @@ export default function DashboardPage() {
   const [assetModal, setAssetModal] = useState(null);
   const [assetForm, setAssetForm] = useState({ code: "", name: "" });
   const [allCheckouts, setAllCheckouts] = useState([]);
+  const [assetPeriods, setAssetPeriods] = useState([]);
   const [selectedEntryMonth, setSelectedEntryMonth] = useState(null); // "YYYY-MM"
   const [rangeFrom, setRangeFrom] = useState(null);
   const [rangeTo, setRangeTo] = useState(null);
@@ -262,6 +263,8 @@ export default function DashboardPage() {
     if (assetRows) setAssets(assetRows);
     const { data: checkoutRows } = await supabase.from("asset_checkouts").select("*").order("date_taken", { ascending: false });
     if (checkoutRows) setAllCheckouts(checkoutRows);
+    const { data: periodRows } = await supabase.from("asset_periods").select("*").order("from_date", { ascending: false });
+    if (periodRows) setAssetPeriods(periodRows);
     if (empRows) setEmployees(empRows);
 
     // Weekly KPI: merge the live-synced sheets with anything manually uploaded/pasted.
@@ -1155,11 +1158,16 @@ const COMP_LOGOS = {
               .filter(c => c.date_taken && c.date_taken >= activeFrom && c.date_taken <= activeTo)
               .sort((a, b) => (a.date_taken || "").localeCompare(b.date_taken || ""));
 
-            // Every period you've actually recorded entries for, grouped into consecutive-day
-            // ranges (e.g. "Sep 1 - Sep 4"), newest first — so anything you've already entered
-            // is one click away instead of retyping dates into From/To.
-            const recordedRanges = groupConsecutiveDates(allCheckouts.map(c => c.date_taken).filter(Boolean));
+            // The actual From/To ranges you've chosen and used (not a guess reconstructed
+            // from individual dates) — newest first, so a period you already worked with is
+            // one click away instead of retyping it into From/To.
+            const recordedRanges = [...assetPeriods].sort((a, b) => (b.from_date || "").localeCompare(a.from_date || ""));
             const activeRangeKey = `${activeFrom}|${activeTo}`;
+
+            async function saveCurrentPeriod(from, to) {
+              if (!from || !to) return;
+              await supabase.from("asset_periods").upsert({ from_date: from, to_date: to, created_by: user.id }, { onConflict: "from_date,to_date", ignoreDuplicates: true });
+            }
 
             async function addRowForPeriod(row) {
               if (!row.asset_id || !row.held_by.trim() || !row.date_taken) return;
@@ -1167,6 +1175,9 @@ const COMP_LOGOS = {
                 asset_id: row.asset_id, held_by: row.held_by.trim(), date_taken: row.date_taken,
                 date_returned: row.date_returned || null, created_by: user.id,
               });
+              // Remember the From/To range you were viewing when this entry was added, so it
+              // shows up as its own pick in "Recorded periods" going forward.
+              await saveCurrentPeriod(activeFrom, activeTo);
               loadData();
             }
 
@@ -1214,7 +1225,7 @@ const COMP_LOGOS = {
                         }} className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
                           <option value="">Recorded periods...</option>
                           {recordedRanges.map(g => (
-                            <option key={g.start + g.end} value={`${g.start}|${g.end}`}>{rangeLabel(g)}</option>
+                            <option key={g.id} value={`${g.from_date}|${g.to_date}`}>{rangeLabel({ start: g.from_date, end: g.to_date })}</option>
                           ))}
                         </select>
                       )}
