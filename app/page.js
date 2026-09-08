@@ -65,6 +65,31 @@ function lastDayOfMonth(monthKey) {
   const [y, m] = monthKey.split("-").map(Number);
   return new Date(y, m, 0).toISOString().split("T")[0];
 }
+function isNextDay(dateStr, nextStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().split("T")[0] === nextStr;
+}
+// Turns the actual recorded dates into ranges like "Sep 1 - Sep 4" whenever they're
+// back-to-back calendar days — so a period you've already entered shows up as one
+// quick-pick option, not something you have to remember and retype into From/To.
+function groupConsecutiveDates(dates) {
+  const sorted = Array.from(new Set(dates)).sort();
+  const groups = [];
+  for (const d of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && isNextDay(last.end, d)) last.end = d;
+    else groups.push({ start: d, end: d });
+  }
+  return groups.reverse(); // newest first
+}
+function formatShortDate(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return `${MONTH_NAMES_FULL[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+}
+function rangeLabel(g) {
+  return g.start === g.end ? formatShortDate(g.start) : `${formatShortDate(g.start)} - ${formatShortDate(g.end)}`;
+}
 
 function AddEntryRow({ assets, onAdd, defaultDate }) {
   const [assetId, setAssetId] = useState("");
@@ -1130,6 +1155,12 @@ const COMP_LOGOS = {
               .filter(c => c.date_taken && c.date_taken >= activeFrom && c.date_taken <= activeTo)
               .sort((a, b) => (a.date_taken || "").localeCompare(b.date_taken || ""));
 
+            // Every period you've actually recorded entries for, grouped into consecutive-day
+            // ranges (e.g. "Sep 1 - Sep 4"), newest first — so anything you've already entered
+            // is one click away instead of retyping dates into From/To.
+            const recordedRanges = groupConsecutiveDates(allCheckouts.map(c => c.date_taken).filter(Boolean));
+            const activeRangeKey = `${activeFrom}|${activeTo}`;
+
             async function addRowForPeriod(row) {
               if (!row.asset_id || !row.held_by.trim() || !row.date_taken) return;
               await supabase.from("asset_checkouts").insert({
@@ -1174,6 +1205,19 @@ const COMP_LOGOS = {
                         className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
                         {allMonths.map(m => <option key={m} value={m}>{monthLabel(m)}{monthsWithData.includes(m) ? "" : " (empty)"}</option>)}
                       </select>
+                      {recordedRanges.length > 0 && (
+                        <select value={activeRangeKey} onChange={e => {
+                          if (!e.target.value) return;
+                          const [f, t] = e.target.value.split("|");
+                          setSelectedEntryMonth(monthKeyOf(f));
+                          setRangeFrom(f); setRangeTo(t);
+                        }} className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                          <option value="">Recorded periods...</option>
+                          {recordedRanges.map(g => (
+                            <option key={g.start + g.end} value={`${g.start}|${g.end}`}>{rangeLabel(g)}</option>
+                          ))}
+                        </select>
+                      )}
                       <label className="flex items-center gap-1 bg-white/15 px-2 py-1 rounded-lg">
                         <span className="text-[10px] text-white/70">From</span>
                         <input type="date" value={activeFrom} onChange={e => setRangeFrom(e.target.value)} className="text-xs px-1.5 py-1 rounded text-gray-800 border-0" />
