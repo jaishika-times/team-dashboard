@@ -274,12 +274,34 @@ async function getPersonScore(sheets, fileId, fileName) {
     monthsInTab.sort((a, b) => MONTH_ORDER_FULL.indexOf(a) - MONTH_ORDER_FULL.indexOf(b));
     const monthCount = monthsInTab.length;
 
-    // Category rows: find the Weightage cell fresh on each row (first 4 cells), then take
-    // exactly 2 columns per month (score, weighted score) immediately after it, in
-    // chronological order. Legend/rubric rows never have a %-shaped value there, so they're
-    // skipped automatically.
+    // Some teams (Content Curation) nest several platform rows under one metric — one shared
+    // Weightage/Weighted-Score for the group, but a different Score per platform (FB/IG/TT/
+    // Threads/YT). A single-row-per-category read was silently dropping every platform but
+    // the first. This groups continuation rows (no Weightage of their own) under whichever
+    // row started the group, averaging their scores — verified against Maha's real July data,
+    // where the sum of the resulting weighted scores matches her sheet's real total exactly.
+    // Teams with one category per row (Video, Edunexa, Account Managers) are unaffected: each
+    // of their rows has its own Weightage, so every row is its own group of one.
     const breakdown = [];
     let totalRow = null;
+    let currentCategory = "", currentSubCategory = "";
+    let pendingGroup = null;
+
+    function flushGroup() {
+      if (!pendingGroup) return;
+      const perMonth = [];
+      for (let m = 0; m < monthCount; m++) {
+        const scores = pendingGroup.perMonthScores[m];
+        const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+        perMonth.push({
+          scoreAchieved: avg !== null ? String(Math.round(avg * 100) / 100) : "",
+          weightedScore: pendingGroup.perMonthWeighted[m] || "",
+        });
+      }
+      breakdown.push({ category: pendingGroup.category, weightage: pendingGroup.weightage, perMonth });
+      pendingGroup = null;
+    }
+
     for (const row of rows) {
       // A row with zero cell data at all (a blank spacer row — common between sections in
       // real sheets) makes row[0] undefined here, not an empty string, and .trim() on
@@ -288,27 +310,45 @@ async function getPersonScore(sheets, fileId, fileName) {
       // what was actually missing.
       const label0 = (row[0] || "").trim().toLowerCase();
       if (label0.includes("kpi score for the month") || label0.includes("total kpi score")) {
+        flushGroup();
         totalRow = row;
         continue;
       }
+
+      if ((row[0] || "").trim()) { currentCategory = row[0].split("\n")[0].trim(); currentSubCategory = ""; }
+      const b1 = (row[1] || "").split("\n")[0].trim();
+      // A real sub-category is a short label ("Monthly Follower Growth"); a long sentence in
+      // this column is a description, not a label, and shouldn't be appended to the category.
+      if (b1 && b1.length <= 35) currentSubCategory = b1;
+
       let wIdx = -1;
       for (let i = 0; i < Math.min(row.length, 4); i++) {
         if (/^\d+(\.\d+)?%$/.test((row[i] || "").trim())) { wIdx = i; break; }
       }
-      if (wIdx === -1) continue;
-      const category = (row[0] || "").split("\n")[0].trim();
-      if (!category) continue;
-      const weightage = row[wIdx].trim();
-      const perMonth = [];
-      for (let m = 0; m < monthCount; m++) {
-        const s = row[wIdx + 1 + m * 2] || "";
-        const ws = row[wIdx + 2 + m * 2] || "";
-        // A row genuinely missing its weighted-score (a broken formula upstream, seen in real
-        // data) must show blank rather than grab whatever non-numeric rubric text sits there.
-        perMonth.push({ scoreAchieved: isNum(s) ? s.trim() : "", weightedScore: isNum(ws) ? ws.trim() : "" });
+
+      if (wIdx !== -1) {
+        flushGroup();
+        const label = [currentCategory, currentSubCategory].filter(Boolean).join(" — ") || currentCategory || currentSubCategory || "Untitled";
+        pendingGroup = { category: label, weightage: row[wIdx].trim(), wIdx, perMonthScores: Array.from({ length: monthCount }, () => []), perMonthWeighted: [] };
+        for (let m = 0; m < monthCount; m++) {
+          const s = row[wIdx + 1 + m * 2] || "";
+          const ws = row[wIdx + 2 + m * 2] || "";
+          // A row genuinely missing its weighted-score (a broken formula upstream, seen in
+          // real data) must show blank rather than grab whatever non-numeric rubric text sits
+          // there.
+          if (isNum(s)) pendingGroup.perMonthScores[m].push(parseFloat(s));
+          pendingGroup.perMonthWeighted[m] = isNum(ws) ? ws.trim() : "";
+        }
+      } else if (pendingGroup) {
+        // A continuation row (another platform under the same metric) — same column
+        // positions apply, since columns don't shift row to row.
+        for (let m = 0; m < monthCount; m++) {
+          const s = row[pendingGroup.wIdx + 1 + m * 2] || "";
+          if (isNum(s)) pendingGroup.perMonthScores[m].push(parseFloat(s));
+        }
       }
-      breakdown.push({ category, weightage, perMonth });
     }
+    flushGroup();
 
     if (!breakdown.length) perTabDebug.push({ tabTitle, monthsFound: monthsInTab, rowCount: rows.length, first5Rows: rows.slice(0, 5), issue: "months detected but no row had a %-shaped Weightage cell in its first 4 columns" });
 
