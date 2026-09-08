@@ -21,6 +21,11 @@ const TEAM_CONFIG = {
     rootFolderId: "1HRCjmkjr2DESfQEOanf5tfWF4Ij-PiMJ",
     subfolderIds: [],
   },
+  "Content Curation Team": {
+    type: "folder_scan",
+    rootFolderId: "1EUFh1vrkQaaPxeCmO3et51PJInAI16We",
+    subfolderIds: [],
+  },
   "Design Team": {
     type: "folder_scan",
     rootFolderId: "1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO",
@@ -175,62 +180,100 @@ function cellText(row, c) {
   return row?.[c]?.formattedValue || "";
 }
 
+// Two real shapes exist here: Video/Edunexa keep one "KPI Scores" tab with the month baked
+// into a column header; Content Curation instead has a separate "KPI Scores June", "KPI
+// Scores July", etc. tab per month. Both use the same underlying row layout (KPI, Weightage,
+// Score, Weighted Score, ...rubric), so this handles them with one pass rather than two
+// separate parsers, verified against real files from all three teams.
 async function getPersonScore(sheets, fileId, fileName) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: "sheets.properties.title" });
   const titles = (meta.data.sheets || []).map(s => s.properties.title);
-  // Prefer a tab literally called "KPI Scores"; otherwise first tab matching that prefix.
-  const tabToUse = titles.find(t => /^KPI Scores$/i.test(t)) || titles.find(t => /^KPI Scores/i.test(t)) || titles[0];
-  if (!tabToUse) return null;
+  const kpiTabs = titles.filter(t => /^KPI Scores/i.test(t));
+  if (!kpiTabs.length) return null;
 
   const res = await sheets.spreadsheets.get({
     spreadsheetId: fileId,
-    ranges: [tabToUse],
-    fields: "sheets.data.rowData.values(formattedValue)",
+    ranges: kpiTabs,
+    fields: "sheets.properties.title,sheets.data.rowData.values(formattedValue)",
   });
-  const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
-  const rows = rowData.map(r => r.values || []);
+  const sheetsData = res.data.sheets || [];
+  const isNum = v => /^-?\d+(\.\d+)?$/.test((v || "").trim());
+  const monthResults = [];
 
-  // Detect every distinct month mentioned across the header rows, left to right, in the
-  // order they appear as columns — some teams' sheets add a new month's columns each month
-  // (so there can be several), others currently only have one.
-  const months = [];
-  for (let r = 0; r < Math.min(rows.length, 3); r++) {
-    for (const cell of rows[r]) {
-      const m = (cell.formattedValue || "").match(MONTH_RE);
-      if (m && !months.includes(m[1])) months.push(m[1]);
+  for (const tabTitle of kpiTabs) {
+    const sheetEntry = sheetsData.find(s => s.properties.title === tabTitle);
+    const rowData = sheetEntry?.data?.[0]?.rowData || [];
+    const rows = rowData.map(r => r.values || []);
+    if (!rows.length) continue;
+
+    // The month is either right there in the tab's own name ("KPI Scores June"), or baked
+    // into a header column instead ("JULY SCORE") when the team keeps one tab total.
+    let monthsInTab = [];
+    const titleMatch = tabTitle.match(MONTH_RE);
+    if (titleMatch) monthsInTab.push(titleMatch[1]);
+    else {
+      for (let r = 0; r < Math.min(rows.length, 3); r++) {
+        for (const cell of rows[r]) {
+          const m = (cell.formattedValue || "").match(MONTH_RE);
+          if (m && !monthsInTab.includes(m[1])) monthsInTab.push(m[1]);
+        }
+      }
     }
+    if (!monthsInTab.length) continue;
+
+    // Score/weighted-score always sit immediately after "Weightage" by position — not by
+    // matching each month's own header text, since month header cells are sometimes merged
+    // in ways that make the adjacent column's header read as blank.
+    let weightageCol = -1, weightageRowIdx = -1;
+    for (let r = 0; r < Math.min(rows.length, 3); r++) {
+      const idx = rows[r].findIndex(c => /weightage/i.test(c.formattedValue || ""));
+      if (idx !== -1) { weightageCol = idx; weightageRowIdx = r; break; }
+    }
+
+    const breakdown = [];
+    let totalScore = null;
+    if (weightageCol !== -1) {
+      for (let r = weightageRowIdx + 1; r < rows.length; r++) {
+        const row = rows[r];
+        const label0 = (row[0]?.formattedValue || "").trim().toLowerCase();
+        if (label0.includes("kpi score for the month") || label0.includes("total kpi score")) {
+          for (let i = row.length - 1; i >= 1; i--) {
+            const v = row[i]?.formattedValue;
+            if (v && v.trim()) { totalScore = v.trim(); break; }
+          }
+          continue;
+        }
+        const wCell = (row[weightageCol]?.formattedValue || "").trim();
+        if (!/^\d+(\.\d+)?%$/.test(wCell)) continue; // rubric/legend/blank row, not real data
+        const category = (row[0]?.formattedValue || "").split("\n")[0].trim();
+        if (!category) continue;
+        const scoreCell = row[weightageCol + 1]?.formattedValue || "";
+        const weightedCell = row[weightageCol + 2]?.formattedValue || "";
+        // Some rows are genuinely missing their weighted-score value (a broken formula
+        // upstream, seen in real data) — must show blank rather than grab whatever
+        // non-numeric rubric text happens to sit in that position.
+        breakdown.push({
+          category, weightage: wCell,
+          scoreAchieved: isNum(scoreCell) ? scoreCell.trim() : "",
+          weightedScore: isNum(weightedCell) ? weightedCell.trim() : "",
+        });
+      }
+    }
+
+    const numeric = totalScore ? parseFloat(totalScore.replace(/[^0-9.-]/g, "")) : null;
+    const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0);
+    // A tab with several month-columns (some Video sheets keep both this month and last
+    // month side by side) is attributed to whichever month is listed first — the current one.
+    monthResults.push({ month: monthsInTab[0], score: totalScore, flagged, breakdown });
   }
 
-  // Find the "KPI SCORE FOR THE MONTH" row. Take exactly one value per detected month, by
-  // strict column position (index 1 = month 1, index 2 = month 2, ...) — NOT "the next
-  // non-empty cell". If a month's score genuinely hasn't been filled in yet, that position
-  // must stay blank rather than accidentally absorbing a later cell (e.g. some sheets have a
-  // little rating-legend table sharing the same row just past the real values, like
-  // "...,100,Excellent,..." — skipping blanks would misattribute that legend value to
-  // whichever month happened to still be empty).
-  const scoreByMonth = {};
-  for (const row of rows) {
-    const label = cellText(row, 0).trim().toLowerCase();
-    if (label.includes("kpi score for the month") || label.includes("total kpi score")) {
-      months.forEach((m, idx) => {
-        const v = row[idx + 1]?.formattedValue;
-        if (v && v.trim()) scoreByMonth[m] = v.trim();
-      });
-      break;
-    }
-  }
+  // De-duplicate by month in case of a stray "(Amended)"-style duplicate tab — last one wins.
+  const byMonth = {};
+  monthResults.forEach(m => { byMonth[m.month] = m; });
 
   return {
     name: nameFromTitle(fileName),
-    months: months.map(m => {
-      const score = scoreByMonth[m] || null;
-      // A KPI score reasonably sits in the 0-100ish range (a bit over 100 for "exceeds
-      // target" categories is normal). Anything wildly outside that is almost certainly a
-      // broken formula in the source sheet, not a real score — flag it instead of hiding it.
-      const numeric = score ? parseFloat(score.replace(/[^0-9.-]/g, "")) : null;
-      const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0);
-      return { month: m, score, flagged };
-    }), // null score = genuinely not scored yet
+    months: Object.values(byMonth),
     sheetUrl: `https://docs.google.com/spreadsheets/d/${fileId}/edit`,
   };
 }
