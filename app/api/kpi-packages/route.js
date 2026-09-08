@@ -186,7 +186,20 @@ function nameFromTitle(title) {
   return title;
 }
 
-const MONTH_RE = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/i;
+const MONTH_ALIAS_MAP = {
+  jan: "January", january: "January", feb: "February", february: "February",
+  mar: "March", march: "March", apr: "April", april: "April", may: "May",
+  jun: "June", june: "June", jul: "July", july: "July", aug: "August", august: "August",
+  sep: "September", sept: "September", september: "September", oct: "October", october: "October",
+  nov: "November", november: "November", dec: "December", december: "December",
+};
+// Matches both full month names ("August") and common abbreviations ("Aug") — some teams'
+// tabs are literally named "KPI Scores Aug", which a full-name-only match would silently skip.
+const MONTH_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i;
+function matchMonth(text) {
+  const m = (text || "").match(MONTH_RE);
+  return m ? MONTH_ALIAS_MAP[m[1].toLowerCase()] || null : null;
+}
 const MONTH_ORDER_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function cellText(row, c) {
@@ -228,13 +241,13 @@ async function getPersonScore(sheets, fileId, fileName) {
     // tab lists several months' columns side by side, sort them chronologically (not by
     // left-to-right column order) so "score" always lines up with the right position below.
     let monthsInTab = [];
-    const titleMatch = tabTitle.match(MONTH_RE);
-    if (titleMatch) monthsInTab.push(titleMatch[1]);
+    const titleMonth = matchMonth(tabTitle);
+    if (titleMonth) monthsInTab.push(titleMonth);
     else {
       for (let r = 0; r < Math.min(rows.length, 3); r++) {
         for (const cellVal of rows[r]) {
-          const m = cellVal.match(MONTH_RE);
-          if (m && !monthsInTab.includes(m[1])) monthsInTab.push(m[1]);
+          const m = matchMonth(cellVal);
+          if (m && !monthsInTab.includes(m)) monthsInTab.push(m);
         }
       }
     }
