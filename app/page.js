@@ -1530,6 +1530,7 @@ function TeamPeopleCards({ team, folderUrl, gradient }) {
   const [error, setError] = useState(null);
   const [debug, setDebug] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(null);
+  const [expanded, setExpanded] = useState(null); // name of the person whose breakdown is open
 
   useEffect(() => {
     let cancelled = false;
@@ -1591,31 +1592,62 @@ function TeamPeopleCards({ team, folderUrl, gradient }) {
             {people.map((p, i) => {
               const entry = p.months.find(m => m.month === selectedMonth);
               const tier = entry?.score ? scoreTier(entry.score) : null;
+              const isOpen = expanded === p.name;
+              const hasBreakdown = entry?.breakdown && entry.breakdown.length > 0;
               return (
-                <a key={i} href={p.sheetUrl} target="_blank" rel="noopener noreferrer"
-                  className={`flex items-center gap-3 px-3 py-2.5 bg-white rounded-xl border ${tier ? `ring-1 ${tier.ring} border-transparent` : "border-gray-100"} hover:shadow-md transition-shadow text-sm`}>
-                  <div className={`w-9 h-9 shrink-0 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-xs font-bold`}>
-                    {initials(p.name)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-800 truncate">{p.name}</p>
-                    {entry?.note ? (
-                      <p className="text-[11px] text-gray-400 truncate" title={entry.note}>{entry.note}</p>
+                <div key={i} className={`bg-white rounded-xl border ${tier ? `ring-1 ${tier.ring} border-transparent` : "border-gray-100"} overflow-hidden ${hasBreakdown ? "sm:col-span-2" : ""}`}>
+                  <button onClick={() => hasBreakdown && setExpanded(isOpen ? null : p.name)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm text-left ${hasBreakdown ? "hover:bg-gray-50" : ""}`}>
+                    <div className={`w-9 h-9 shrink-0 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-xs font-bold`}>
+                      {initials(p.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 truncate">{p.name}</p>
+                      {entry?.note ? (
+                        <p className="text-[11px] text-gray-400 truncate" title={entry.note}>{entry.note}</p>
+                      ) : (
+                        <p className="text-[11px] text-gray-400">{selectedMonth || "—"}{hasBreakdown ? ` · ${isOpen ? "hide" : "show"} breakdown` : ""}</p>
+                      )}
+                    </div>
+                    {!entry || (!entry.score && !entry.note) ? (
+                      <span className="text-[11px] text-gray-300 shrink-0">No data</span>
+                    ) : entry.score ? (
+                      <span className={`shrink-0 text-sm font-bold px-2.5 py-1 rounded-lg ${tier.bg} ${tier.text}`}>
+                        {entry.score}
+                        {entry.flagged && <span className="block text-[9px] font-normal text-red-500 -mt-0.5">⚠ check sheet</span>}
+                      </span>
                     ) : (
-                      <p className="text-[11px] text-gray-400">{selectedMonth || "—"}</p>
+                      <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg shrink-0">Pending</span>
                     )}
-                  </div>
-                  {!entry || (!entry.score && !entry.note) ? (
-                    <span className="text-[11px] text-gray-300 shrink-0">No data</span>
-                  ) : entry.score ? (
-                    <span className={`shrink-0 text-sm font-bold px-2.5 py-1 rounded-lg ${tier.bg} ${tier.text}`}>
-                      {entry.score}
-                      {entry.flagged && <span className="block text-[9px] font-normal text-red-500 -mt-0.5">⚠ check sheet</span>}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg shrink-0">Pending</span>
+                  </button>
+                  {isOpen && hasBreakdown && (
+                    <div className="px-3 pb-3">
+                      <div className="overflow-x-auto rounded-lg border border-gray-100">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-100">
+                              <th className="text-left px-2.5 py-1.5 font-semibold text-gray-400 uppercase text-[10px]">Category</th>
+                              <th className="text-right px-2.5 py-1.5 font-semibold text-gray-400 uppercase text-[10px]">Weightage</th>
+                              <th className="text-right px-2.5 py-1.5 font-semibold text-gray-400 uppercase text-[10px]">Score</th>
+                              <th className="text-right px-2.5 py-1.5 font-semibold text-gray-400 uppercase text-[10px]">Weighted</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entry.breakdown.map((b, bi) => (
+                              <tr key={bi} className="border-b border-gray-50 last:border-0">
+                                <td className="px-2.5 py-1.5 text-gray-700">{b.category}</td>
+                                <td className="px-2.5 py-1.5 text-right text-gray-500">{b.weightage}</td>
+                                <td className="px-2.5 py-1.5 text-right text-gray-500">{b.scoreAchieved || "—"}</td>
+                                <td className="px-2.5 py-1.5 text-right font-semibold text-gray-800">{b.weightedScore || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <a href={p.sheetUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-[11px] text-blue-500 hover:text-blue-700 mt-2">Open {p.name}'s sheet →</a>
+                    </div>
                   )}
-                </a>
+                </div>
               );
             })}
           </div>

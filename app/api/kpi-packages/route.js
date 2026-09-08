@@ -26,16 +26,103 @@ const TEAM_CONFIG = {
     rootFolderId: "1I6X5X31LmJuRXULDAqNhJdnMr9nJtWuO",
     subfolderIds: [],
   },
-  // Account Managers has an actual maintained master summary sheet — Staff x Month, one
-  // row per person — instead of relying on each person's own scattered, differently-shaped
-  // KPI file. Far more reliable than folder-scanning their nested per-person subfolders.
+  // Account Managers: each person really does have their own file (nested one level under
+  // "2026"), and each one carries the true category-by-category weighted-score breakdown —
+  // not just a final total. Verified against the real files before wiring this up.
   "Account Managers": {
-    type: "summary_sheet",
-    spreadsheetId: "1p5l3mlM7ajzn0BXajSctdpodGLopK_4b4SMHZ1srgRo",
-    tabName: "2026",
+    type: "am_individual",
     folderUrl: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_",
+    people: [
+      { name: "Jev", fileId: "1AvVKb4pM7V_buSBfL6UMsagTNKz0oPM8-5okzA4H-AA" },
+      { name: "Jon", fileId: "1Gcdqcs5iSrWGk0aQJX7MMlagEGmB_GOEl7t4QSTMEvI" },
+      { name: "Nazreen", fileId: "1tsNFRbXP6MBo6UpUcNVpKcz_0y1PKzuLUeyRZ5z0imI" },
+      { name: "Mika", fileId: "1yo1D0HoVK5MZXXTfel89OWDb2gM6gq2uTtLHhHT3ric" },
+      { name: "Shiman", fileId: "1IpADlylx9iqRLTZFor6vM8J0ZOsyr2_PzocF0QN_zjE" },
+    ],
   },
 };
+
+// Each person's file spells months differently ("Jan", "JAN", "March", "Mac" — the Malay
+// spelling, seen in one real file) — so tabs are matched by alias, not assumed consistent.
+const AM_MONTH_ALIASES = {
+  jan: "January", january: "January", feb: "February", february: "February",
+  mar: "March", march: "March", mac: "March", apr: "April", april: "April",
+  may: "May", jun: "June", june: "June", jul: "July", july: "July",
+  aug: "August", august: "August", sep: "September", sept: "September", september: "September",
+  oct: "October", october: "October", nov: "November", november: "November",
+  dec: "December", december: "December",
+};
+function normalizeAMMonth(tabName) {
+  return AM_MONTH_ALIASES[(tabName || "").trim().toLowerCase()] || null;
+}
+
+// Pulls the real category-by-category breakdown (KPI name, weightage %, score achieved,
+// weighted score) out of one person's file for every month tab that exists — not just the
+// final total. Column positions are found by matching header text (some files have a
+// leading "Staff Name" column, some don't), and a row only counts as a real KPI category if
+// its weightage cell is an actual percentage — this is what keeps "Achievement Criteria"
+// rubric rows and merged/legend cells from being mistaken for real data.
+async function getAMPersonMonths(sheets, fileId) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: "sheets.properties.title" });
+  const titles = (meta.data.sheets || []).map(s => s.properties.title);
+  const monthTabs = titles.map(t => ({ tab: t, month: normalizeAMMonth(t) })).filter(m => m.month);
+  if (!monthTabs.length) return [];
+
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: fileId,
+    ranges: monthTabs.map(m => m.tab),
+    fields: "sheets.properties.title,sheets.data.rowData.values(formattedValue)",
+  });
+  const sheetsData = res.data.sheets || [];
+
+  return monthTabs.map(({ tab, month }) => {
+    const sheetEntry = sheetsData.find(s => s.properties.title === tab);
+    const rowData = sheetEntry?.data?.[0]?.rowData || [];
+    const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
+    if (!rows.length) return { month, score: null, breakdown: [], flagged: false };
+
+    const headerIdx = rows.findIndex(row => row.some(c => /weightage/i.test(c)));
+    if (headerIdx === -1) return { month, score: null, breakdown: [], flagged: false };
+    const header = rows[headerIdx];
+    const categoryCol = header.findIndex(c => /^kpi$/i.test(c.trim()));
+    const weightageCol = header.findIndex(c => /weightage/i.test(c));
+    const scoreAchievedCol = header.findIndex(c => /score\s*achieved/i.test(c));
+    const kpiScoreCol = header.findIndex(c => /^kpi\s*score$/i.test(c.trim()));
+
+    const breakdown = [];
+    let totalScore = null;
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const row = rows[r];
+      const label0 = (row[0] || "").trim().toLowerCase();
+      if (label0.includes("kpi score for the month")) {
+        for (let i = row.length - 1; i >= 1; i--) {
+          if (row[i] && row[i].trim()) { totalScore = row[i].trim(); break; }
+        }
+        continue;
+      }
+      const wVal = weightageCol >= 0 ? (row[weightageCol] || "").trim() : "";
+      if (/^\d+(\.\d+)?%$/.test(wVal)) {
+        const category = ((categoryCol >= 0 ? row[categoryCol] : row[0]) || "").split("\n")[0].trim();
+        if (!category) continue;
+        breakdown.push({
+          category,
+          weightage: wVal,
+          scoreAchieved: scoreAchievedCol >= 0 ? (row[scoreAchievedCol] || "").trim() : "",
+          weightedScore: kpiScoreCol >= 0 ? (row[kpiScoreCol] || "").trim() : "",
+        });
+      }
+    }
+    // Some months' summary row is missing outright — fall back to summing the category
+    // weighted scores so a total is still shown, rather than leaving it blank.
+    if (totalScore === null && breakdown.length) {
+      const sum = breakdown.reduce((s, b) => s + (parseFloat(b.weightedScore) || 0), 0);
+      totalScore = String(Math.round(sum * 100) / 100);
+    }
+    const numeric = totalScore ? parseFloat(totalScore.replace(/[^0-9.-]/g, "")) : null;
+    const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0);
+    return { month, score: totalScore, breakdown, flagged };
+  });
+}
 
 const MONTH_ABBR_MAP = {
   jan: "January", feb: "February", mar: "March", apr: "April", may: "May", jun: "June",
@@ -245,6 +332,19 @@ export async function GET(request) {
       const payload = { status: "ok", team, people };
       if (debug) payload.debug = [{ folderId: `spreadsheet ${config.spreadsheetId}`, filesFound: 0, names: [], error: JSON.stringify(debug) }];
       return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    if (config.type === "am_individual") {
+      const people = [];
+      for (const p of config.people) {
+        try {
+          const months = await getAMPersonMonths(sheets, p.fileId);
+          people.push({ name: p.name, months, sheetUrl: `https://docs.google.com/spreadsheets/d/${p.fileId}/edit` });
+        } catch (e) {
+          people.push({ name: p.name, months: [], sheetUrl: `https://docs.google.com/spreadsheets/d/${p.fileId}/edit`, error: e.message });
+        }
+      }
+      return NextResponse.json({ status: "ok", team, people }, { headers: { "Cache-Control": "no-store" } });
     }
 
     // folder_scan (default): each person has their own file, possibly nested in a subfolder.
