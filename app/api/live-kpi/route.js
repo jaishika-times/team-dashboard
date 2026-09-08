@@ -92,6 +92,23 @@ function parseProgress(raw) {
   return n > 1 ? n / 100 : n;
 }
 
+// "2 videos in total for either platform" -> "videos" (strips the leading count and the
+// generic trailing wording). Used to show "4 videos" instead of a bare "4" for how many of
+// a task were actually completed — reusing the task's own description rather than guessing
+// new phrasing.
+function shortTaskLabel(taskText) {
+  const m = (taskText || "").match(/^\d+(?:\.\d+)?\s+(.+)$/);
+  if (!m) return null;
+  const label = m[1].replace(/\s*(in total|for either platform|either platform|for either|static)\b.*$/i, "").trim();
+  return label || null;
+}
+function completedWithLabel(taskText, completedRaw) {
+  const completed = (completedRaw || "").trim();
+  if (!completed) return "";
+  const label = shortTaskLabel(taskText);
+  return label ? `${completed} ${label}` : completed;
+}
+
 // Content / Video sheet columns: Month(0), Week(1), Date(2), Name(3), Task/Target(4),
 // Platform(5), Completed(6), Weightage(7), Weightage Score(8), Progress(9), Notes(10),
 // Status(11), Links(12). Same row-grouping rules as before: a person can span multiple
@@ -107,7 +124,7 @@ function parseTaskSheet(grid, team) {
     const name = cellText(grid, r, 3).trim();
     const taskText = cellText(grid, r, 4).trim();
     const platform = cellText(grid, r, 5).trim();
-    const completed = cellText(grid, r, 6).trim();
+    const completed = completedWithLabel(taskText, cellText(grid, r, 6));
     const weightage = cellText(grid, r, 7).trim();
     const weightageScore = cellText(grid, r, 8).trim();
     const progressRaw = cellText(grid, r, 9);
@@ -167,10 +184,10 @@ function parseDesignSheet(grid) {
     let kpiPct = parseProgress(progressRaw);
     if ((kpiPct === null || kpiPct === 0) && !weightage) kpiPct = parseProgress(efficiencyRaw);
 
-    // "Completed" mirrors what the sheet's own Progress Report shows: the rating (e.g.
-    // "Completed - Meeting Expectation") when a status exists, otherwise fall back to
-    // whatever the task/target field says (covers weeks with no work done yet, leave, etc).
-    const completed = status ? `Completed - ${status}` : (taskTarget || "");
+    // Just the rating itself (Meeting/Exceeding/Below expectation) when there is one,
+    // otherwise fall back to whatever the task/target field says (covers weeks with no
+    // rating yet — leave, not started, etc).
+    const completed = status || taskTarget || "";
 
     people.push({
       month: lastMonth, week: lastWeek, team: "Design", employee: name,

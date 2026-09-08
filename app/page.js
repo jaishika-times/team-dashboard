@@ -939,8 +939,23 @@ const COMP_LOGOS = {
                     )}
                     {kpiTeams.length > 0 && showKpiReport && (
                       <div className="mt-2 bg-white rounded-xl border border-gray-100 overflow-hidden">
-                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                           <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</h3>
+                          <button onClick={() => {
+                            const header = ["Team", "Name", "Total Target / Task", "Estimated Time", "Time Produced", "Completed", "Progress"];
+                            const rows = kpiTeams.flatMap(team => byTeam[team].map(e => {
+                              const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) + "%" : "";
+                              return [team, e.employee, e.target, e.estTime || "", e.producedTime || "", e.completed, pct];
+                            }));
+                            const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+                            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `KPI Progress Report - ${curMonth}${kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}.csv`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }} className="text-xs font-medium text-gray-500 hover:text-gray-800 border border-gray-200 px-3 py-1.5 rounded-lg">⬇ Download CSV</button>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
@@ -952,7 +967,6 @@ const COMP_LOGOS = {
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Estimated Time</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Time Produced</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Completed</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Documents</th>
                                 <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Progress</th>
                               </tr>
                             </thead>
@@ -969,7 +983,6 @@ const COMP_LOGOS = {
                                       <td className="px-4 py-2.5 text-gray-400">{e.estTime || "—"}</td>
                                       <td className="px-4 py-2.5 text-gray-400">{e.producedTime || "—"}</td>
                                       <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.completed}</td>
-                                      <td className="px-4 py-2.5"><KpiDocs links={e.links} /></td>
                                       <td className={`px-4 py-2.5 text-right font-bold ${pctColor}`}>{pct !== null ? pct + "%" : "..."}</td>
                                     </tr>
                                   );
