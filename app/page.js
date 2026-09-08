@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle } from "@/lib/parser";
+import * as XLSX from "xlsx";
 
 const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
 function normMonth(m) {
@@ -63,6 +64,59 @@ function AddEntryRow({ assets, onAdd }) {
       <input type="date" value={dateReturned} onChange={e => setDateReturned(e.target.value)}
         className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white" title="Return date (optional)" />
       <button onClick={submit} className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg">+ Add</button>
+    </div>
+  );
+}
+
+// A small dropdown offering CSV, Excel, or PDF for any table of header + row data.
+// PDF goes through the browser's own print dialog ("Save as PDF") rather than a heavy
+// client-side PDF library — keeps the bundle light and works the same in every browser.
+function ExportMenu({ filename, header, rows }) {
+  const [open, setOpen] = useState(false);
+
+  function downloadCSV() {
+    const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${filename}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadExcel() {
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+  }
+
+  function downloadPDF() {
+    const win = window.open("", "_blank");
+    if (!win) return;
+    const tableHtml = `
+      <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:12px;">
+        <thead><tr>${header.map(h => `<th style="border:1px solid #ccc;padding:6px 8px;text-align:left;background:#f3f4f6;">${h}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #ddd;padding:6px 8px;">${(c ?? "").toString().replace(/</g, "&lt;")}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table>`;
+    win.document.write(`<html><head><title>${filename}</title></head><body>${tableHtml}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(v => !v)} className="text-xs font-medium text-gray-500 hover:text-gray-800 border border-gray-200 px-3 py-1.5 rounded-lg">⬇ Download ▾</button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} className="fixed inset-0 z-10"></div>
+          <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden w-44">
+            <button onClick={() => { downloadCSV(); setOpen(false); }} className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50">📄 CSV</button>
+            <button onClick={() => { downloadExcel(); setOpen(false); }} className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50">📊 Excel (.xlsx)</button>
+            <button onClick={() => { downloadPDF(); setOpen(false); }} className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50">🖨️ PDF</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -941,21 +995,14 @@ const COMP_LOGOS = {
                       <div className="mt-2 bg-white rounded-xl border border-gray-100 overflow-hidden">
                         <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                           <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</h3>
-                          <button onClick={() => {
-                            const header = ["Team", "Name", "Total Target / Task", "Estimated Time", "Time Produced", "Completed", "Progress"];
-                            const rows = kpiTeams.flatMap(team => byTeam[team].map(e => {
+                          <ExportMenu
+                            filename={`KPI Progress Report - ${curMonth}${kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}`}
+                            header={["Team", "Name", "Total Target / Task", "Estimated Time", "Time Produced", "Completed", "Progress"]}
+                            rows={kpiTeams.flatMap(team => byTeam[team].map(e => {
                               const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) + "%" : "";
                               return [team, e.employee, e.target, e.estTime || "", e.producedTime || "", e.completed, pct];
-                            }));
-                            const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-                            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement("a");
-                            a.href = url;
-                            a.download = `KPI Progress Report - ${curMonth}${kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}.csv`;
-                            a.click();
-                            URL.revokeObjectURL(url);
-                          }} className="text-xs font-medium text-gray-500 hover:text-gray-800 border border-gray-200 px-3 py-1.5 rounded-lg">⬇ Download CSV</button>
+                            }))}
+                          />
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
