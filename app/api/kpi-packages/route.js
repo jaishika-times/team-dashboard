@@ -286,6 +286,7 @@ async function getPersonScore(sheets, fileId, fileName) {
     let totalRow = null;
     let currentCategory = "", currentSubCategory = "";
     let pendingGroup = null;
+    let lastWIdx = null;
 
     function flushGroup() {
       if (!pendingGroup) return;
@@ -328,6 +329,7 @@ async function getPersonScore(sheets, fileId, fileName) {
 
       if (wIdx !== -1) {
         flushGroup();
+        lastWIdx = wIdx;
         const label = [currentCategory, currentSubCategory].filter(Boolean).join(" — ") || currentCategory || currentSubCategory || "Untitled";
         pendingGroup = { category: label, weightage: row[wIdx].trim(), wIdx, perMonthScores: Array.from({ length: monthCount }, () => []), perMonthWeighted: [] };
         for (let m = 0; m < monthCount; m++) {
@@ -352,10 +354,16 @@ async function getPersonScore(sheets, fileId, fileName) {
 
     if (!breakdown.length) perTabDebug.push({ tabTitle, monthsFound: monthsInTab, rowCount: rows.length, first5Rows: rows.slice(0, 5), issue: "months detected but no row had a %-shaped Weightage cell in its first 4 columns" });
 
-    // The total row lists one value per month, in the same chronological column order —
-    // position 1 = oldest month, position N = newest — not "whatever's last in the row"
-    // (a rating-legend table often shares this row just past the real values).
+    // Prefer reading the total from the same column position as "Score" on category rows
+    // (lastWIdx + 1) — some teams' total row has extra leading columns (Sub-category,
+    // Platform) before reaching that position, so it isn't simply "the cell right after the
+    // label." Falls back to that simpler assumption for teams whose total row really is just
+    // label + value with nothing in between.
     const totals = monthsInTab.map((_, i) => {
+      if (lastWIdx !== null) {
+        const v = totalRow?.[lastWIdx + 1 + i * 2];
+        if (v && v.trim()) return v.trim();
+      }
       const v = totalRow?.[i + 1];
       return v && v.trim() ? v.trim() : null;
     });
