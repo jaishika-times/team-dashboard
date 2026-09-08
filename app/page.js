@@ -1608,6 +1608,11 @@ function TeamPeopleCards({ team, folderUrl, gradient }) {
                       ) : (
                         <p className="text-[11px] text-gray-400">{selectedMonth || "—"}{hasBreakdown ? ` · ${isOpen ? "hide" : "show"} breakdown` : ""}</p>
                       )}
+                      {p.months.length === 0 && p.debug && (
+                        <p className="text-[10px] text-red-400 font-mono truncate" title={JSON.stringify(p.debug)}>
+                          debug: tabs={p.debug.allTabs?.join(", ")} · matched={p.debug.matchedTabs?.join(", ") || "none"}{p.debug.perTab?.[0]?.issue ? ` · ${p.debug.perTab[0].issue}` : ""}
+                        </p>
+                      )}
                     </div>
                     {!entry || (!entry.score && !entry.note) ? (
                       <span className="text-[11px] text-gray-300 shrink-0">No data</span>

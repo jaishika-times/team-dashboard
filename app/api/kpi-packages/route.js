@@ -233,7 +233,7 @@ async function getPersonScore(sheets, fileId, fileName) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: "sheets.properties.title" });
   const titles = (meta.data.sheets || []).map(s => s.properties.title);
   const kpiTabs = titles.filter(isKpiScoreTab);
-  if (!kpiTabs.length) return null;
+  if (!kpiTabs.length) return { name: nameFromTitle(fileName), months: [], sheetUrl: `https://docs.google.com/spreadsheets/d/${fileId}/edit`, debug: { allTabs: titles, matchedTabs: [], issue: "no tab matched isKpiScoreTab" } };
 
   const res = await sheets.spreadsheets.get({
     spreadsheetId: fileId,
@@ -243,12 +243,13 @@ async function getPersonScore(sheets, fileId, fileName) {
   const sheetsData = res.data.sheets || [];
   const isNum = v => /^-?\d+(\.\d+)?$/.test((v || "").trim());
   const monthResults = [];
+  const perTabDebug = [];
 
   for (const tabTitle of kpiTabs) {
     const sheetEntry = sheetsData.find(s => s.properties.title === tabTitle);
     const rowData = sheetEntry?.data?.[0]?.rowData || [];
     const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
-    if (!rows.length) continue;
+    if (!rows.length) { perTabDebug.push({ tabTitle, issue: "zero rows returned by the API for this tab" }); continue; }
 
     // The month is either right there in the tab's own name ("KPI Scores June"), or baked
     // into a header column instead ("JULY SCORE") when the team keeps one tab total. When a
@@ -265,7 +266,7 @@ async function getPersonScore(sheets, fileId, fileName) {
         }
       }
     }
-    if (!monthsInTab.length) continue;
+    if (!monthsInTab.length) { perTabDebug.push({ tabTitle, rowCount: rows.length, first3Rows: rows.slice(0, 3), issue: "no month could be detected from the tab title or its first 3 rows" }); continue; }
     monthsInTab.sort((a, b) => MONTH_ORDER_FULL.indexOf(a) - MONTH_ORDER_FULL.indexOf(b));
     const monthCount = monthsInTab.length;
 
@@ -300,6 +301,8 @@ async function getPersonScore(sheets, fileId, fileName) {
       breakdown.push({ category, weightage, perMonth });
     }
 
+    if (!breakdown.length) perTabDebug.push({ tabTitle, monthsFound: monthsInTab, rowCount: rows.length, first5Rows: rows.slice(0, 5), issue: "months detected but no row had a %-shaped Weightage cell in its first 4 columns" });
+
     // The total row lists one value per month, in the same chronological column order —
     // position 1 = oldest month, position N = newest — not "whatever's last in the row"
     // (a rating-legend table often shares this row just past the real values).
@@ -327,6 +330,7 @@ async function getPersonScore(sheets, fileId, fileName) {
     name: nameFromTitle(fileName),
     months: Object.values(byMonth),
     sheetUrl: `https://docs.google.com/spreadsheets/d/${fileId}/edit`,
+    debug: monthResults.length === 0 ? { allTabs: titles, matchedTabs: kpiTabs, perTab: perTabDebug } : undefined,
   };
 }
 
