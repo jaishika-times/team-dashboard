@@ -175,16 +175,21 @@ function nameFromTitle(title) {
 }
 
 const MONTH_RE = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/i;
+const MONTH_ORDER_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function cellText(row, c) {
   return row?.[c]?.formattedValue || "";
 }
 
-// Two real shapes exist here: Video/Edunexa keep one "KPI Scores" tab with the month baked
-// into a column header; Content Curation instead has a separate "KPI Scores June", "KPI
-// Scores July", etc. tab per month. Both use the same underlying row layout (KPI, Weightage,
-// Score, Weighted Score, ...rubric), so this handles them with one pass rather than two
-// separate parsers, verified against real files from all three teams.
+// Two real shapes exist here: Video/Edunexa/Design keep one "KPI Scores" tab (sometimes with
+// several months' columns side by side); Content Curation instead has a separate "KPI Scores
+// June", "KPI Scores July" tab per month. Both share the same underlying row layout — but the
+// header's "KPI" label is a MERGED cell spanning both the category-name and description
+// columns, while the data rows have those as two separate columns. That single-column
+// mismatch is exactly why a header-position-based column anchor gave wrong values earlier —
+// this version finds the Weightage cell fresh on every row instead of assuming a fixed
+// column index, which is what actually holds up against the real files (verified against
+// Marcus, Aiem, Zul, and Nich's real rows, including Nich's genuinely-blank weighted scores).
 async function getPersonScore(sheets, fileId, fileName) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: "sheets.properties.title" });
   const titles = (meta.data.sheets || []).map(s => s.properties.title);
@@ -203,68 +208,76 @@ async function getPersonScore(sheets, fileId, fileName) {
   for (const tabTitle of kpiTabs) {
     const sheetEntry = sheetsData.find(s => s.properties.title === tabTitle);
     const rowData = sheetEntry?.data?.[0]?.rowData || [];
-    const rows = rowData.map(r => r.values || []);
+    const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
     if (!rows.length) continue;
 
     // The month is either right there in the tab's own name ("KPI Scores June"), or baked
-    // into a header column instead ("JULY SCORE") when the team keeps one tab total.
+    // into a header column instead ("JULY SCORE") when the team keeps one tab total. When a
+    // tab lists several months' columns side by side, sort them chronologically (not by
+    // left-to-right column order) so "score" always lines up with the right position below.
     let monthsInTab = [];
     const titleMatch = tabTitle.match(MONTH_RE);
     if (titleMatch) monthsInTab.push(titleMatch[1]);
     else {
       for (let r = 0; r < Math.min(rows.length, 3); r++) {
-        for (const cell of rows[r]) {
-          const m = (cell.formattedValue || "").match(MONTH_RE);
+        for (const cellVal of rows[r]) {
+          const m = cellVal.match(MONTH_RE);
           if (m && !monthsInTab.includes(m[1])) monthsInTab.push(m[1]);
         }
       }
     }
     if (!monthsInTab.length) continue;
+    monthsInTab.sort((a, b) => MONTH_ORDER_FULL.indexOf(a) - MONTH_ORDER_FULL.indexOf(b));
+    const monthCount = monthsInTab.length;
 
-    // Score/weighted-score always sit immediately after "Weightage" by position — not by
-    // matching each month's own header text, since month header cells are sometimes merged
-    // in ways that make the adjacent column's header read as blank.
-    let weightageCol = -1, weightageRowIdx = -1;
-    for (let r = 0; r < Math.min(rows.length, 3); r++) {
-      const idx = rows[r].findIndex(c => /weightage/i.test(c.formattedValue || ""));
-      if (idx !== -1) { weightageCol = idx; weightageRowIdx = r; break; }
-    }
-
+    // Category rows: find the Weightage cell fresh on each row (first 4 cells), then take
+    // exactly 2 columns per month (score, weighted score) immediately after it, in
+    // chronological order. Legend/rubric rows never have a %-shaped value there, so they're
+    // skipped automatically.
     const breakdown = [];
-    let totalScore = null;
-    if (weightageCol !== -1) {
-      for (let r = weightageRowIdx + 1; r < rows.length; r++) {
-        const row = rows[r];
-        const label0 = (row[0]?.formattedValue || "").trim().toLowerCase();
-        if (label0.includes("kpi score for the month") || label0.includes("total kpi score")) {
-          for (let i = row.length - 1; i >= 1; i--) {
-            const v = row[i]?.formattedValue;
-            if (v && v.trim()) { totalScore = v.trim(); break; }
-          }
-          continue;
-        }
-        const wCell = (row[weightageCol]?.formattedValue || "").trim();
-        if (!/^\d+(\.\d+)?%$/.test(wCell)) continue; // rubric/legend/blank row, not real data
-        const category = (row[0]?.formattedValue || "").split("\n")[0].trim();
-        if (!category) continue;
-        const scoreCell = row[weightageCol + 1]?.formattedValue || "";
-        const weightedCell = row[weightageCol + 2]?.formattedValue || "";
-        // Some rows are genuinely missing their weighted-score value (a broken formula
-        // upstream, seen in real data) — must show blank rather than grab whatever
-        // non-numeric rubric text happens to sit in that position.
-        breakdown.push({
-          category, weightage: wCell,
-          scoreAchieved: isNum(scoreCell) ? scoreCell.trim() : "",
-          weightedScore: isNum(weightedCell) ? weightedCell.trim() : "",
-        });
+    let totalRow = null;
+    for (const row of rows) {
+      const label0 = row[0].trim().toLowerCase();
+      if (label0.includes("kpi score for the month") || label0.includes("total kpi score")) {
+        totalRow = row;
+        continue;
       }
+      let wIdx = -1;
+      for (let i = 0; i < Math.min(row.length, 4); i++) {
+        if (/^\d+(\.\d+)?%$/.test(row[i].trim())) { wIdx = i; break; }
+      }
+      if (wIdx === -1) continue;
+      const category = row[0].split("\n")[0].trim();
+      if (!category) continue;
+      const weightage = row[wIdx].trim();
+      const perMonth = [];
+      for (let m = 0; m < monthCount; m++) {
+        const s = row[wIdx + 1 + m * 2] || "";
+        const ws = row[wIdx + 2 + m * 2] || "";
+        // A row genuinely missing its weighted-score (a broken formula upstream, seen in real
+        // data) must show blank rather than grab whatever non-numeric rubric text sits there.
+        perMonth.push({ scoreAchieved: isNum(s) ? s.trim() : "", weightedScore: isNum(ws) ? ws.trim() : "" });
+      }
+      breakdown.push({ category, weightage, perMonth });
     }
 
-    const numeric = totalScore ? parseFloat(totalScore.replace(/[^0-9.-]/g, "")) : null;
-    const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0);
-    // A tab with several month-columns (some Video sheets keep both this month and last
-    // month side by side) is attributed to whichever month is listed first — the current one.
-    monthResults.push({ month: monthsInTab[0], score: totalScore, flagged, breakdown });
+    // The total row lists one value per month, in the same chronological column order —
+    // position 1 = oldest month, position N = newest — not "whatever's last in the row"
+    // (a rating-legend table often shares this row just past the real values).
+    const totals = monthsInTab.map((_, i) => {
+      const v = totalRow?.[i + 1];
+      return v && v.trim() ? v.trim() : null;
+    });
+
+    monthsInTab.forEach((month, i) => {
+      const score = totals[i];
+      const numeric = score ? parseFloat(score.replace(/[^0-9.-]/g, "")) : null;
+      const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0);
+      monthResults.push({
+        month, score, flagged,
+        breakdown: breakdown.map(b => ({ category: b.category, weightage: b.weightage, scoreAchieved: b.perMonth[i].scoreAchieved, weightedScore: b.perMonth[i].weightedScore })),
+      });
+    });
   }
 
   // De-duplicate by month in case of a stray "(Amended)"-style duplicate tab — last one wins.
