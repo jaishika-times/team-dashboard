@@ -741,6 +741,8 @@ const COMP_LOGOS = {
                 team: p.team, employee: p.employee, tasks: p.tasks,
                 kpiPct: p.pcts.length ? p.pcts.reduce((a, b) => a + b, 0) / p.pcts.length : null,
                 target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
+                estTime: p.tasks.map(t => t.estTime).filter(Boolean).join(", "),
+                producedTime: p.tasks.map(t => t.producedTime).filter(Boolean).join(", "),
                 completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
                 notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
                 status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",
@@ -947,6 +949,8 @@ const COMP_LOGOS = {
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Total Target / Task</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Estimated Time</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Time Produced</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Completed</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Documents</th>
                                 <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Progress</th>
@@ -962,6 +966,8 @@ const COMP_LOGOS = {
                                       {i === 0 ? <td className="px-4 py-2.5 font-semibold align-top" rowSpan={byTeam[team].length}><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td> : null}
                                       <td className="px-4 py-2.5 font-medium">{e.employee}</td>
                                       <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.target}</td>
+                                      <td className="px-4 py-2.5 text-gray-400">{e.estTime || "—"}</td>
+                                      <td className="px-4 py-2.5 text-gray-400">{e.producedTime || "—"}</td>
                                       <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.completed}</td>
                                       <td className="px-4 py-2.5"><KpiDocs links={e.links} /></td>
                                       <td className={`px-4 py-2.5 text-right font-bold ${pctColor}`}>{pct !== null ? pct + "%" : "..."}</td>

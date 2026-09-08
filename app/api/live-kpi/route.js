@@ -130,7 +130,7 @@ function parseTaskSheet(grid, team) {
     }
 
     if (taskText && current) {
-      current.tasks.push({ task: taskText, platform, completed, weightage, weightageScore, notes, status, links });
+      current.tasks.push({ task: taskText, platform, completed, weightage, weightageScore, notes, status, links, estTime: "", producedTime: "" });
     }
   }
   return people;
@@ -167,11 +167,14 @@ function parseDesignSheet(grid) {
     let kpiPct = parseProgress(progressRaw);
     if ((kpiPct === null || kpiPct === 0) && !weightage) kpiPct = parseProgress(efficiencyRaw);
 
-    const completed = producedTime || estTime ? `${producedTime || "—"}h produced / ${estTime || "—"}h est.` : "";
+    // "Completed" mirrors what the sheet's own Progress Report shows: the rating (e.g.
+    // "Completed - Meeting Expectation") when a status exists, otherwise fall back to
+    // whatever the task/target field says (covers weeks with no work done yet, leave, etc).
+    const completed = status ? `Completed - ${status}` : (taskTarget || "");
 
     people.push({
       month: lastMonth, week: lastWeek, team: "Design", employee: name,
-      tasks: [{ task: taskTarget, platform: "", completed, weightage, weightageScore, notes, status, links }],
+      tasks: [{ task: taskTarget, platform: "", completed, weightage, weightageScore, notes, status, links, estTime, producedTime }],
       kpiPct,
     });
   }
@@ -194,6 +197,8 @@ export async function GET() {
     const entries = people.map(p => ({
       ...p,
       target: p.tasks.map(t => t.task).filter(Boolean).join("; "),
+      estTime: p.tasks.map(t => t.estTime).filter(Boolean).join(", "),
+      producedTime: p.tasks.map(t => t.producedTime).filter(Boolean).join(", "),
       completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
       notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
       status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",
