@@ -100,8 +100,15 @@ async function getAMPersonMonths(sheets, fileId) {
       const row = rows[r];
       const label0 = (row[0] || "").trim().toLowerCase();
       if (label0.includes("kpi score for the month")) {
-        for (let i = row.length - 1; i >= 1; i--) {
-          if (row[i] && row[i].trim()) { totalScore = row[i].trim(); break; }
+        // Read the total from the exact same "KPI Score" column used for every category row
+        // below, rather than scanning the row for "the last non-empty cell" — that scan was
+        // unreliable against this row's merged cells and any stray trailing content.
+        const v = kpiScoreCol >= 0 ? (row[kpiScoreCol] || "").trim() : "";
+        if (v) totalScore = v;
+        else {
+          for (let i = row.length - 1; i >= 1; i--) {
+            if (row[i] && row[i].trim()) { totalScore = row[i].trim(); break; }
+          }
         }
         continue;
       }
@@ -124,7 +131,12 @@ async function getAMPersonMonths(sheets, fileId) {
       totalScore = String(Math.round(sum * 100) / 100);
     }
     const numeric = totalScore ? parseFloat(totalScore.replace(/[^0-9.-]/g, "")) : null;
-    const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0);
+    // Cross-check against the breakdown's own sum — if the sheet's stated total and what the
+    // categories actually add up to disagree by more than rounding error, that's worth
+    // surfacing rather than silently trusting either number.
+    const breakdownSum = breakdown.length ? breakdown.reduce((s, b) => s + (parseFloat(b.weightedScore) || 0), 0) : null;
+    const mismatch = numeric !== null && breakdownSum !== null && Math.abs(numeric - breakdownSum) > 1;
+    const flagged = numeric !== null && !isNaN(numeric) && (numeric > 150 || numeric < 0 || mismatch);
     return { month, score: totalScore, breakdown, flagged };
   });
 }
