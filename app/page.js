@@ -38,6 +38,35 @@ function extractUrls(text) {
 }
 
 // Compact clickable document icons for a table cell — used in the Weekly KPI progress report.
+// One draft row for adding a new asset checkout to the currently selected date — supports
+// several people on one item by just typing their names comma-separated.
+function AddEntryRow({ assets, onAdd }) {
+  const [assetId, setAssetId] = useState("");
+  const [peopleInput, setPeopleInput] = useState("");
+  const [dateReturned, setDateReturned] = useState("");
+
+  function submit() {
+    if (!assetId || !peopleInput.trim()) return;
+    onAdd({ asset_id: assetId, held_by: peopleInput, date_returned: dateReturned });
+    setAssetId(""); setPeopleInput(""); setDateReturned("");
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 p-3 bg-indigo-50/60 rounded-xl border border-dashed border-indigo-200">
+      <select value={assetId} onChange={e => setAssetId(e.target.value)}
+        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg flex-1 min-w-[160px] bg-white">
+        <option value="">Select item...</option>
+        {[...assets].sort((a, b) => a.code.localeCompare(b.code)).map(a => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+      </select>
+      <input value={peopleInput} onChange={e => setPeopleInput(e.target.value)} placeholder="Who took it? (comma-separate for multiple)"
+        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg flex-1 min-w-[200px] bg-white" />
+      <input type="date" value={dateReturned} onChange={e => setDateReturned(e.target.value)}
+        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white" title="Return date (optional)" />
+      <button onClick={submit} className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg">+ Add</button>
+    </div>
+  );
+}
+
 function KpiDocs({ links }) {
   const urls = extractUrls(links);
   if (!urls.length) return <span className="text-gray-300">—</span>;
@@ -72,15 +101,10 @@ export default function DashboardPage() {
   const [assets, setAssets] = useState([]);
   const [assetSearch, setAssetSearch] = useState("");
   const [assetModal, setAssetModal] = useState(null);
-  const [assetForm, setAssetForm] = useState({ code: "", name: "", category: "Video Properties", status: "Available", remark: "" });
-  const [assetLogs, setAssetLogs] = useState([]);
-  const [selectedAssetLog, setSelectedAssetLog] = useState(null);
-  const [checkoutHistoryFor, setCheckoutHistoryFor] = useState(null); // asset object currently viewing history for
-  const [checkoutEntries, setCheckoutEntries] = useState([]);
-  const [checkoutForm, setCheckoutForm] = useState({ held_by: "", date_taken: "", date_returned: "", notes: "" });
+  const [assetForm, setAssetForm] = useState({ code: "", name: "" });
   const [allCheckouts, setAllCheckouts] = useState([]);
-  const [quickEntryModal, setQuickEntryModal] = useState(false);
-  const [quickEntryForm, setQuickEntryForm] = useState({ asset_id: "", held_by: "", date_taken: "", date_returned: "", notes: "" });
+  const [selectedEntryDate, setSelectedEntryDate] = useState(null);
+  const [showNewDatePicker, setShowNewDatePicker] = useState(false);
   const [selCompany, setSelCompany] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [empModal, setEmpModal] = useState(null);
@@ -121,8 +145,6 @@ export default function DashboardPage() {
     const { data: empRows } = await supabase.from("employees").select("*").order("name");
     const { data: assetRows } = await supabase.from("assets").select("*").order("code");
     if (assetRows) setAssets(assetRows);
-    const { data: assetLogRows } = await supabase.from("asset_weekly_logs").select("id, week_ending, recorded_at").order("week_ending", { ascending: false });
-    if (assetLogRows) setAssetLogs(assetLogRows);
     const { data: checkoutRows } = await supabase.from("asset_checkouts").select("*").order("date_taken", { ascending: false });
     if (checkoutRows) setAllCheckouts(checkoutRows);
     if (empRows) setEmployees(empRows);
@@ -965,334 +987,192 @@ const COMP_LOGOS = {
           {/* ===== ASSETS ===== */}
           {page === "assets" && (() => {
             const filtered = assets.filter(a =>
-              assetSearch ? (a.code + " " + a.name + " " + a.remark).toLowerCase().includes(assetSearch.toLowerCase()) : true
+              assetSearch ? (a.code + " " + a.name).toLowerCase().includes(assetSearch.toLowerCase()) : true
             );
-            const available = assets.filter(a => a.status === "Available").length;
-            const cantUse = assets.filter(a => a.status === "Cannot Use").length;
+
+            // No more manually-toggled status field — "In Use" is simply whatever has an
+            // open (not-yet-returned) entry in the dated log below. One source of truth,
+            // nothing to keep in sync by hand.
+            function statusFor(assetId) {
+              const open = allCheckouts.find(c => c.asset_id === assetId && !c.date_returned);
+              return open ? "In Use" : "Available";
+            }
+            const availableCount = assets.filter(a => statusFor(a.id) === "Available").length;
+            const inUseCount = assets.length - availableCount;
 
             async function saveAsset() {
               if (!assetForm.code || !assetForm.name) return;
               if (assetModal === "add") {
-                await supabase.from("assets").insert(assetForm);
+                await supabase.from("assets").insert({ code: assetForm.code, name: assetForm.name, status: "Available" });
               } else {
-                await supabase.from("assets").update(assetForm).eq("id", assetModal);
+                await supabase.from("assets").update({ code: assetForm.code, name: assetForm.name }).eq("id", assetModal);
               }
               setAssetModal(null);
-              const { data } = await supabase.from("assets").select("*").order("code");
-              if (data) setAssets(data);
+              loadData();
             }
 
             async function deleteAsset(id) {
-              if (!confirm("Delete this asset?")) return;
+              if (!confirm("Delete this asset? Its past checkout entries stay on record.")) return;
               await supabase.from("assets").delete().eq("id", id);
-              const { data } = await supabase.from("assets").select("*").order("code");
-              if (data) setAssets(data);
-            }
-
-            // Setting status directly (not cycling/guessing). Choosing "Available" also closes
-            // out any checkout that's still open for this item — same effect as Mark Returned —
-            // so the item can't stay stuck showing "In Use" with no way back.
-            async function setAssetStatus(id, next) {
-              const updates = { status: next };
-              if (next === "Available") updates.date_returned = new Date().toISOString().split("T")[0];
-              await supabase.from("assets").update(updates).eq("id", id);
-              if (next === "Available") {
-                await supabase.from("asset_checkouts").update({ date_returned: updates.date_returned }).eq("asset_id", id).is("date_returned", null);
-              }
               loadData();
             }
 
-            // Wipes Held By / Date Taken / Date Returned / Notes back to blank — for tidying up
-            // an item that's already Available but still shows a stale "last holder" from before.
-            async function clearAssetFields(id) {
-              if (!confirm("Clear Held By, dates, and notes for this item? (Status stays as-is.)")) return;
-              await supabase.from("assets").update({ held_by: null, date_taken: null, date_returned: null, notes: null }).eq("id", id);
+            // Dates that actually have entries recorded, newest first — this list only grows
+            // as real entries get added, exactly like a running log rather than a fixed
+            // weekly cadence.
+            const allDates = Array.from(new Set(allCheckouts.map(c => c.date_taken).filter(Boolean))).sort((a, b) => b.localeCompare(a));
+            const activeDate = selectedEntryDate || allDates[0] || null;
+            const entriesForDate = activeDate ? allCheckouts.filter(c => c.date_taken === activeDate) : [];
+
+            async function addRowForDate(row) {
+              if (!row.asset_id || !row.held_by.trim()) return;
+              await supabase.from("asset_checkouts").insert({
+                asset_id: row.asset_id, held_by: row.held_by.trim(), date_taken: activeDate,
+                date_returned: row.date_returned || null, created_by: user.id,
+              });
               loadData();
             }
 
-            async function saveWeeklyLog() {
-              const today = new Date().toISOString().split("T")[0];
-              if (!confirm(`Save today's (${today}) asset status as this week's record?`)) return;
-              const snapshot = assets.map(a => ({ code: a.code, name: a.name, status: a.status, held_by: a.held_by || "", date_taken: a.date_taken || "", date_returned: a.date_returned || "", notes: a.notes || "" }));
-              await supabase.from("asset_weekly_logs").upsert({ week_ending: today, data: snapshot, recorded_by: user.id }, { onConflict: "week_ending" });
+            async function updateReturn(checkoutId, value) {
+              await supabase.from("asset_checkouts").update({ date_returned: value || null }).eq("id", checkoutId);
               loadData();
             }
 
-            async function openAssetLog(id) {
-              const { data } = await supabase.from("asset_weekly_logs").select("*").eq("id", id).single();
-              if (data) setSelectedAssetLog(data);
-            }
-
-            async function deleteAssetLog(id) {
-              if (!confirm("Delete this weekly record?")) return;
-              await supabase.from("asset_weekly_logs").delete().eq("id", id);
-              setSelectedAssetLog(null);
-              loadData();
-            }
-
-            async function openCheckoutHistory(asset) {
-              setCheckoutHistoryFor(asset);
-              setCheckoutForm({ held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" });
-              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", asset.id).order("date_taken", { ascending: false });
-              if (data) setCheckoutEntries(data);
-            }
-
-            async function addCheckoutEntry() {
-              if (!checkoutHistoryFor || !checkoutForm.held_by.trim()) return;
-              const payload = { asset_id: checkoutHistoryFor.id, ...checkoutForm, created_by: user.id };
-              await supabase.from("asset_checkouts").insert(payload);
-              // Keep the asset's current-status fields in sync with the latest checkout logged,
-              // while every individual checkout (even same-day, same item) is preserved in the log.
-              await supabase.from("assets").update({
-                held_by: checkoutForm.held_by, date_taken: checkoutForm.date_taken,
-                date_returned: checkoutForm.date_returned, notes: checkoutForm.notes,
-                status: checkoutForm.date_returned ? "Available" : "In Use",
-              }).eq("id", checkoutHistoryFor.id);
-              setCheckoutForm({ held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" });
-              const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
-              if (data) setCheckoutEntries(data);
-              loadData();
-            }
-
-            async function deleteCheckoutEntry(id, assetId) {
-              if (!confirm("Delete this checkout entry?")) return;
+            async function deleteEntry(id) {
+              if (!confirm("Delete this entry?")) return;
               await supabase.from("asset_checkouts").delete().eq("id", id);
-              // If that was the item's only open (not-yet-returned) checkout, nothing marks it
-              // In Use anymore — put it back to Available automatically instead of leaving it stuck.
-              if (assetId) {
-                const { data: stillOpen } = await supabase.from("asset_checkouts").select("id").eq("asset_id", assetId).is("date_returned", null).limit(1);
-                if (!stillOpen?.length) await supabase.from("assets").update({ status: "Available" }).eq("id", assetId);
-              }
-              if (checkoutHistoryFor) {
-                const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
-                if (data) setCheckoutEntries(data);
-              }
-              loadData();
-            }
-
-            // One click: marks this checkout as returned today, and automatically flips the
-            // asset itself back to Available — no separate step needed. Works whether it's
-            // called from the page-level history table or the per-item history modal.
-            async function markCheckoutReturned(entry) {
-              const today = new Date().toISOString().split("T")[0];
-              await supabase.from("asset_checkouts").update({ date_returned: today }).eq("id", entry.id);
-              await supabase.from("assets").update({ status: "Available", date_returned: today }).eq("id", entry.asset_id);
-              if (checkoutHistoryFor) {
-                const { data } = await supabase.from("asset_checkouts").select("*").eq("asset_id", checkoutHistoryFor.id).order("date_taken", { ascending: false });
-                if (data) setCheckoutEntries(data);
-              }
-              loadData();
-            }
-
-            // Quick sheet-style entry: pick ANY item and log a checkout without opening that
-            // item's own History panel first. Same effect as addCheckoutEntry — creates a log
-            // row and syncs the asset's current status — just reachable from one button up top.
-            async function addQuickEntry() {
-              if (!quickEntryForm.asset_id || !quickEntryForm.held_by.trim()) return;
-              const payload = { asset_id: quickEntryForm.asset_id, held_by: quickEntryForm.held_by, date_taken: quickEntryForm.date_taken, date_returned: quickEntryForm.date_returned, notes: quickEntryForm.notes, created_by: user.id };
-              await supabase.from("asset_checkouts").insert(payload);
-              await supabase.from("assets").update({
-                held_by: quickEntryForm.held_by, date_taken: quickEntryForm.date_taken,
-                date_returned: quickEntryForm.date_returned, notes: quickEntryForm.notes,
-                status: quickEntryForm.date_returned ? "Available" : "In Use",
-              }).eq("id", quickEntryForm.asset_id);
-              setQuickEntryModal(false);
-              setQuickEntryForm({ asset_id: "", held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" });
               loadData();
             }
 
             return (
               <>
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h1 className="text-xl font-semibold">Assets</h1>
-                    <p className="text-sm text-gray-400">Equipment inventory</p>
+                <h1 className="text-xl font-semibold mb-1">Assets</h1>
+                <p className="text-sm text-gray-400 mb-5">Pick a date to see what was recorded, or start a new one.</p>
+
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-sm">
+                    <p className="text-3xl font-bold">{availableCount}</p>
+                    <p className="text-sm text-white/80">Available</p>
                   </div>
-                  {isAdmin && (
-                    <div className="flex gap-2">
-                      <button onClick={() => { setQuickEntryModal(true); setQuickEntryForm({ asset_id: "", held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" }); }}
-                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700">+ Add Entry</button>
-                      <button onClick={() => { setAssetModal("add"); setAssetForm({ code: "", name: "", category: "Video Properties", status: "Available", remark: "", held_by: "", date_taken: "", date_returned: "", notes: "" }); }}
-                        className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg">+ Add item</button>
-                      <button onClick={() => setAssetModal("stockcheck")}
-                        className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Friday Stock Check</button>
-                      <button onClick={() => setAssetModal("records")}
-                        className="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Weekly Records</button>
+                  <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-4 text-white shadow-sm">
+                    <p className="text-3xl font-bold">{inUseCount}</p>
+                    <p className="text-sm text-white/80">In Use</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+                  <div className="px-5 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between flex-wrap gap-3">
+                    <span className="text-base font-bold">📋 Entries</span>
+                    <div className="flex items-center gap-2">
+                      {allDates.length > 0 && (
+                        <select value={activeDate || ""} onChange={e => setSelectedEntryDate(e.target.value)}
+                          className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                          {allDates.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      )}
+                      {isAdmin && (
+                        <button onClick={() => setShowNewDatePicker(true)} className="text-xs font-semibold bg-white/25 hover:bg-white/35 px-3 py-1.5 rounded-lg">+ New Date</button>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-4 gap-3 mb-5">
-                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
-                    <p className="text-2xl font-bold">{assets.length}</p>
-                    <p className="text-[11px] text-gray-400">Total items</p>
-                  </div>
-                  <div className="bg-green-50 rounded-xl p-4 border border-green-100 text-center">
-                    <p className="text-2xl font-bold text-green-600">{available}</p>
-                    <p className="text-[11px] text-gray-400">Available</p>
-                  </div>
-                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 text-center">
-                    <p className="text-2xl font-bold text-blue-600">{assets.filter(a => a.status === "In Use").length}</p>
-                    <p className="text-[11px] text-gray-400">In use</p>
-                  </div>
-                  <div className="bg-red-50 rounded-xl p-4 border border-red-100 text-center">
-                    <p className="text-2xl font-bold text-red-500">{cantUse}</p>
-                    <p className="text-[11px] text-gray-400">Cannot use</p>
-                  </div>
-                </div>
-
-                {/* Search */}
-                <input value={assetSearch} onChange={e => setAssetSearch(e.target.value)} placeholder="Search by code, name, or remark..."
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm mb-4 focus:outline-none focus:border-gray-400" />
-
-                {/* Table */}
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
-                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Item Name</th>
-                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
-                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Held By</th>
-                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Date Taken</th>
-                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Returned</th>
-                          <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Notes</th>
-                          {isAdmin && <th className="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase w-20"></th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filtered.map(a => (
-                          <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="px-3 py-2 font-mono font-semibold text-gray-500 text-xs">{a.code}</td>
-                            <td className="px-3 py-2 text-sm max-w-[200px]">{a.name}</td>
-                            <td className="px-3 py-2">
-                              {isAdmin ? (
-                                <select value={a.status} onChange={e => setAssetStatus(a.id, e.target.value)}
-                                  className={`text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer border-0 ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>
-                                  <option value="Available">Available</option>
-                                  <option value="In Use">In Use</option>
-                                  <option value="Cannot Use">Cannot Use</option>
-                                </select>
-                              ) : (
-                                <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{a.status}</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-xs text-gray-600">{a.held_by || "-"}</td>
-                            <td className="px-3 py-2 text-xs text-gray-400">{a.date_taken || "-"}</td>
-                            <td className="px-3 py-2 text-xs text-gray-400">{a.date_returned || "-"}</td>
-                            <td className="px-3 py-2 text-xs text-gray-400 max-w-[120px] truncate">{a.notes || "-"}</td>
-                            {isAdmin && (
-                              <td className="px-3 py-2 text-right whitespace-nowrap">
-                                <button onClick={() => openCheckoutHistory(a)} className="text-xs text-blue-500 hover:text-blue-700 mr-2">History</button>
-                                <button onClick={() => clearAssetFields(a.id)} className="text-xs text-gray-400 hover:text-gray-700 mr-2">Clear</button>
-                                <button onClick={() => deleteAsset(a.id)} className="text-xs text-red-400 hover:text-red-600">Del</button>
-                              </td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {filtered.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No items found</p>}
-                </div>
-
-                {/* Checkout History — every time an item was taken, by whom, and when it came back.
-                    Sorted by date then asset, so multiple people taking the same item the same
-                    day show up right next to each other as a group. Fully self-contained: mark
-                    returned or delete an entry right here, no need to open a per-item panel. */}
-                <div className="mt-6 bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Checkout History</h3>
-                    {isAdmin && (
-                      <button onClick={() => { setQuickEntryModal(true); setQuickEntryForm({ asset_id: "", held_by: "", date_taken: new Date().toISOString().split("T")[0], date_returned: "", notes: "" }); }}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-medium">+ Add Entry</button>
-                    )}
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date</th>
-                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
-                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Asset</th>
-                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Who Took</th>
-                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Taken</th>
-                          <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Returned</th>
-                          {isAdmin && <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-400 uppercase"></th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...allCheckouts]
-                          .sort((a, b) => (b.date_taken || "").localeCompare(a.date_taken || "") || (a.asset_id || "").localeCompare(b.asset_id || ""))
-                          .map(c => {
+                  <div className="p-5">
+                    {!activeDate && <p className="text-sm text-gray-300 text-center py-8">No dated entries yet — click "+ New Date" to start one.</p>}
+                    {activeDate && (
+                      <>
+                        <div className="space-y-2 mb-3">
+                          {entriesForDate.map(c => {
                             const asset = assets.find(a => a.id === c.asset_id);
+                            const people = c.held_by.split(",").map(p => p.trim()).filter(Boolean);
                             return (
-                              <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                <td className="px-3 py-2 text-xs text-gray-500">{c.date_taken || "—"}</td>
-                                <td className="px-3 py-2 font-mono text-xs text-gray-500">{asset?.code || "—"}</td>
-                                <td className="px-3 py-2 text-xs text-gray-700">{asset?.name || "(deleted item)"}</td>
-                                <td className="px-3 py-2 text-xs text-gray-700">{c.held_by}</td>
-                                <td className="px-3 py-2 text-xs text-gray-400">{c.date_taken || "—"}</td>
-                                <td className="px-3 py-2 text-xs">
-                                  {c.date_returned
-                                    ? <span className="text-green-600">{c.date_returned}</span>
-                                    : <span className="text-amber-600 font-medium">Not yet returned</span>}
-                                </td>
-                                {isAdmin && (
-                                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                                    {!c.date_returned && (
-                                      <button onClick={() => markCheckoutReturned(c)} className="text-xs text-green-600 hover:text-green-800 font-medium mr-2">Mark Returned</button>
-                                    )}
-                                    <button onClick={() => deleteCheckoutEntry(c.id, c.asset_id)} className="text-xs text-red-300 hover:text-red-600">✕</button>
-                                  </td>
-                                )}
-                              </tr>
+                              <div key={c.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-gray-800">
+                                    {asset?.name || "(deleted item)"} <span className="text-gray-400 font-mono text-xs font-normal">{asset?.code}</span>
+                                  </p>
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {people.map((p, i) => (
+                                      <span key={i} className="text-[11px] font-medium bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{p}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                  <span className="text-[10px] text-gray-400">Returned</span>
+                                  {isAdmin ? (
+                                    <input type="date" value={c.date_returned || ""} onChange={e => updateReturn(c.id, e.target.value)}
+                                      className="text-xs px-2 py-1 border border-gray-200 rounded-lg" />
+                                  ) : (
+                                    <span className="text-xs text-gray-500">{c.date_returned || "Not yet"}</span>
+                                  )}
+                                </div>
+                                {isAdmin && <button onClick={() => deleteEntry(c.id)} className="text-red-300 hover:text-red-600 text-xs shrink-0">✕</button>}
+                              </div>
                             );
                           })}
-                        {allCheckouts.length === 0 && (
-                          <tr><td colSpan={isAdmin ? 7 : 6} className="px-3 py-8 text-center text-sm text-gray-300">No checkout entries yet — click "+ Add Entry" to log one</td></tr>
-                        )}
-                      </tbody>
-                      </table>
+                          {entriesForDate.length === 0 && <p className="text-sm text-gray-300 text-center py-4">No assets recorded for this date yet.</p>}
+                        </div>
+                        {isAdmin && <AddEntryRow assets={assets} onAdd={addRowForDate} />}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {showNewDatePicker && (
+                  <div onClick={() => setShowNewDatePicker(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[360px] max-w-[95%] shadow-xl">
+                      <h3 className="text-base font-semibold mb-3">New entry date</h3>
+                      <input type="date" id="newAssetDateInput" defaultValue={new Date().toISOString().split("T")[0]}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-4" />
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          const val = document.getElementById("newAssetDateInput").value;
+                          if (val) { setSelectedEntryDate(val); setShowNewDatePicker(false); }
+                        }} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Start</button>
+                        <button onClick={() => setShowNewDatePicker(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      </div>
                     </div>
                   </div>
+                )}
 
-                {/* Add/Edit Modal */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3 border-b border-gray-100">
+                    <h3 className="text-sm font-semibold">Asset Registry</h3>
+                    <div className="flex items-center gap-2">
+                      <input value={assetSearch} onChange={e => setAssetSearch(e.target.value)} placeholder="Search..."
+                        className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg" />
+                      {isAdmin && (
+                        <button onClick={() => { setAssetModal("add"); setAssetForm({ code: "", name: "" }); }}
+                          className="text-xs font-medium bg-gray-900 text-white px-3 py-1.5 rounded-lg">+ Add item</button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {filtered.map(a => (
+                      <div key={a.id} className="flex items-center gap-3 px-5 py-2.5">
+                        <span className="font-mono text-xs text-gray-400 w-14 shrink-0">{a.code}</span>
+                        <span className="flex-1 text-sm text-gray-700">{a.name}</span>
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${statusFor(a.id) === "Available" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}>{statusFor(a.id)}</span>
+                        {isAdmin && (
+                          <>
+                            <button onClick={() => { setAssetModal(a.id); setAssetForm({ code: a.code, name: a.name }); }} className="text-xs text-blue-500 hover:text-blue-700 shrink-0">Edit</button>
+                            <button onClick={() => deleteAsset(a.id)} className="text-xs text-red-300 hover:text-red-600 shrink-0">Del</button>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                    {filtered.length === 0 && <p className="text-sm text-gray-300 text-center py-8">No items found</p>}
+                  </div>
+                </div>
+
                 {assetModal && (
                   <div onClick={() => setAssetModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[440px] max-w-[92%] shadow-xl">
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[420px] max-w-[95%] shadow-xl">
                       <h3 className="text-base font-semibold mb-4">{assetModal === "add" ? "Add asset" : "Edit asset"}</h3>
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <input value={assetForm.code} onChange={e => setAssetForm({ ...assetForm, code: e.target.value })} placeholder="Code (e.g. VR67)"
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                          <select value={assetForm.status} onChange={e => setAssetForm({ ...assetForm, status: e.target.value })}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                            <option>Available</option><option>In Use</option><option>Cannot Use</option>
-                          </select>
-                        </div>
+                        <input value={assetForm.code} onChange={e => setAssetForm({ ...assetForm, code: e.target.value })} placeholder="Code (e.g. VR1)"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         <input value={assetForm.name} onChange={e => setAssetForm({ ...assetForm, name: e.target.value })} placeholder="Item name"
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <input value={assetForm.held_by} onChange={e => setAssetForm({ ...assetForm, held_by: e.target.value })} placeholder="Person holding stock"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <div className="grid grid-cols-2 gap-3">
-                          <label className="flex flex-col gap-1">
-                            <span className="text-[11px] text-gray-400">Date taken</span>
-                            <input type="date" value={assetForm.date_taken} onChange={e => setAssetForm({ ...assetForm, date_taken: e.target.value })}
-                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                          </label>
-                          <label className="flex flex-col gap-1">
-                            <span className="text-[11px] text-gray-400">Date returned</span>
-                            <input type="date" value={assetForm.date_returned} onChange={e => setAssetForm({ ...assetForm, date_returned: e.target.value })}
-                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                          </label>
-                        </div>
-                        <input value={assetForm.remark} onChange={e => setAssetForm({ ...assetForm, remark: e.target.value })} placeholder="Remark"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <textarea value={assetForm.notes} onChange={e => setAssetForm({ ...assetForm, notes: e.target.value })} placeholder="Notes (stock check observations, condition, etc.)" rows={2}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-y" />
                       </div>
                       <div className="flex gap-2 mt-4">
                         <button onClick={saveAsset} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">{assetModal === "add" ? "Add" : "Save"}</button>
@@ -1301,210 +1181,10 @@ const COMP_LOGOS = {
                     </div>
                   </div>
                 )}
-
-                {/* Stock Check Modal */}
-                {assetModal === "stockcheck" && (
-                  <div onClick={() => setAssetModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[700px] max-w-[95%] max-h-[85vh] overflow-y-auto shadow-xl">
-                      <div className="flex justify-between items-center mb-4">
-                        <div>
-                          <h3 className="text-base font-semibold">Friday Stock Check</h3>
-                          <p className="text-xs text-gray-400">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
-                        </div>
-                        <button onClick={() => setAssetModal(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
-                      </div>
-                      <p className="text-xs text-gray-400 mb-3">Update each item: who has it, status, dates, and any notes. Changes save immediately.</p>
-                      <div className="space-y-2">
-                        {assets.filter(a => a.status !== "Cannot Use").map(a => (
-                          <div key={a.id} className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm space-y-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs text-gray-500 w-12 shrink-0">{a.code}</span>
-                              <span className="flex-1 min-w-0 truncate text-xs font-medium">{a.name}</span>
-                              <select defaultValue={a.status} onChange={e => setAssetStatus(a.id, e.target.value)}
-                                className={`w-24 px-1 py-1 border-0 rounded text-[11px] font-medium ${a.status === "Available" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"}`}>
-                                <option>Available</option><option>In Use</option>
-                              </select>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <input defaultValue={a.held_by || ""} placeholder="Who has it?" onBlur={e => { if (e.target.value !== (a.held_by || "")) supabase.from("assets").update({ held_by: e.target.value }).eq("id", a.id).then(() => loadData()); }}
-                                className="w-28 px-2 py-1 border border-gray-200 rounded text-xs" />
-                              <input type="date" defaultValue={a.date_taken || ""} onChange={e => supabase.from("assets").update({ date_taken: e.target.value }).eq("id", a.id).then(() => loadData())}
-                                className="w-32 px-2 py-1 border border-gray-200 rounded text-xs" />
-                              <input type="date" defaultValue={a.date_returned || ""} onChange={e => supabase.from("assets").update({ date_returned: e.target.value }).eq("id", a.id).then(() => loadData())}
-                                className="w-32 px-2 py-1 border border-gray-200 rounded text-xs" />
-                              <input defaultValue={a.notes || ""} placeholder="Notes" onBlur={e => { if (e.target.value !== (a.notes || "")) supabase.from("assets").update({ notes: e.target.value }).eq("id", a.id).then(() => loadData()); }}
-                                className="flex-1 min-w-[100px] px-2 py-1 border border-gray-200 rounded text-xs" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-end mt-4 pt-3 border-t border-gray-100">
-                        <button onClick={saveWeeklyLog} className="px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg">📌 Save this week's record</button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Weekly Records list */}
-                {assetModal === "records" && (
-                  <div onClick={() => setAssetModal(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[440px] max-w-[92%] max-h-[80vh] overflow-y-auto shadow-xl">
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-base font-semibold">Weekly Records</h3>
-                        <button onClick={() => setAssetModal(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
-                      </div>
-                      <p className="text-xs text-gray-400 mb-3">A dated snapshot of every item's status, saved each time "Save this week's record" is used.</p>
-                      <div className="space-y-1.5">
-                        {assetLogs.map(l => (
-                          <div key={l.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
-                            <button onClick={() => { openAssetLog(l.id); setAssetModal(null); }} className="text-left flex-1 hover:underline">
-                              {new Date(l.week_ending + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-                            </button>
-                            <button onClick={() => deleteAssetLog(l.id)} className="text-xs text-red-400 hover:text-red-600 ml-2">Delete</button>
-                          </div>
-                        ))}
-                        {assetLogs.length === 0 && <p className="text-sm text-gray-300 text-center py-6">No weekly records saved yet</p>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Weekly Record detail (read-only snapshot) */}
-                {selectedAssetLog && (
-                  <div onClick={() => setSelectedAssetLog(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[700px] max-w-[95%] max-h-[85vh] overflow-y-auto shadow-xl">
-                      <div className="flex justify-between items-center mb-4">
-                        <div>
-                          <h3 className="text-base font-semibold">Weekly Record</h3>
-                          <p className="text-xs text-gray-400">{new Date(selectedAssetLog.week_ending + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
-                        </div>
-                        <button onClick={() => setSelectedAssetLog(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="bg-gray-50 border-b border-gray-100">
-                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Code</th>
-                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Item Name</th>
-                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
-                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Held By</th>
-                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date Taken</th>
-                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Date Returned</th>
-                              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase">Notes</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(selectedAssetLog.data || []).map((a, i) => (
-                              <tr key={i} className="border-b border-gray-50">
-                                <td className="px-3 py-2 font-mono text-xs text-gray-500">{a.code}</td>
-                                <td className="px-3 py-2 text-sm">{a.name}</td>
-                                <td className="px-3 py-2"><span className={`text-[11px] font-medium px-2 py-0.5 rounded ${a.status === "Available" ? "bg-green-50 text-green-600" : a.status === "In Use" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{a.status}</span></td>
-                                <td className="px-3 py-2 text-xs text-gray-600">{a.held_by || "-"}</td>
-                                <td className="px-3 py-2 text-xs text-gray-400">{a.date_taken || "-"}</td>
-                                <td className="px-3 py-2 text-xs text-gray-400">{a.date_returned || "-"}</td>
-                                <td className="px-3 py-2 text-xs text-gray-400">{a.notes || "-"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Checkout History (supports multiple people/dates for the same item, even same day) */}
-                {checkoutHistoryFor && (
-                  <div onClick={() => setCheckoutHistoryFor(null)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[560px] max-w-[95%] max-h-[85vh] overflow-y-auto shadow-xl">
-                      <div className="flex justify-between items-center mb-1">
-                        <h3 className="text-base font-semibold">{checkoutHistoryFor.name}</h3>
-                        <button onClick={() => setCheckoutHistoryFor(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
-                      </div>
-                      <p className="text-xs text-gray-400 mb-4 font-mono">{checkoutHistoryFor.code}</p>
-
-                      <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">Log a checkout</p>
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        <input value={checkoutForm.held_by} onChange={e => setCheckoutForm({ ...checkoutForm, held_by: e.target.value })} placeholder="Who's taking it?"
-                          className="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <label className="flex flex-col gap-1">
-                          <span className="text-[11px] text-gray-400">Date taken</span>
-                          <input type="date" value={checkoutForm.date_taken} onChange={e => setCheckoutForm({ ...checkoutForm, date_taken: e.target.value })}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                          <span className="text-[11px] text-gray-400">Date returned</span>
-                          <input type="date" value={checkoutForm.date_returned} onChange={e => setCheckoutForm({ ...checkoutForm, date_returned: e.target.value })}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        </label>
-                      </div>
-                      <input value={checkoutForm.notes} onChange={e => setCheckoutForm({ ...checkoutForm, notes: e.target.value })} placeholder="Notes"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-2" />
-                      <button onClick={addCheckoutEntry} className="w-full py-2 bg-gray-900 text-white text-sm font-medium rounded-lg mb-5">+ Add checkout entry</button>
-
-                      <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">History</p>
-                      <div className="space-y-1.5">
-                        {checkoutEntries.map(c => (
-                          <div key={c.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-xs">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-700">{c.held_by}</p>
-                              <p className="text-gray-400">{c.date_taken || "?"} → {c.date_returned || "not yet returned"}</p>
-                              {c.notes && <p className="text-gray-400 truncate">{c.notes}</p>}
-                            </div>
-                            {!c.date_returned && (
-                              <button onClick={() => markCheckoutReturned(c)} className="text-green-600 hover:text-green-800 shrink-0 font-medium">Mark Returned</button>
-                            )}
-                            <button onClick={() => deleteCheckoutEntry(c.id, c.asset_id)} className="text-red-300 hover:text-red-600 shrink-0">✕</button>
-                          </div>
-                        ))}
-                        {checkoutEntries.length === 0 && <p className="text-sm text-gray-300 text-center py-4">No checkouts logged yet</p>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Quick Entry — log a checkout for ANY item without opening its own History
-                    panel first. Same effect as adding a checkout there, just one click away
-                    from anywhere on the page. */}
-                {quickEntryModal && (
-                  <div onClick={() => setQuickEntryModal(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[480px] max-w-[95%] shadow-xl">
-                      <h3 className="text-base font-semibold mb-4">Add Entry</h3>
-                      <div className="space-y-3">
-                        <select value={quickEntryForm.asset_id} onChange={e => setQuickEntryForm({ ...quickEntryForm, asset_id: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                          <option value="">Select item...</option>
-                          {[...assets].sort((a, b) => a.code.localeCompare(b.code)).map(a => (
-                            <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
-                          ))}
-                        </select>
-                        <input value={quickEntryForm.held_by} onChange={e => setQuickEntryForm({ ...quickEntryForm, held_by: e.target.value })} placeholder="Who's taking it?"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        <div className="grid grid-cols-2 gap-3">
-                          <label className="flex flex-col gap-1">
-                            <span className="text-[11px] text-gray-400">Date taken</span>
-                            <input type="date" value={quickEntryForm.date_taken} onChange={e => setQuickEntryForm({ ...quickEntryForm, date_taken: e.target.value })}
-                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                          </label>
-                          <label className="flex flex-col gap-1">
-                            <span className="text-[11px] text-gray-400">Date returned</span>
-                            <input type="date" value={quickEntryForm.date_returned} onChange={e => setQuickEntryForm({ ...quickEntryForm, date_returned: e.target.value })}
-                              className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                          </label>
-                        </div>
-                        <input value={quickEntryForm.notes} onChange={e => setQuickEntryForm({ ...quickEntryForm, notes: e.target.value })} placeholder="Notes"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                      </div>
-                      <p className="text-[11px] text-gray-400 mt-2">If no return date is set, the item automatically shows as In Use. Set a return date (now or later) and it goes back to Available.</p>
-                      <div className="flex gap-2 mt-4">
-                        <button onClick={addQuickEntry} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Add Entry</button>
-                        <button onClick={() => setQuickEntryModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </>
             );
           })()}
+
 
           {/* ===== PEOPLE ===== */}
           {page === "people" && <PeoplePage isAdmin={isAdmin} userId={user.id} />}
