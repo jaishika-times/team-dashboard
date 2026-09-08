@@ -215,10 +215,24 @@ function cellText(row, c) {
 // this version finds the Weightage cell fresh on every row instead of assuming a fixed
 // column index, which is what actually holds up against the real files (verified against
 // Marcus, Aiem, Zul, and Nich's real rows, including Nich's genuinely-blank weighted scores).
+// A tab counts as a KPI-scores tab either the old way ("KPI Scores June") or the new
+// template's way — the tab is just the bare month name itself ("June", "August"), which is
+// what happens when someone duplicates the standard template tab and renames it, exactly as
+// instructed. Checking that nothing but the month word remains keeps this from accidentally
+// matching an unrelated tab that merely mentions a month in passing.
+function isKpiScoreTab(tabTitle) {
+  if (/^KPI Scores/i.test(tabTitle)) return true;
+  const trimmed = tabTitle.trim();
+  const m = trimmed.match(MONTH_RE);
+  if (!m) return false;
+  const stripped = trimmed.replace(MONTH_RE, "").trim();
+  return stripped === "" || /^\(.*\)$/.test(stripped); // tolerate a trailing "(Amended)"-style suffix
+}
+
 async function getPersonScore(sheets, fileId, fileName) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: fileId, fields: "sheets.properties.title" });
   const titles = (meta.data.sheets || []).map(s => s.properties.title);
-  const kpiTabs = titles.filter(t => /^KPI Scores/i.test(t));
+  const kpiTabs = titles.filter(isKpiScoreTab);
   if (!kpiTabs.length) return null;
 
   const res = await sheets.spreadsheets.get({
