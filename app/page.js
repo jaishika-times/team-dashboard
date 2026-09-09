@@ -1045,8 +1045,12 @@ const COMP_LOGOS = {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {byTeam[selectedTeam].map((e, i) => {
                             const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
-                            const isGood = pct !== null && pct >= 90;
-                            const isBad = pct !== null && pct < 70;
+                            // Design's Efficiency is Time Produced ÷ Time Estimated — lower means
+                            // they finished faster than planned (good), higher means they went
+                            // over (bad). Opposite direction from every other team's %, hence the
+                            // separate thresholds here instead of the shared "higher is better" rule.
+                            const isGood = pct !== null && (selectedTeam === "Design" ? pct < 80 : pct >= 90);
+                            const isBad = pct !== null && (selectedTeam === "Design" ? pct > 100 : pct < 70);
                             const clr = isGood ? "#16a34a" : isBad ? "#dc2626" : "#d97706";
                             return (
                               <div key={i} className="bg-white rounded-xl p-5 border border-gray-100">
@@ -1174,10 +1178,10 @@ const COMP_LOGOS = {
                           <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</h3>
                           <ExportMenu
                             filename={`KPI Progress Report - ${curMonth}${kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}`}
-                            header={["Team", "Name", "No. of Tasks", "Description", "Estimated Time", "Time Produced", "Completed", "Progress"]}
+                            header={["Team", "Name", "Total Target / Task", "Estimated Time", "Time Produced", "Completed", "Progress"]}
                             rows={kpiTeams.flatMap(team => byTeam[team].map(e => {
                               const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) + "%" : "";
-                              return [team, e.employee, e.taskCount || "", e.target, e.estTime || "", e.producedTime || "", e.completed, pct];
+                              return [team, e.employee, e.target, e.estTime || "", e.producedTime || "", e.completed, pct];
                             }))}
                           />
                         </div>
@@ -1187,8 +1191,7 @@ const COMP_LOGOS = {
                               <tr className="bg-gray-50 border-b border-gray-100">
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">No. of Tasks</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Description</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Total Target / Task</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Estimated Time</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Time Produced</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Completed</th>
@@ -1199,18 +1202,11 @@ const COMP_LOGOS = {
                               {kpiTeams.map((team, ti) =>
                                 byTeam[team].map((e, i) => {
                                   const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
-                                  // Design's "Efficiency" is Time Produced ÷ Time Estimated — lower means they
-                                  // finished faster than planned (good), higher means they went over (bad).
-                                  // The opposite direction from every other team's Progress %, which is why
-                                  // this needs its own color rule instead of the shared one.
-                                  const pctColor = team === "Design"
-                                    ? (pct < 80 ? "text-green-600" : pct <= 100 ? "text-amber-500" : "text-red-500")
-                                    : (pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600");
+                                  const pctColor = pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600";
                                   return (
                                     <tr key={team + i} className="border-b border-gray-50 hover:bg-gray-50">
                                       {i === 0 ? <td className="px-4 py-2.5 font-semibold align-top" rowSpan={byTeam[team].length}><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td> : null}
                                       <td className="px-4 py-2.5 font-medium">{e.employee}</td>
-                                      <td className="px-4 py-2.5 text-gray-400">{e.taskCount || "—"}</td>
                                       <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.target}</td>
                                       <td className="px-4 py-2.5 text-gray-400">{e.estTime || "—"}</td>
                                       <td className="px-4 py-2.5 text-gray-400">{e.producedTime || "—"}</td>
