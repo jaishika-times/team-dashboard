@@ -5,15 +5,15 @@ import { supabase } from "@/lib/supabase";
 import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle } from "@/lib/parser";
 import * as XLSX from "xlsx";
 
-const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance"];
+const TEAMS = ["Design","Video","Content","Social","CSE","Sales","Knowledge","Finance","HR","Performance Management","Tech Team"];
 function normMonth(m) {
   const s = String(m || "").trim().toLowerCase();
   const map = {january:"Jan",february:"Feb",march:"Mar",april:"Apr",may:"May",june:"Jun",july:"Jul",august:"Aug",september:"Sep",sept:"Sep",october:"Oct",november:"Nov",december:"Dec",jan:"Jan",feb:"Feb",mar:"Mar",apr:"Apr",jun:"Jun",jul:"Jul",aug:"Aug",sep:"Sep",oct:"Oct",nov:"Nov",dec:"Dec"};
   return map[s] || m;
 }
-const TEAM_COLORS = {Design:"#6366f1",Video:"#3b82f6",Content:"#10b981",Social:"#f59e0b",CSE:"#ef4444",Sales:"#8b5cf6",Knowledge:"#06b6d4",Finance:"#ec4899"};
-const TEAM_ICONS = {Design:"🎨",Video:"🎬",Content:"✍️",Social:"📱",CSE:"🛠️",Sales:"💼",Knowledge:"📚",Finance:"💰"};
-const TEAM_GRADIENTS = {Design:"from-indigo-500 to-purple-600",Video:"from-blue-500 to-cyan-500",Content:"from-emerald-500 to-teal-500",Social:"from-amber-400 to-orange-500",CSE:"from-red-500 to-rose-500",Sales:"from-violet-500 to-purple-500",Knowledge:"from-cyan-500 to-blue-500",Finance:"from-pink-500 to-rose-500"};
+const TEAM_COLORS = {Design:"#6366f1",Video:"#3b82f6",Content:"#10b981",Social:"#f59e0b",CSE:"#ef4444",Sales:"#8b5cf6",Knowledge:"#06b6d4",Finance:"#ec4899","HR":"#d946ef","Performance Management":"#65a30d","Tech Team":"#475569"};
+const TEAM_ICONS = {Design:"🎨",Video:"🎬",Content:"✍️",Social:"📱",CSE:"🛠️",Sales:"💼",Knowledge:"📚",Finance:"💰","HR":"🧑‍🤝‍🧑","Performance Management":"📈","Tech Team":"💻"};
+const TEAM_GRADIENTS = {Design:"from-indigo-500 to-purple-600",Video:"from-blue-500 to-cyan-500",Content:"from-emerald-500 to-teal-500",Social:"from-amber-400 to-orange-500",CSE:"from-red-500 to-rose-500",Sales:"from-violet-500 to-purple-500",Knowledge:"from-cyan-500 to-blue-500",Finance:"from-pink-500 to-rose-500","HR":"from-fuchsia-500 to-pink-500","Performance Management":"from-lime-500 to-green-600","Tech Team":"from-slate-500 to-slate-700"};
 
 // Pulls links out of a KPI entry's raw "links" text — handles both a plain URL on its own
 // line, and Markdown-style "[Label](url)" links (which the sheet also uses, with a
@@ -702,21 +702,21 @@ const COMP_LOGOS = {
 
                     {/* Team cards */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                      {TEAMS.filter(t => allMems.some(m => m.team === t)).map(team => {
+                      {TEAMS.map(team => {
                         const members = allMems.filter(m => m.team === team);
                         const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
                         const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
                         const isSelected = selectedProdTeam === team;
                         return (
-                          <div key={team} onClick={() => setSelectedProdTeam(isSelected ? null : team)}
-                            className={`rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-sm ${isSelected ? "border-gray-300 shadow-sm ring-2 ring-gray-200" : "border-gray-100"}`} style={{ background: "#fff" }}>
+                          <div key={team} onClick={() => members.length && setSelectedProdTeam(isSelected ? null : team)}
+                            className={`rounded-xl overflow-hidden border transition-all ${members.length ? "cursor-pointer hover:shadow-sm" : "opacity-60"} ${isSelected ? "border-gray-300 shadow-sm ring-2 ring-gray-200" : "border-gray-100"}`} style={{ background: "#fff" }}>
                             <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
                             <div className="p-3.5">
                               <div className="flex items-center gap-2.5 mb-2">
                                 <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
                                 <div>
                                   <p className="text-sm font-bold">{team}</p>
-                                  <p className="text-[11px] text-gray-400">{members.length} members</p>
+                                  <p className="text-[11px] text-gray-400">{members.length ? `${members.length} members` : "No submissions yet"}</p>
                                 </div>
                               </div>
                               <div className="flex gap-4 pt-2 border-t border-gray-50">
