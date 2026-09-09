@@ -12,7 +12,7 @@ export const revalidate = 0;
 // typos like "mints"). Columns are found by header keyword, not fixed position, so this
 // holds up across all five without needing a special case per person.
 const SPREADSHEET_ID = "1ZjlZyHqJT4_XNdyvTLPR7EQiB8y850i2egVGR961UOA";
-const PEOPLE = ["Jev", "Jon", "Shiman", "Mika", "Naz"];
+const PEOPLE = ["Jev", "Shiman", "Mika", "Naz"];
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
