@@ -184,6 +184,89 @@ function ExportMenu({ filename, header, rows }) {
   );
 }
 
+// CSE's real timesheet is far richer than the standard productivity form — day-by-day,
+// time-slot-level detail with remarks. Live from their actual Google Sheet rather than the
+// CSV form everyone else uses, since that's genuinely how this team tracks their work.
+function CSETimesheetView() {
+  const [data, setData] = useState(null); // null = loading
+  const [error, setError] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null); // "Day|Date" key
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/live-cse-timesheet", { cache: "no-store" })
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled) return;
+        if (json.error) { setError(json.error); return; }
+        setData(json.people);
+        const allDays = Array.from(new Set(json.people.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
+        setSelectedDay(allDays[allDays.length - 1] || null);
+      })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the CSE timesheet: {error}</p>;
+  if (!data) return <div className="flex items-center gap-2 py-4 text-xs text-gray-400"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live timesheet…</div>;
+
+  const allDays = Array.from(new Set(data.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
+  const activeDay = selectedDay || allDays[allDays.length - 1];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-400">Live from the team's actual timesheet — day-by-day, task-by-task.</p>
+        {allDays.length > 0 && (
+          <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
+            {allDays.map(d => <option key={d} value={d}>{d.replace("|", " — ")}</option>)}
+          </select>
+        )}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {data.map(({ person, entries }) => {
+          const dayEntries = entries.filter(e => `${e.day}|${e.date}` === activeDay);
+          const total = dayEntries.reduce((s, e) => s + (e.hours || 0), 0);
+          return (
+            <div key={person} className="bg-white rounded-xl p-5 border border-gray-100">
+              <div className="flex justify-between items-center mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-red-500">{person[0]}</div>
+                  <p className="text-base font-semibold">{person}</p>
+                </div>
+                {total > 0 && <span className="text-2xl font-bold text-red-500">{total.toFixed(2)}h</span>}
+              </div>
+              {dayEntries.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-400 border-b border-gray-100">
+                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Task</th>
+                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Description</th>
+                      <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Hours</th>
+                      <th className="py-1.5 text-left text-[11px] uppercase tracking-wide pl-2">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dayEntries.map((e, i) => (
+                      <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                        <td className="py-2 pr-2 font-medium text-gray-700">{e.task}</td>
+                        <td className="py-2 pr-2 text-gray-400">{e.description}</td>
+                        <td className="py-2 text-right font-medium text-red-500 whitespace-nowrap">{e.hours > 0 ? e.hours + "h" : ""}</td>
+                        <td className="py-2 pl-2 text-gray-400">{e.remarks}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="text-sm text-gray-300 italic">No entries for this day</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function KpiDocs({ links }) {
   const urls = extractUrls(links);
   if (!urls.length) return <span className="text-gray-300">—</span>;
@@ -737,6 +820,9 @@ const COMP_LOGOS = {
                           <span className="text-sm font-semibold">{selectedProdTeam} Team</span>
                           <button onClick={() => setSelectedProdTeam(null)} className="ml-2 text-xs text-gray-400 hover:text-gray-600">Close</button>
                         </div>
+                        {selectedProdTeam === "CSE" ? (
+                          <CSETimesheetView />
+                        ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {allMems.filter(m => m.team === selectedProdTeam).map(({ name }) => {
                             const data = dayData[name];
@@ -780,6 +866,7 @@ const COMP_LOGOS = {
                             );
                           })}
                         </div>
+                        )}
                       </div>
                     )}
                   </>
