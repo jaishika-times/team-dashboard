@@ -468,6 +468,7 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [prodData, setProdData] = useState(null);
+  const [liveTeamData, setLiveTeamData] = useState({ CSE: null, Content: null, Video: null, Design: null });
   const [attIndex, setAttIndex] = useState([]);
   const [attData, setAttData] = useState({});
   const [page, setPage] = useState("overview");
@@ -499,6 +500,26 @@ export default function DashboardPage() {
   const [showKpiReport, setShowKpiReport] = useState(false);
 
   useEffect(() => { init(); }, []);
+
+  // Productivity's summary cards for CSE/Content/Video/Design need to know real task/hour
+  // totals before the person even clicks in — these three endpoints return everything, so
+  // this loads once and the cards + detail views both read from it.
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      fetch("/api/live-cse-timesheet", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+      fetch("/api/live-content-video-tracker?team=Content", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+      fetch("/api/live-content-video-tracker?team=Video", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+      fetch("/api/live-design-tracker", { cache: "no-store" }).then(r => r.json()).catch(() => null),
+    ]).then(([cse, content, video, design]) => {
+      setLiveTeamData({
+        CSE: cse?.people || null,
+        Content: content?.people || null,
+        Video: video?.people || null,
+        Design: design?.people || null,
+      });
+    });
+  }, [user]);
 
   // Re-fetch the live sheets every 60s so edits made in Google Sheets show up here
   // automatically, without needing to reload the page.
@@ -949,6 +970,36 @@ const COMP_LOGOS = {
             const allMems = prodData?.members || [];
             const teamsSet = new Set(); allMems.forEach(m => teamsSet.add(m.team));
 
+            // CSE/Content/Video/Design's summary numbers come from their own live sheets, not
+            // the old form's date picker — those sheets use their own date formats entirely
+            // ("27 July", "2 Oct 2026", ISO dates), so forcing a match against the picker's
+            // selected date would show zero almost always. Instead: most recent day's total
+            // for the day-based sheets, current month's total for Design's month-based one —
+            // matching exactly what each detail view opens to by default.
+            function liveDayTotals(people) {
+              if (!people) return null;
+              const allDays = Array.from(new Set(people.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
+              const lastDay = allDays[allDays.length - 1];
+              if (!lastDay) return { tasks: 0, hours: 0 };
+              const entries = people.flatMap(p => p.entries.filter(e => `${e.day}|${e.date}` === lastDay));
+              return { tasks: entries.length, hours: entries.reduce((s, e) => s + (e.hours || 0), 0) };
+            }
+            function liveDesignTotals(people) {
+              if (!people) return null;
+              const allMonths = Array.from(new Set(people.flatMap(p => Object.keys(p.months))));
+              const monthsWithData = allMonths.filter(m => people.some(p => (p.months[m] || []).length > 0));
+              const lastMonth = monthsWithData[monthsWithData.length - 1];
+              if (!lastMonth) return { tasks: 0, hours: 0 };
+              const tasks = people.flatMap(p => p.months[lastMonth] || []);
+              return { tasks: tasks.length, hours: tasks.reduce((s, t) => s + (parseFloat(t.producedTime) || 0), 0) };
+            }
+            const liveTotals = {
+              CSE: liveDayTotals(liveTeamData.CSE),
+              Content: liveDayTotals(liveTeamData.Content),
+              Video: liveDayTotals(liveTeamData.Video),
+              Design: liveDesignTotals(liveTeamData.Design),
+            };
+
             return (
               <>
                 <h1 className="text-xl font-semibold mb-1">Productivity</h1>
@@ -969,19 +1020,24 @@ const COMP_LOGOS = {
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
                       {TEAMS.map(team => {
                         const members = allMems.filter(m => m.team === team);
-                        const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
-                        const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
+                        const live = liveTotals[team];
+                        const hasLiveSource = live !== undefined;
+                        const th = hasLiveSource ? (live?.hours || 0) : members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
+                        const taskCount = hasLiveSource ? (live?.tasks || 0) : members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
+                        const isClickable = hasLiveSource ? ["CSE", "Content", "Video", "Design"].includes(team) : members.length > 0;
                         const isSelected = selectedProdTeam === team;
                         return (
-                          <div key={team} onClick={() => members.length && setSelectedProdTeam(isSelected ? null : team)}
-                            className={`rounded-xl overflow-hidden border transition-all ${members.length ? "cursor-pointer hover:shadow-sm" : "opacity-60"} ${isSelected ? "border-gray-300 shadow-sm ring-2 ring-gray-200" : "border-gray-100"}`} style={{ background: "#fff" }}>
+                          <div key={team} onClick={() => isClickable && setSelectedProdTeam(isSelected ? null : team)}
+                            className={`rounded-xl overflow-hidden border transition-all ${isClickable ? "cursor-pointer hover:shadow-sm" : "opacity-60"} ${isSelected ? "border-gray-300 shadow-sm ring-2 ring-gray-200" : "border-gray-100"}`} style={{ background: "#fff" }}>
                             <div className={`h-1 bg-gradient-to-r ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"}`} />
                             <div className="p-3.5">
                               <div className="flex items-center gap-2.5 mb-2">
                                 <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
                                 <div>
                                   <p className="text-sm font-bold">{team}</p>
-                                  <p className="text-[11px] text-gray-400">{members.length ? `${members.length} members` : "No submissions yet"}</p>
+                                  <p className="text-[11px] text-gray-400">
+                                    {hasLiveSource ? (live === null ? "Loading…" : "Live") : (members.length ? `${members.length} members` : "No submissions yet")}
+                                  </p>
                                 </div>
                               </div>
                               <div className="flex gap-4 pt-2 border-t border-gray-50">
