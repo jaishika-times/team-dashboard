@@ -1069,7 +1069,8 @@ const COMP_LOGOS = {
                                 <div className="space-y-2 text-sm">
                                   {selectedTeam === "Design" ? (
                                     <>
-                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Task</span><span className="font-medium text-right max-w-[65%]">{e.target || "—"}</span></div>
+                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Tasks</span><span className="font-medium text-right max-w-[65%]">{e.target || "—"}</span></div>
+                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Efficiency</span><span className="font-bold" style={{ color: clr }}>{pct !== null ? pct + "%" : "—"}</span></div>
                                       <div className="grid grid-cols-2 gap-2 my-2">
                                         <div className="bg-gray-50 rounded-lg p-2.5">
                                           <p className="text-[10px] text-gray-400 uppercase tracking-wide">No. of Tasks</p>
