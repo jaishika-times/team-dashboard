@@ -1045,12 +1045,15 @@ const COMP_LOGOS = {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {byTeam[selectedTeam].map((e, i) => {
                             const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
-                            // Design's Efficiency is Time Produced ÷ Time Estimated — lower means
-                            // they finished faster than planned (good), higher means they went
-                            // over (bad). Opposite direction from every other team's %, hence the
-                            // separate thresholds here instead of the shared "higher is better" rule.
-                            const isGood = pct !== null && (selectedTeam === "Design" ? pct < 80 : pct >= 90);
-                            const isBad = pct !== null && (selectedTeam === "Design" ? pct > 100 : pct < 70);
+                            // Design's sheet already computes this classification itself, in words,
+                            // in their own Status column ("Exceeding expectation" / "Meeting
+                            // expectation" / "Below expectation") — matching that text directly is
+                            // more reliable than re-deriving thresholds from the percentage, since
+                            // it's exactly what their own sheet already decided, verified against
+                            // real rows (72.73% -> Exceeding, 100.00% -> Meeting, 150% -> Below).
+                            const designStatus = (e.status || "").toLowerCase();
+                            const isGood = selectedTeam === "Design" ? designStatus.includes("exceeding") : (pct !== null && pct >= 90);
+                            const isBad = selectedTeam === "Design" ? designStatus.includes("below") : (pct !== null && pct < 70);
                             const clr = isGood ? "#16a34a" : isBad ? "#dc2626" : "#d97706";
                             return (
                               <div key={i} className="bg-white rounded-xl p-5 border border-gray-100">
@@ -1069,7 +1072,7 @@ const COMP_LOGOS = {
                                 <div className="space-y-2 text-sm">
                                   {selectedTeam === "Design" ? (
                                     <>
-                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Tasks</span><span className="font-medium text-right max-w-[65%]">{e.target || "—"}</span></div>
+                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Task Name</span><span className="font-medium text-right max-w-[65%]">{e.completedTasks || "—"}</span></div>
                                       <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Efficiency</span><span className="font-bold" style={{ color: clr }}>{pct !== null ? pct + "%" : "—"}</span></div>
                                       <div className="grid grid-cols-2 gap-2 my-2">
                                         <div className="bg-gray-50 rounded-lg p-2.5">
@@ -1203,12 +1206,14 @@ const COMP_LOGOS = {
                               {kpiTeams.map((team, ti) =>
                                 byTeam[team].map((e, i) => {
                                   const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
-                                  // Design's Progress here is really Efficiency (Time Produced ÷ Time
-                                  // Estimated) — lower means they finished faster than planned (good),
-                                  // over 100% means they went over (bad). Opposite direction from every
-                                  // other team's %, so it needs its own thresholds.
+                                  // Design's sheet already computes this classification itself, in
+                                  // words, in their own Status column — matching that text directly
+                                  // is more reliable than re-deriving thresholds from the percentage.
+                                  // Verified against real rows (72.73% -> Exceeding, 100.00% ->
+                                  // Meeting, 150% -> Below).
+                                  const designStatus = (e.status || "").toLowerCase();
                                   const pctColor = team === "Design"
-                                    ? (pct < 80 ? "text-green-600" : pct <= 100 ? "text-amber-500" : "text-red-500")
+                                    ? (designStatus.includes("exceeding") ? "text-green-600" : designStatus.includes("below") ? "text-red-500" : "text-amber-500")
                                     : (pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600");
                                   return (
                                     <tr key={team + i} className="border-b border-gray-50 hover:bg-gray-50">
