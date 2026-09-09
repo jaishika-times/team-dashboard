@@ -309,7 +309,11 @@ async function getPersonScore(sheets, fileId, fileName) {
       // undefined throws. That exception was getting caught by the outer try/catch and
       // silently turning into a blank "No data" card with no explanation — this guard is
       // what was actually missing.
-      const label0 = (row[0] || "").trim().toLowerCase();
+      // The "TOTAL KPI SCORE" label doesn't always sit in column A either — some sheets
+      // (verified: Rosie's) have a blank leading column here too, same as the earlier fix for
+      // Account Managers' blank-column files. Scanning the first 3 cells instead of assuming
+      // column 0 catches both layouts.
+      const label0 = row.slice(0, 3).map(c => (c || "").trim().toLowerCase()).join(" ");
       if (label0.includes("kpi score for the month") || label0.includes("total kpi score")) {
         flushGroup();
         totalRow = row;
