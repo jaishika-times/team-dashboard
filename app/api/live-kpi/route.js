@@ -209,18 +209,159 @@ function parseDesignSheet(grid) {
   return people;
 }
 
+// Design's real numbers now come from their actual workload tracker (a separate
+// spreadsheet), not the old "Team Weekly Updates" tab — verified structure and parsing
+// against real data before wiring this in. Months sit side-by-side across columns; within
+// each month, every person's task list is stacked vertically as its own mini-table (name
+// row, header row, task rows until a blank row or the next name). Efficiency = Produced ÷
+// Estimated time, as given — under 80% is ahead of schedule ("Exceeding"), 80-100% is on
+// schedule ("Meeting"), over 100% ran over ("Below") — matching the color rule already in
+// use elsewhere for Design.
+const DESIGN_SPREADSHEET_ID = "1X2ozmFfUiEQ_wj2FyN-KSCb8MptfJzwpClyf33Y5lRM";
+const DESIGN_TAB_NAME = "MONTHLY WORKLOAD_VIEWER";
+const DESIGN_PEOPLE = ["MARCUS", "AIEM", "FATANAH"];
+const MONTH_BLOCK_RE = /^([A-Z]+) (\d{4})$/;
+
+function findColByKeyword(header, keywords) {
+  for (let i = 0; i < header.length; i++) {
+    const h = (header[i] || "").toLowerCase();
+    if (keywords.some(k => h.includes(k))) return i;
+  }
+  return -1;
+}
+
+function parseDesignMonthBlock(blockRows) {
+  const people = {};
+  let r = 0;
+  while (r < blockRows.length) {
+    const row = blockRows[r];
+    const col0 = (row[0] || "").trim();
+    const restEmpty = row.slice(1).every(c => !c || !c.trim());
+    if (col0 && restEmpty && r + 1 < blockRows.length) {
+      const nextRow = blockRows[r + 1];
+      if ((nextRow[0] || "").trim().toLowerCase() === "task name") {
+        const personName = col0.toUpperCase();
+        const header = nextRow;
+        const taskCol = findColByKeyword(header, ["task name"]);
+        const dateCol = findColByKeyword(header, ["working date"]);
+        const estCol = findColByKeyword(header, ["estimated time"]);
+        const prodCol = findColByKeyword(header, ["produced time"]);
+        const tasks = [];
+        let dr = r + 2;
+        while (dr < blockRows.length) {
+          const drow = blockRows[dr];
+          const rowAllEmpty = drow.every(c => !c || !c.trim());
+          if (rowAllEmpty) break;
+          const dRestEmpty = drow.slice(1).every(c => !c || !c.trim());
+          const taskName = taskCol >= 0 ? (drow[taskCol] || "").trim() : "";
+          if (dRestEmpty && taskName) break; // hit the next person's name row
+          if (taskName && taskName.toLowerCase() !== "no task") {
+            tasks.push({
+              taskName,
+              workingDate: dateCol >= 0 ? (drow[dateCol] || "").trim() : "",
+              estimatedTime: estCol >= 0 ? (drow[estCol] || "").trim() : "",
+              producedTime: prodCol >= 0 ? (drow[prodCol] || "").trim() : "",
+            });
+          }
+          dr++;
+        }
+        people[personName] = (people[personName] || []).concat(tasks);
+        r = dr;
+        continue;
+      }
+    }
+    r++;
+  }
+  return people;
+}
+
+function deriveDesignStatus(pctFraction) {
+  if (pctFraction === null) return "";
+  const pct = pctFraction * 100;
+  if (pct < 80) return "Exceeding expectation";
+  if (pct <= 100) return "Meeting expectation";
+  return "Below expectation";
+}
+
+async function getDesignFromWorkloadSheet() {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: DESIGN_SPREADSHEET_ID,
+    ranges: [DESIGN_TAB_NAME],
+    fields: "sheets.data.rowData.values(formattedValue)",
+  });
+  const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
+  const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
+  if (!rows.length) return [];
+
+  const headerRow = rows[0] || [];
+  const blockStarts = [];
+  headerRow.forEach((cell, i) => {
+    if (MONTH_BLOCK_RE.test((cell || "").trim())) blockStarts.push({ col: i, label: cell.trim() });
+  });
+
+  const byPerson = {};
+  blockStarts.forEach((block, i) => {
+    const endCol = i + 1 < blockStarts.length ? blockStarts[i + 1].col : headerRow.length;
+    const blockRows = rows.map(row => row.slice(block.col, endCol));
+    const people = parseDesignMonthBlock(blockRows);
+    for (const [name, tasks] of Object.entries(people)) {
+      if (!DESIGN_PEOPLE.includes(name)) continue;
+      if (!byPerson[name]) byPerson[name] = {};
+      byPerson[name][block.label] = tasks;
+    }
+  });
+
+  const result = [];
+  for (const [name, months] of Object.entries(byPerson)) {
+    const employee = name.charAt(0) + name.slice(1).toLowerCase();
+    for (const [monthLabel, tasks] of Object.entries(months)) {
+      const monthMatch = monthLabel.match(MONTH_BLOCK_RE);
+      if (!monthMatch) continue;
+      const month = normalizeMonth(monthMatch[1]);
+      const weekGroups = {};
+      tasks.forEach(t => {
+        const day = parseInt((t.workingDate || "").slice(8, 10), 10);
+        const week = isNaN(day) ? 1 : Math.ceil(day / 7);
+        (weekGroups[week] = weekGroups[week] || []).push(t);
+      });
+      for (const [week, weekTasks] of Object.entries(weekGroups)) {
+        const estSum = weekTasks.reduce((s, t) => s + (parseFloat(t.estimatedTime) || 0), 0);
+        const prodSum = weekTasks.reduce((s, t) => s + (parseFloat(t.producedTime) || 0), 0);
+        const kpiPct = estSum > 0 ? prodSum / estSum : null;
+        const status = deriveDesignStatus(kpiPct);
+        result.push({
+          month, week, team: "Design", employee,
+          tasks: [{
+            task: weekTasks.map(t => t.taskName).join("; "),
+            completed: status,
+            estTime: estSum ? String(Math.round(estSum * 100) / 100) : "",
+            producedTime: prodSum ? String(Math.round(prodSum * 100) / 100) : "",
+            taskCount: String(weekTasks.length),
+            completedTasks: "",
+            weightage: "", weightageScore: "", notes: "", status, links: "",
+          }],
+          kpiPct,
+        });
+      }
+    }
+  }
+  return result;
+}
+
 export async function GET() {
   try {
-    const [contentGrid, videoGrid, designGrid] = await Promise.allSettled([
+    const [contentGrid, videoGrid, designPeople] = await Promise.allSettled([
       fetchSheetGrid("Content"),
       fetchSheetGrid("Video"),
-      fetchSheetGrid("Design"),
+      getDesignFromWorkloadSheet(),
     ]);
 
     let people = [];
     if (contentGrid.status === "fulfilled") people = people.concat(parseTaskSheet(contentGrid.value, "Content"));
     if (videoGrid.status === "fulfilled") people = people.concat(parseTaskSheet(videoGrid.value, "Video"));
-    if (designGrid.status === "fulfilled") people = people.concat(parseDesignSheet(designGrid.value));
+    if (designPeople.status === "fulfilled") people = people.concat(designPeople.value);
 
     const entries = people.map(p => ({
       ...p,
@@ -236,7 +377,7 @@ export async function GET() {
     }));
 
     if (!entries.length) {
-      const errors = [contentGrid, videoGrid, designGrid].filter(r => r.status === "rejected").map(r => r.reason?.message);
+      const errors = [contentGrid, videoGrid, designPeople].filter(r => r.status === "rejected").map(r => r.reason?.message);
       throw new Error(errors.length ? errors.join("; ") : "No KPI rows found in any sheet");
     }
     return NextResponse.json({ entries }, { headers: { "Cache-Control": "no-store" } });
