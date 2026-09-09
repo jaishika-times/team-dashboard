@@ -1203,7 +1203,13 @@ const COMP_LOGOS = {
                               {kpiTeams.map((team, ti) =>
                                 byTeam[team].map((e, i) => {
                                   const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) : null;
-                                  const pctColor = pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600";
+                                  // Design's Progress here is really Efficiency (Time Produced ÷ Time
+                                  // Estimated) — lower means they finished faster than planned (good),
+                                  // over 100% means they went over (bad). Opposite direction from every
+                                  // other team's %, so it needs its own thresholds.
+                                  const pctColor = team === "Design"
+                                    ? (pct < 80 ? "text-green-600" : pct <= 100 ? "text-amber-500" : "text-red-500")
+                                    : (pct >= 90 ? "text-green-600" : pct < 70 ? "text-red-500" : "text-amber-600");
                                   return (
                                     <tr key={team + i} className="border-b border-gray-50 hover:bg-gray-50">
                                       {i === 0 ? <td className="px-4 py-2.5 font-semibold align-top" rowSpan={byTeam[team].length}><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td> : null}
