@@ -5,7 +5,6 @@ const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRKzI6WQ7U5alPB
 const LEAVE_RE = /^(sl|el|al|ul|rl|wfh|mc|on al|on leave|sick leave|birthday leave|half.?day|emergency leave|not updated|on mc|annual leave|-|0)$/i;
 
 const teamMap = {
-  marcus:"Design",aiem:"Design",fatanah:"Design",
   jeng:"Knowledge",divya:"Knowledge",jon:"Knowledge",rahul:"Knowledge",
   yash:"Social",
   shiman:"CSE",jev:"CSE",mika:"CSE",naz:"CSE",

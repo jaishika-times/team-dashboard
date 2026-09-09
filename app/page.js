@@ -354,6 +354,101 @@ function ContentVideoTrackerView({ team }) {
   );
 }
 
+// Design's real workload data — month blocks, grouped here by day (each task carries its own
+// working date) to match the day-by-day pattern the other live team views use. No. of Tasks,
+// Task Name, and Produced Hours per the requested format.
+function DesignTrackerView() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/live-design-tracker", { cache: "no-store" })
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled) return;
+        if (json.error) { setError(json.error); return; }
+        setData(json.people);
+        const allMonths = Array.from(new Set(json.people.flatMap(p => Object.keys(p.months))));
+        const monthsWithData = allMonths.filter(m => json.people.some(p => (p.months[m] || []).length > 0));
+        setSelectedMonth(monthsWithData[monthsWithData.length - 1] || allMonths[0] || null);
+      })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the Design tracker: {error}</p>;
+  if (!data) return <div className="flex items-center gap-2 py-4 text-xs text-gray-400"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live tracker…</div>;
+
+  const allMonths = Array.from(new Set(data.flatMap(p => Object.keys(p.months))));
+  const activeMonth = selectedMonth || allMonths[0];
+  const tasksThisMonth = data.flatMap(p => (p.months[activeMonth] || []).map(t => ({ ...t, person: p.person })));
+  const allDays = Array.from(new Set(tasksThisMonth.map(t => t.workingDate).filter(Boolean))).sort();
+  const activeDay = selectedDay && allDays.includes(selectedDay) ? selectedDay : allDays[allDays.length - 1];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <p className="text-xs text-gray-400">Live from the team's actual workload tracker.</p>
+        <div className="flex items-center gap-2">
+          {allMonths.length > 0 && (
+            <select value={activeMonth || ""} onChange={e => { setSelectedMonth(e.target.value); setSelectedDay(null); }}
+              className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
+              {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          )}
+          {allDays.length > 0 && (
+            <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+              className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
+              {allDays.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {data.map(({ person }) => {
+          const dayTasks = tasksThisMonth.filter(t => t.person === person && t.workingDate === activeDay);
+          const totalProduced = dayTasks.reduce((s, t) => s + (parseFloat(t.producedTime) || 0), 0);
+          return (
+            <div key={person} className="bg-white rounded-xl p-5 border border-gray-100">
+              <div className="flex justify-between items-center mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-indigo-500">{person[0]}</div>
+                  <div>
+                    <p className="text-base font-semibold">{person}</p>
+                    <p className="text-[11px] text-gray-400">{dayTasks.length} task{dayTasks.length === 1 ? "" : "s"}</p>
+                  </div>
+                </div>
+                {totalProduced > 0 && <span className="text-2xl font-bold text-indigo-500">{totalProduced.toFixed(2)}h</span>}
+              </div>
+              {dayTasks.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-400 border-b border-gray-100">
+                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Task Name</th>
+                      <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Prod. Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dayTasks.map((t, i) => (
+                      <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                        <td className="py-2 pr-2 font-medium text-gray-700">{t.taskName}</td>
+                        <td className="py-2 text-right font-medium text-indigo-500 whitespace-nowrap">{t.producedTime ? t.producedTime + "h" : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="text-sm text-gray-300 italic">No tasks for this day</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function KpiDocs({ links }) {
   const urls = extractUrls(links);
   if (!urls.length) return <span className="text-gray-300">—</span>;
@@ -911,6 +1006,8 @@ const COMP_LOGOS = {
                           <CSETimesheetView />
                         ) : selectedProdTeam === "Content" || selectedProdTeam === "Video" ? (
                           <ContentVideoTrackerView team={selectedProdTeam} />
+                        ) : selectedProdTeam === "Design" ? (
+                          <DesignTrackerView />
                         ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {allMems.filter(m => m.team === selectedProdTeam).map(({ name }) => {
