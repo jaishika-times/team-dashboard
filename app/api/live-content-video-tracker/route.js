@@ -57,15 +57,12 @@ function parsePersonTab(rows, personName) {
   const activityCol = findCol(header, ["activity"]);
   const clientCol = findCol(header, ["client"]);
   const taskCol = findCol(header, ["task"]);
-  // "Time Spent" appears twice (merged header) — the free-text column ("2h 30m") comes first,
-  // the pre-computed decimal-hours column comes right after it.
+  // "Time Spent" is a merged header over two columns — the free-text one ("2h 30m") and the
+  // pre-computed decimal-hours one right after it. Only the first cell carries visible header
+  // text; the second is blank, so it has to be taken by position (confirmed: column G), not by
+  // searching for a repeated "Time Spent" label that was never actually there.
   const timeTextCol = findCol(header, ["time spent"]);
-  let timeDecimalCol = -1;
-  if (timeTextCol !== -1) {
-    for (let i = timeTextCol + 1; i < header.length; i++) {
-      if ((header[i] || "").toLowerCase().includes("time spent")) { timeDecimalCol = i; break; }
-    }
-  }
+  const timeDecimalCol = timeTextCol !== -1 ? timeTextCol + 1 : -1;
   const notesCol = findCol(header, ["notes", "description"]);
 
   let currentDay = "", currentDate = "";
