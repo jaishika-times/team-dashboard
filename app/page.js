@@ -614,7 +614,7 @@ export default function DashboardPage() {
     { id: "kpi", icon: "◆", label: "Weekly KPI" },
     { id: "assets", icon: "◫", label: "Assets" },
     { id: "people", icon: "◐", label: "People" },
-    { id: "kpipkg", icon: "🗂", label: "KPI Packages" },
+    { id: "kpipkg", icon: "🗂", label: "Overall KPI" },
   ];
   const pendingCount = isAdmin ? 0 : 0; // calculated below
   if (isAdmin) navItems.push({ id: "admin", icon: "◎", label: "Admin" });
@@ -2001,7 +2001,7 @@ function TeamKpiPackages() {
 
   return (
     <>
-      <h1 className="text-xl font-semibold mb-1">KPI Packages</h1>
+      <h1 className="text-xl font-semibold mb-1">Overall KPI</h1>
       <p className="text-sm text-gray-400 mb-5">Team-by-team, live from each person's real KPI scoring sheet.</p>
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teams..."
         className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm mb-5 focus:outline-none focus:border-gray-400" />
