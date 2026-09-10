@@ -215,50 +215,58 @@ function CSETimesheetView() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-gray-400">Live from the team's actual timesheet — day-by-day, task-by-task.</p>
-        {allDays.length > 0 && (
-          <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
-            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
-            {allDays.map(d => <option key={d} value={d}>{d.replace("|", " — ")}</option>)}
-          </select>
-        )}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+        <div className="px-5 py-4 bg-gradient-to-r from-red-500 to-rose-600 text-white flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <span className="text-base font-bold">⏱️ Live Timesheet</span>
+            <p className="text-[11px] text-white/70 mt-0.5">Day-by-day, task-by-task, straight from the team's sheet</p>
+          </div>
+          {allDays.length > 0 && (
+            <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+              className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+              {allDays.map(d => <option key={d} value={d}>{d.replace("|", " — ")}</option>)}
+            </select>
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {data.map(({ person, entries }) => {
           const dayEntries = entries.filter(e => `${e.day}|${e.date}` === activeDay);
           const total = dayEntries.reduce((s, e) => s + (e.hours || 0), 0);
           return (
-            <div key={person} className="bg-white rounded-xl p-5 border border-gray-100">
-              <div className="flex justify-between items-center mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-red-500">{person[0]}</div>
-                  <p className="text-base font-semibold">{person}</p>
+            <div key={person} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="h-1 bg-gradient-to-r from-red-500 to-rose-600" />
+              <div className="p-5">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br from-red-500 to-rose-600">{person[0]}</div>
+                    <p className="text-base font-semibold">{person}</p>
+                  </div>
+                  {total > 0 && <span className="text-2xl font-bold text-red-500">{total.toFixed(2)}h</span>}
                 </div>
-                {total > 0 && <span className="text-2xl font-bold text-red-500">{total.toFixed(2)}h</span>}
-              </div>
-              {dayEntries.length > 0 ? (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-400 border-b border-gray-100">
-                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Task</th>
-                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Description</th>
-                      <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Hours</th>
-                      <th className="py-1.5 text-left text-[11px] uppercase tracking-wide pl-2">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dayEntries.map((e, i) => (
-                      <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
-                        <td className="py-2 pr-2 font-medium text-gray-700">{e.task}</td>
-                        <td className="py-2 pr-2 text-gray-400">{e.description}</td>
-                        <td className="py-2 text-right font-medium text-red-500 whitespace-nowrap">{e.hours > 0 ? e.hours + "h" : ""}</td>
-                        <td className="py-2 pl-2 text-gray-400">{e.remarks}</td>
+                {dayEntries.length > 0 ? (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-400 border-b border-gray-100">
+                        <th className="py-1.5 text-[11px] uppercase tracking-wide">Task</th>
+                        <th className="py-1.5 text-[11px] uppercase tracking-wide">Description</th>
+                        <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Hours</th>
+                        <th className="py-1.5 text-left text-[11px] uppercase tracking-wide pl-2">Remarks</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : <p className="text-sm text-gray-300 italic">No entries for this day</p>}
+                    </thead>
+                    <tbody>
+                      {dayEntries.map((e, i) => (
+                        <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                          <td className="py-2 pr-2 font-medium text-gray-700">{e.task}</td>
+                          <td className="py-2 pr-2 text-gray-400">{e.description}</td>
+                          <td className="py-2 text-right font-medium text-red-500 whitespace-nowrap">{e.hours > 0 ? e.hours + "h" : ""}</td>
+                          <td className="py-2 pl-2 text-gray-400">{e.remarks}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : <p className="text-sm text-gray-300 italic py-2">No entries for this day</p>}
+              </div>
             </div>
           );
         })}
@@ -299,53 +307,62 @@ function ContentVideoTrackerView({ team }) {
   const allDays = Array.from(new Set(data.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
   const activeDay = selectedDay || allDays[allDays.length - 1];
   const teamColor = team === "Video" ? "#3b82f6" : "#10b981";
+  const teamGradient = team === "Video" ? "from-blue-500 to-cyan-500" : "from-emerald-500 to-teal-500";
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-gray-400">Live from the team's actual daily tracker — day-by-day, task-by-task.</p>
-        {allDays.length > 0 && (
-          <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
-            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
-            {allDays.map(d => <option key={d} value={d}>{d.replace("|", " — ")}</option>)}
-          </select>
-        )}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+        <div className={`px-5 py-4 bg-gradient-to-r ${teamGradient} text-white flex items-center justify-between flex-wrap gap-3`}>
+          <div>
+            <span className="text-base font-bold">{team === "Video" ? "🎬" : "✍️"} Live {team} Tracker</span>
+            <p className="text-[11px] text-white/70 mt-0.5">Day-by-day, task-by-task, straight from the team's sheet</p>
+          </div>
+          {allDays.length > 0 && (
+            <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+              className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+              {allDays.map(d => <option key={d} value={d}>{d.replace("|", " — ")}</option>)}
+            </select>
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {data.map(({ person, entries }) => {
           const dayEntries = entries.filter(e => `${e.day}|${e.date}` === activeDay);
           const total = dayEntries.reduce((s, e) => s + (e.hours || 0), 0);
           return (
-            <div key={person} className="bg-white rounded-xl p-5 border border-gray-100">
-              <div className="flex justify-between items-center mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: teamColor }}>{person[0]}</div>
-                  <p className="text-base font-semibold">{person}</p>
+            <div key={person} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className={`h-1 bg-gradient-to-r ${teamGradient}`} />
+              <div className="p-5">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br ${teamGradient}`}>{person[0]}</div>
+                    <p className="text-base font-semibold">{person}</p>
+                  </div>
+                  {total > 0 && <span className="text-2xl font-bold" style={{ color: teamColor }}>{total.toFixed(2)}h</span>}
                 </div>
-                {total > 0 && <span className="text-2xl font-bold" style={{ color: teamColor }}>{total.toFixed(2)}h</span>}
-              </div>
-              {dayEntries.length > 0 ? (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-400 border-b border-gray-100">
-                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Task</th>
-                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Client</th>
-                      <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Hours</th>
-                      <th className="py-1.5 text-left text-[11px] uppercase tracking-wide pl-2">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dayEntries.map((e, i) => (
-                      <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
-                        <td className="py-2 pr-2 font-medium text-gray-700">{e.task}{e.activityType && e.activityType !== "Task" ? <span className="block text-[10px] text-gray-400">{e.activityType}</span> : null}</td>
-                        <td className="py-2 pr-2 text-gray-400">{e.client}</td>
-                        <td className="py-2 text-right font-medium whitespace-nowrap" style={{ color: teamColor }}>{e.hours > 0 ? e.hours + "h" : ""}</td>
-                        <td className="py-2 pl-2 text-gray-400">{e.notes}</td>
+                {dayEntries.length > 0 ? (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-400 border-b border-gray-100">
+                        <th className="py-1.5 text-[11px] uppercase tracking-wide">Task</th>
+                        <th className="py-1.5 text-[11px] uppercase tracking-wide">Client</th>
+                        <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Hours</th>
+                        <th className="py-1.5 text-left text-[11px] uppercase tracking-wide pl-2">Notes</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : <p className="text-sm text-gray-300 italic">No entries for this day</p>}
+                    </thead>
+                    <tbody>
+                      {dayEntries.map((e, i) => (
+                        <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                          <td className="py-2 pr-2 font-medium text-gray-700">{e.task}{e.activityType && e.activityType !== "Task" ? <span className="block text-[10px] text-gray-400">{e.activityType}</span> : null}</td>
+                          <td className="py-2 pr-2 text-gray-400">{e.client}</td>
+                          <td className="py-2 text-right font-medium whitespace-nowrap" style={{ color: teamColor }}>{e.hours > 0 ? e.hours + "h" : ""}</td>
+                          <td className="py-2 pl-2 text-gray-400">{e.notes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : <p className="text-sm text-gray-300 italic py-2">No entries for this day</p>}
+              </div>
             </div>
           );
         })}
@@ -390,21 +407,26 @@ function DesignTrackerView() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <p className="text-xs text-gray-400">Live from the team's actual workload tracker.</p>
-        <div className="flex items-center gap-2">
-          {allMonths.length > 0 && (
-            <select value={activeMonth || ""} onChange={e => { setSelectedMonth(e.target.value); setSelectedDay(null); }}
-              className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
-              {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          )}
-          {allDays.length > 0 && (
-            <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
-              className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg bg-white">
-              {allDays.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          )}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+        <div className="px-5 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <span className="text-base font-bold">🎨 Live Workload Tracker</span>
+            <p className="text-[11px] text-white/70 mt-0.5">Straight from the team's actual task queue</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {allMonths.length > 0 && (
+              <select value={activeMonth || ""} onChange={e => { setSelectedMonth(e.target.value); setSelectedDay(null); }}
+                className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                {allMonths.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            )}
+            {allDays.length > 0 && (
+              <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                {allDays.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            )}
+          </div>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -412,35 +434,38 @@ function DesignTrackerView() {
           const dayTasks = tasksThisMonth.filter(t => t.person === person && t.workingDate === activeDay);
           const totalProduced = dayTasks.reduce((s, t) => s + (parseFloat(t.producedTime) || 0), 0);
           return (
-            <div key={person} className="bg-white rounded-xl p-5 border border-gray-100">
-              <div className="flex justify-between items-center mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-indigo-500">{person[0]}</div>
-                  <div>
-                    <p className="text-base font-semibold">{person}</p>
-                    <p className="text-[11px] text-gray-400">{dayTasks.length} task{dayTasks.length === 1 ? "" : "s"}</p>
+            <div key={person} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-600" />
+              <div className="p-5">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br from-indigo-500 to-purple-600">{person[0]}</div>
+                    <div>
+                      <p className="text-base font-semibold">{person}</p>
+                      <p className="text-[11px] text-gray-400">{dayTasks.length} task{dayTasks.length === 1 ? "" : "s"}</p>
+                    </div>
                   </div>
+                  {totalProduced > 0 && <span className="text-2xl font-bold text-indigo-500">{totalProduced.toFixed(2)}h</span>}
                 </div>
-                {totalProduced > 0 && <span className="text-2xl font-bold text-indigo-500">{totalProduced.toFixed(2)}h</span>}
-              </div>
-              {dayTasks.length > 0 ? (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-400 border-b border-gray-100">
-                      <th className="py-1.5 text-[11px] uppercase tracking-wide">Task Name</th>
-                      <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Prod. Hours</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dayTasks.map((t, i) => (
-                      <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
-                        <td className="py-2 pr-2 font-medium text-gray-700">{t.taskName}</td>
-                        <td className="py-2 text-right font-medium text-indigo-500 whitespace-nowrap">{t.producedTime ? t.producedTime + "h" : "—"}</td>
+                {dayTasks.length > 0 ? (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-400 border-b border-gray-100">
+                        <th className="py-1.5 text-[11px] uppercase tracking-wide">Task Name</th>
+                        <th className="py-1.5 text-right text-[11px] uppercase tracking-wide">Prod. Hours</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : <p className="text-sm text-gray-300 italic">No tasks for this day</p>}
+                    </thead>
+                    <tbody>
+                      {dayTasks.map((t, i) => (
+                        <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                          <td className="py-2 pr-2 font-medium text-gray-700">{t.taskName}</td>
+                          <td className="py-2 text-right font-medium text-indigo-500 whitespace-nowrap">{t.producedTime ? t.producedTime + "h" : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : <p className="text-sm text-gray-300 italic py-2">No tasks for this day</p>}
+              </div>
             </div>
           );
         })}
