@@ -93,14 +93,22 @@ function parsePersonTab(rows, personName) {
 }
 
 async function fetchTeam(sheets, people) {
+  // Google Sheets range requests need the EXACT tab title, whitespace included — a tab
+  // literally named "Ian " (trailing space) will fail to match a request for "Ian". Fetching
+  // the real tab list first and matching by trimmed name protects every person here from this,
+  // not just the one that happened to break.
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties.title" });
+  const allTitles = (meta.data.sheets || []).map(s => s.properties.title);
+  const resolvedNames = people.map(name => allTitles.find(t => t.trim().toLowerCase() === name.trim().toLowerCase()) || name);
+
   const res = await sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
-    ranges: people,
+    ranges: resolvedNames,
     fields: "sheets.properties.title,sheets.data.rowData.values(formattedValue)",
   });
   const sheetsData = res.data.sheets || [];
-  return people.map(name => {
-    const sheetEntry = sheetsData.find(s => s.properties.title === name);
+  return people.map((name, i) => {
+    const sheetEntry = sheetsData.find(s => s.properties.title === resolvedNames[i]);
     const rowData = sheetEntry?.data?.[0]?.rowData || [];
     const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
     return parsePersonTab(rows, name);
