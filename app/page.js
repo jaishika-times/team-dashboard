@@ -991,15 +991,6 @@ const COMP_LOGOS = {
 
                 {prodData ? (
                   <>
-                    <div className="flex gap-3 items-end flex-wrap mb-5">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wide">Date</label>
-                        <select value={date} onChange={e => setDate(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
-                          {prodData.dates.map(d => { const dt = new Date(d + "T00:00:00"); return <option key={d} value={d}>{dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</option>; })}
-                        </select>
-                      </div>
-                    </div>
-
                     {/* Team cards */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
                       {TEAMS.map(team => {
