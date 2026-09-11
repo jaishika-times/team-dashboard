@@ -13,6 +13,7 @@ export const revalidate = 0;
 const SPREADSHEET_ID = "1aInUZ19K0wd3sXn_NPXEIK0eD3gWak7PYM0QsjN-nUw";
 const CONTENT_PEOPLE = ["Rosie", "Jeremiah", "Mahal", "Ian"];
 const VIDEO_PEOPLE = ["Vanessa", "Nick", "Roshan", "Zul"];
+const DESIGN_PEOPLE = ["Marcus", "Fatanah", "Aiem"];
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -115,7 +116,7 @@ async function fetchTeam(sheets, people) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const team = searchParams.get("team"); // "Content" or "Video"
-  const people = team === "Video" ? VIDEO_PEOPLE : CONTENT_PEOPLE;
+  const people = team === "Video" ? VIDEO_PEOPLE : team === "Design" ? DESIGN_PEOPLE : CONTENT_PEOPLE;
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });

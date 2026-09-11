@@ -306,15 +306,15 @@ function ContentVideoTrackerView({ team }) {
 
   const allDays = Array.from(new Set(data.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
   const activeDay = selectedDay || allDays[allDays.length - 1];
-  const teamColor = team === "Video" ? "#3b82f6" : "#10b981";
-  const teamGradient = team === "Video" ? "from-blue-500 to-cyan-500" : "from-emerald-500 to-teal-500";
+  const teamColor = team === "Video" ? "#3b82f6" : team === "Design" ? "#6366f1" : "#10b981";
+  const teamGradient = team === "Video" ? "from-blue-500 to-cyan-500" : team === "Design" ? "from-indigo-500 to-purple-600" : "from-emerald-500 to-teal-500";
 
   return (
     <div>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
         <div className={`px-5 py-4 bg-gradient-to-r ${teamGradient} text-white flex items-center justify-between flex-wrap gap-3`}>
           <div>
-            <span className="text-base font-bold">{team === "Video" ? "🎬" : "✍️"} Live {team} Tracker</span>
+            <span className="text-base font-bold">{team === "Video" ? "🎬" : team === "Design" ? "🎨" : "✍️"} Live {team} Tracker</span>
             <p className="text-[11px] text-white/70 mt-0.5">Day-by-day, task-by-task, straight from the team's sheet</p>
           </div>
           {allDays.length > 0 && (
@@ -1043,10 +1043,8 @@ const COMP_LOGOS = {
                         </div>
                         {selectedProdTeam === "CSE" ? (
                           <CSETimesheetView />
-                        ) : selectedProdTeam === "Content" || selectedProdTeam === "Video" ? (
+                        ) : selectedProdTeam === "Content" || selectedProdTeam === "Video" || selectedProdTeam === "Design" ? (
                           <ContentVideoTrackerView team={selectedProdTeam} />
-                        ) : selectedProdTeam === "Design" ? (
-                          <DesignTrackerView />
                         ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {allMems.filter(m => m.team === selectedProdTeam).map(({ name }) => {
@@ -2332,11 +2330,11 @@ function PendingBanner({ onGoToAdmin }) {
 // ===== PEOPLE (ONBOARDING / OFFBOARDING) =====
 const PROBATION_LABELS = { m1: "Month 1", m2: "Month 2", m3: "Month 3", m4: "Month 4", m5: "Month 5", m6: "Month 6" };
 const PEOPLE_LINK_LABELS = { staffFolder: "Staff Folder", hrRecording: "HR Recording", tlRecording: "TL Recording", plan: "Plan", confirmationLetter: "Confirmation Letter" };
-const STATUS_OPTIONS = { Onboarding: ["Probation", "Confirmed", "Extended", "Terminated"], Offboarding: ["Pending", "Exited", "Terminated"] };
-const STATUS_COLORS = { Probation: "bg-amber-50 text-amber-600", Confirmed: "bg-green-50 text-green-600", Extended: "bg-blue-50 text-blue-600", Terminated: "bg-red-50 text-red-500", Pending: "bg-amber-50 text-amber-600", Exited: "bg-blue-50 text-blue-600" };
+const STATUS_OPTIONS = { Onboarding: ["Probation", "Confirmed", "Extended", "Terminated"], Offboarding: ["Pending", "Exited", "Terminated"], Internship: ["Active", "Completed"] };
+const STATUS_COLORS = { Probation: "bg-amber-50 text-amber-600", Confirmed: "bg-green-50 text-green-600", Extended: "bg-blue-50 text-blue-600", Terminated: "bg-red-50 text-red-500", Pending: "bg-amber-50 text-amber-600", Exited: "bg-blue-50 text-blue-600", Active: "bg-purple-50 text-purple-600", Completed: "bg-green-50 text-green-600" };
 // Clearer wording shown to the user — underlying values stay the same so existing records
 // (and the confirmation dropdown's stored value) don't need any data migration.
-const STATUS_LABELS = { Probation: "Probation", Confirmed: "Confirmation", Extended: "Extended", Terminated: "Termination", Pending: "Pending", Exited: "Acceptance of Resignation" };
+const STATUS_LABELS = { Probation: "Probation", Confirmed: "Confirmation", Extended: "Extended", Terminated: "Termination", Pending: "Pending", Exited: "Acceptance of Resignation", Active: "Active", Completed: "Completed" };
 const PROBATION_STATUS_COLORS = { Done: "bg-green-50 text-green-600", "In Progress": "bg-amber-50 text-amber-600", Scheduled: "bg-gray-100 text-gray-400" };
 
 function parseFlexDate(str) {
@@ -2622,7 +2620,7 @@ function PeoplePage({ isAdmin, userId }) {
 
       {/* Tabs + search */}
       <div className="flex items-center gap-2 mb-4">
-        {[["all", "All"], ["Onboarding", "Onboarding"], ["Offboarding", "Offboarding"]].map(([id, label]) => (
+        {[["all", "All"], ["Onboarding", "Onboarding"], ["Internship", "Internship"], ["Offboarding", "Offboarding"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium ${tab === id ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>{label}</button>
         ))}
@@ -2646,7 +2644,7 @@ function PeoplePage({ isAdmin, userId }) {
                 <a href={r.links.staffFolder.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
                   title="Open employee folder" className="text-xs text-gray-400 hover:text-gray-700 shrink-0">📁 Folder</a>
               )}
-              <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${r.type === "Onboarding" ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-500"}`}>{r.type}</span>
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 ${r.type === "Onboarding" ? "bg-blue-50 text-blue-600" : r.type === "Internship" ? "bg-purple-50 text-purple-600" : "bg-red-50 text-red-500"}`}>{r.type}</span>
               {isAdmin ? (
                 <select value={r.status || STATUS_OPTIONS[r.type][0]} onClick={e => e.stopPropagation()} onChange={e => changeStatus(r.id, e.target.value)}
                   className={`text-[11px] font-medium px-2 py-0.5 rounded shrink-0 border-0 cursor-pointer ${STATUS_COLORS[r.status] || STATUS_COLORS[STATUS_OPTIONS[r.type][0]]}`}>
@@ -2667,7 +2665,7 @@ function PeoplePage({ isAdmin, userId }) {
               <div className="px-4 pb-4 pt-1 border-t border-gray-50 grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">
-                    {r.type === "Onboarding" ? "Probation (3 months from hire date)" : "Timeline"}
+                    {r.type === "Onboarding" ? "Probation (3 months from hire date)" : r.type === "Internship" ? "Internship" : "Timeline"}
                   </p>
                   <div className="space-y-1.5">
                     <div className="text-xs text-gray-600">Join date: <span className="text-gray-800">{r.join_date || "—"}</span></div>
@@ -2682,7 +2680,9 @@ function PeoplePage({ isAdmin, userId }) {
                         <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${PROBATION_STATUS_COLORS[p.status]}`}>{p.status}</span>
                       </div>
                     ))}
-                    <div className="text-xs text-gray-600 pt-1">{r.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
+                    {r.type !== "Internship" && (
+                      <div className="text-xs text-gray-600 pt-1">{r.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
+                    )}
                   </div>
                   {r.type === "Onboarding" && (
                     <div className="mt-3 pt-3 border-t border-gray-50">
@@ -2770,7 +2770,7 @@ function PeoplePage({ isAdmin, userId }) {
                 <input value={form.staff_name} onChange={e => setForm({ ...form, staff_name: e.target.value })} placeholder="Staff name"
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 <select value={form.type} onChange={e => { const type = e.target.value; setForm({ ...form, type, status: STATUS_OPTIONS[type][0] }); }} className="px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option>Onboarding</option><option>Offboarding</option>
+                  <option>Onboarding</option><option>Internship</option><option>Offboarding</option>
                 </select>
               </div>
               <div>
@@ -2778,28 +2778,34 @@ function PeoplePage({ isAdmin, userId }) {
                   {STATUS_OPTIONS[form.type].map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className={`grid ${form.type === "Internship" ? "grid-cols-2" : "grid-cols-3"} gap-3`}>
                 <input value={form.month} onChange={e => setForm({ ...form, month: e.target.value })} placeholder="Month (e.g. August)"
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 <input value={form.join_date} onChange={e => setForm({ ...form, join_date: e.target.value })} placeholder="Join date"
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                <input value={form.key_date} onChange={e => setForm({ ...form, key_date: e.target.value })} placeholder={form.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                {form.type !== "Internship" && (
+                  <input value={form.key_date} onChange={e => setForm({ ...form, key_date: e.target.value })} placeholder={form.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}
+                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                )}
               </div>
 
               <p className="text-[11px] font-semibold text-gray-400 uppercase pt-2">Document links (URLs)</p>
-              {Object.keys(PEOPLE_LINK_LABELS).map(k => (
+              {Object.keys(PEOPLE_LINK_LABELS).filter(k => !(form.type === "Internship" && k === "confirmationLetter")).map(k => (
                 <input key={k} value={form.links[k]} onChange={e => setForm({ ...form, links: { ...form.links, [k]: e.target.value } })} placeholder={PEOPLE_LINK_LABELS[k]}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
               ))}
 
-              <p className="text-[11px] font-semibold text-gray-400 uppercase pt-2">Probation evaluations</p>
-              <div className="grid grid-cols-3 gap-2">
-                {Object.keys(PROBATION_LABELS).map(k => (
-                  <input key={k} value={form.probation[k]} onChange={e => setForm({ ...form, probation: { ...form.probation, [k]: e.target.value } })} placeholder={PROBATION_LABELS[k]}
-                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                ))}
-              </div>
+              {form.type !== "Internship" && (
+                <>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase pt-2">Probation evaluations</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {Object.keys(PROBATION_LABELS).map(k => (
+                      <input key={k} value={form.probation[k]} onChange={e => setForm({ ...form, probation: { ...form.probation, [k]: e.target.value } })} placeholder={PROBATION_LABELS[k]}
+                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <div className="flex gap-2 mt-4">
               <button onClick={save} disabled={busy} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg disabled:opacity-50">{busy ? "Saving..." : modal === "add" ? "Add" : "Save"}</button>
