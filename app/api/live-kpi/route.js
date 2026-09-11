@@ -244,6 +244,7 @@ function parseDesignMonthBlock(blockRows) {
         const header = nextRow;
         const taskCol = findColByKeyword(header, ["task name"]);
         const dateCol = findColByKeyword(header, ["working date"]);
+        const visualCol = findColByKeyword(header, ["visual count"]);
         const estCol = findColByKeyword(header, ["estimated time"]);
         const prodCol = findColByKeyword(header, ["produced time"]);
         const tasks = [];
@@ -259,6 +260,7 @@ function parseDesignMonthBlock(blockRows) {
             tasks.push({
               taskName,
               workingDate: dateCol >= 0 ? (drow[dateCol] || "").trim() : "",
+              visualCount: visualCol >= 0 ? (drow[visualCol] || "").trim() : "",
               estimatedTime: estCol >= 0 ? (drow[estCol] || "").trim() : "",
               producedTime: prodCol >= 0 ? (drow[prodCol] || "").trim() : "",
             });
@@ -329,17 +331,20 @@ async function getDesignFromWorkloadSheet() {
       for (const [week, weekTasks] of Object.entries(weekGroups)) {
         const estSum = weekTasks.reduce((s, t) => s + (parseFloat(t.estimatedTime) || 0), 0);
         const prodSum = weekTasks.reduce((s, t) => s + (parseFloat(t.producedTime) || 0), 0);
+        const visualSum = weekTasks.reduce((s, t) => s + (parseFloat(t.visualCount) || 0), 0);
         const kpiPct = estSum > 0 ? prodSum / estSum : null;
         const status = deriveDesignStatus(kpiPct);
+        const taskNames = weekTasks.map(t => t.taskName).join("; ");
         result.push({
           month, week, team: "Design", employee,
           tasks: [{
-            task: weekTasks.map(t => t.taskName).join("; "),
+            task: taskNames,
             completed: status,
             estTime: estSum ? String(Math.round(estSum * 100) / 100) : "",
             producedTime: prodSum ? String(Math.round(prodSum * 100) / 100) : "",
             taskCount: String(weekTasks.length),
-            completedTasks: "",
+            completedTasks: taskNames,
+            visualCount: visualSum ? String(visualSum) : "",
             weightage: "", weightageScore: "", notes: "", status, links: "",
           }],
           kpiPct,
@@ -370,6 +375,7 @@ export async function GET() {
       producedTime: p.tasks.map(t => t.producedTime).filter(Boolean).join(", "),
       taskCount: p.tasks.map(t => t.taskCount).filter(Boolean).join(", "),
       completedTasks: p.tasks.map(t => t.completedTasks).filter(Boolean).join(", "),
+      visualCount: p.tasks.map(t => t.visualCount).filter(Boolean).join(", "),
       completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
       notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
       status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",

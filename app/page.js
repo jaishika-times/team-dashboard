@@ -1166,6 +1166,7 @@ const COMP_LOGOS = {
                 producedTime: p.tasks.map(t => t.producedTime).filter(Boolean).join(", "),
                 taskCount: p.tasks.map(t => t.taskCount).filter(Boolean).join(", "),
                 completedTasks: p.tasks.map(t => t.completedTasks).filter(Boolean).join(", "),
+                visualCount: p.tasks.map(t => t.visualCount).filter(Boolean).join(", "),
                 completed: p.tasks.map(t => t.completed).filter(Boolean).join(", "),
                 notes: p.tasks.map(t => t.notes).filter(Boolean).join(" | "),
                 status: p.tasks.map(t => t.status).filter(Boolean)[0] || "",
@@ -1304,6 +1305,10 @@ const COMP_LOGOS = {
                                         <div className="bg-gray-50 rounded-lg p-2.5">
                                           <p className="text-[10px] text-gray-400 uppercase tracking-wide">Produced Time</p>
                                           <p className="text-lg font-bold text-gray-800">{e.producedTime || "—"}h</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded-lg p-2.5">
+                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Visual Count</p>
+                                          <p className="text-lg font-bold text-gray-800">{e.visualCount || "—"}</p>
                                         </div>
                                       </div>
                                     </>
