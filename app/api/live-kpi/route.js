@@ -335,6 +335,20 @@ async function getDesignFromWorkloadSheet() {
         const kpiPct = estSum > 0 ? prodSum / estSum : null;
         const status = deriveDesignStatus(kpiPct);
         const taskNames = weekTasks.map(t => t.taskName).join("; ");
+        // Individual tasks, not just the week's totals — a week can genuinely have several
+        // tasks, and collapsing them into one combined row was hiding that entirely.
+        const taskBreakdown = weekTasks.map(t => {
+          const est = parseFloat(t.estimatedTime) || 0;
+          const prod = parseFloat(t.producedTime) || 0;
+          const pct = est > 0 ? prod / est : null;
+          return {
+            name: t.taskName,
+            visualCount: t.visualCount || "",
+            estTime: t.estimatedTime || "",
+            producedTime: t.producedTime || "",
+            efficiency: pct !== null ? Math.round(pct * 100) : null,
+          };
+        });
         result.push({
           month, week, team: "Design", employee,
           tasks: [{
@@ -347,6 +361,7 @@ async function getDesignFromWorkloadSheet() {
             visualCount: visualSum ? String(visualSum) : "",
             weightage: "", weightageScore: "", notes: "", status, links: "",
           }],
+          taskBreakdown,
           kpiPct,
         });
       }

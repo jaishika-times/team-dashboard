@@ -1287,9 +1287,7 @@ const COMP_LOGOS = {
                                 <div className="space-y-2 text-sm">
                                   {selectedTeam === "Design" ? (
                                     <>
-                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Task Name</span><span className="font-medium text-right max-w-[65%]">{e.completedTasks || "—"}</span></div>
-                                      <div className="flex justify-between py-1 border-b border-gray-50"><span className="text-gray-400">Efficiency</span><span className="font-bold" style={{ color: clr }}>{pct !== null ? pct + "%" : "—"}</span></div>
-                                      <div className="grid grid-cols-2 gap-2 my-2">
+                                      <div className="grid grid-cols-2 gap-2 mb-3">
                                         <div className="bg-gray-50 rounded-lg p-2.5">
                                           <p className="text-[10px] text-gray-400 uppercase tracking-wide">No. of Tasks</p>
                                           <p className="text-lg font-bold text-gray-800">{e.taskCount || "—"}</p>
@@ -1298,19 +1296,38 @@ const COMP_LOGOS = {
                                           <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
                                           <p className={`text-sm font-bold ${isGood ? "text-green-600" : isBad ? "text-red-600" : "text-amber-600"}`}>{e.status || "—"}</p>
                                         </div>
-                                        <div className="bg-gray-50 rounded-lg p-2.5">
-                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Est. Time</p>
-                                          <p className="text-lg font-bold text-gray-800">{e.estTime || "—"}h</p>
-                                        </div>
-                                        <div className="bg-gray-50 rounded-lg p-2.5">
-                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Produced Time</p>
-                                          <p className="text-lg font-bold text-gray-800">{e.producedTime || "—"}h</p>
-                                        </div>
-                                        <div className="bg-gray-50 rounded-lg p-2.5">
-                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Visual Count</p>
-                                          <p className="text-lg font-bold text-gray-800">{e.visualCount || "—"}</p>
-                                        </div>
                                       </div>
+                                      {e.taskBreakdown && e.taskBreakdown.length > 0 ? (
+                                        <div className="overflow-x-auto -mx-1">
+                                          <table className="w-full text-xs border-collapse">
+                                            <thead>
+                                              <tr className="text-left text-gray-400 border-b border-gray-100">
+                                                <th className="py-1.5 px-1 text-[10px] uppercase tracking-wide">Name</th>
+                                                <th className="py-1.5 px-1 text-right text-[10px] uppercase tracking-wide">Visual Count</th>
+                                                <th className="py-1.5 px-1 text-right text-[10px] uppercase tracking-wide">Est. Time</th>
+                                                <th className="py-1.5 px-1 text-right text-[10px] uppercase tracking-wide">Prod. Time</th>
+                                                <th className="py-1.5 px-1 text-right text-[10px] uppercase tracking-wide">Efficiency</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {e.taskBreakdown.map((t, ti) => {
+                                                const tGood = t.efficiency !== null && t.efficiency < 80;
+                                                const tBad = t.efficiency !== null && t.efficiency > 100;
+                                                const tClr = t.efficiency === null ? "#9ca3af" : tGood ? "#16a34a" : tBad ? "#dc2626" : "#d97706";
+                                                return (
+                                                  <tr key={ti} className="border-b border-gray-50 last:border-0 align-top">
+                                                    <td className="py-1.5 px-1 font-medium text-gray-700">{t.name}</td>
+                                                    <td className="py-1.5 px-1 text-right text-gray-500">{t.visualCount || "—"}</td>
+                                                    <td className="py-1.5 px-1 text-right text-gray-500">{t.estTime ? t.estTime + "h" : "—"}</td>
+                                                    <td className="py-1.5 px-1 text-right text-gray-500">{t.producedTime ? t.producedTime + "h" : "—"}</td>
+                                                    <td className="py-1.5 px-1 text-right font-bold" style={{ color: tClr }}>{t.efficiency !== null ? t.efficiency + "%" : "—"}</td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      ) : <p className="text-sm text-gray-300 italic py-2">No tasks this week</p>}
                                     </>
                                   ) : e.tasks && e.tasks.length > 0 ? (
                                     <div className="overflow-x-auto -mx-1 mt-1">
