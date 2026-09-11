@@ -1139,7 +1139,8 @@ const COMP_LOGOS = {
               if (e.month) { monthsSet.add(e.month); if (!weeksPerMonth[e.month]) weeksPerMonth[e.month] = new Set(); }
               if (e.month && e.week) weeksPerMonth[e.month].add(e.week);
             });
-            const months = Array.from(monthsSet);
+            const MONTH_SORT_ORDER = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const months = Array.from(monthsSet).sort((a, b) => MONTH_SORT_ORDER.indexOf(a) - MONTH_SORT_ORDER.indexOf(b));
             const curMonth = kpiPeriod.split("|")[0] || months[months.length - 1] || "";
             const weeksForMonth = Array.from(weeksPerMonth[curMonth] || []).sort((a,b) => parseInt(a) - parseInt(b));
             const curWeek = kpiPeriod.split("|")[1] || weeksForMonth[weeksForMonth.length - 1] || "";
@@ -1287,15 +1288,9 @@ const COMP_LOGOS = {
                                 <div className="space-y-2 text-sm">
                                   {selectedTeam === "Design" ? (
                                     <>
-                                      <div className="grid grid-cols-2 gap-2 mb-3">
-                                        <div className="bg-gray-50 rounded-lg p-2.5">
-                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">No. of Tasks</p>
-                                          <p className="text-lg font-bold text-gray-800">{e.taskCount || "—"}</p>
-                                        </div>
-                                        <div className="bg-gray-50 rounded-lg p-2.5">
-                                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Status</p>
-                                          <p className={`text-sm font-bold ${isGood ? "text-green-600" : isBad ? "text-red-600" : "text-amber-600"}`}>{e.status || "—"}</p>
-                                        </div>
+                                      <div className="bg-gray-50 rounded-lg p-2.5 mb-3">
+                                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">Total Number of Tasks</p>
+                                        <p className="text-lg font-bold text-gray-800">{e.taskCount || "—"}</p>
                                       </div>
                                       {e.taskBreakdown && e.taskBreakdown.length > 0 ? (
                                         <div className="overflow-x-auto -mx-1">

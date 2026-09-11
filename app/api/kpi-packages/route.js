@@ -39,7 +39,6 @@ const TEAM_CONFIG = {
     folderUrl: "https://drive.google.com/drive/folders/1_f9cPXG3KujNtXP3LvzUg84CwQscm-T_",
     people: [
       { name: "Jev", fileId: "1AvVKb4pM7V_buSBfL6UMsagTNKz0oPM8-5okzA4H-AA" },
-      { name: "Jon", fileId: "1Gcdqcs5iSrWGk0aQJX7MMlagEGmB_GOEl7t4QSTMEvI" },
       { name: "Nazreen", fileId: "1tsNFRbXP6MBo6UpUcNVpKcz_0y1PKzuLUeyRZ5z0imI" },
       { name: "Mika", fileId: "1yo1D0HoVK5MZXXTfel89OWDb2gM6gq2uTtLHhHT3ric" },
       { name: "Shiman", fileId: "1IpADlylx9iqRLTZFor6vM8J0ZOsyr2_PzocF0QN_zjE" },
