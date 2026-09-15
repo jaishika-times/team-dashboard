@@ -504,6 +504,9 @@ export default function DashboardPage() {
   const [modal, setModal] = useState(null);
   const [attWeek, setAttWeek] = useState("");
   const [expandedAttPerson, setExpandedAttPerson] = useState(null);
+  const [leaveRecords, setLeaveRecords] = useState([]);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ person_name: "", date: "", leave_type: "SL", duration: "full" });
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -568,6 +571,8 @@ export default function DashboardPage() {
     if (checkoutRows) setAllCheckouts(checkoutRows);
     const { data: periodRows } = await supabase.from("asset_periods").select("*").order("from_date", { ascending: false });
     if (periodRows) setAssetPeriods(periodRows);
+    const { data: leaveRows } = await supabase.from("leave_records").select("*").order("date", { ascending: true });
+    if (leaveRows) setLeaveRecords(leaveRows);
     if (empRows) setEmployees(empRows);
 
     // Weekly KPI: merge the live-synced sheets with anything manually uploaded/pasted.
@@ -600,6 +605,43 @@ export default function DashboardPage() {
 
   const isAdmin = profile?.role === "admin";
   const curAtt = attData[attMonth];
+
+  // SL/EL never actually comes from the uploaded file — a raw punch export has no leave-type
+  // information at all, so this is tracked manually instead, keyed by person + date. Filtered
+  // to whichever month is currently selected, matching by year/month numbers (not string
+  // prefix, since attMonth like "2026-9" isn't zero-padded the same way a stored date
+  // "2026-09-05" is).
+  const [attYear, attMon] = (attMonth || "").split("-").map(Number);
+  const monthLeaves = leaveRecords.filter(r => {
+    const d = new Date(r.date + "T00:00:00");
+    return d.getFullYear() === attYear && d.getMonth() + 1 === attMon;
+  });
+  const leaveByPerson = {};
+  monthLeaves.forEach(r => {
+    if (!leaveByPerson[r.person_name]) leaveByPerson[r.person_name] = { name: r.person_name, sl: 0, el: 0, details: [] };
+    const amount = r.duration === "full" ? 1 : 0.5;
+    if (r.leave_type === "SL") leaveByPerson[r.person_name].sl += amount;
+    else leaveByPerson[r.person_name].el += amount;
+    leaveByPerson[r.person_name].details.push(r);
+  });
+  const sleFromRecords = Object.values(leaveByPerson).sort((a, b) => (b.sl + b.el) - (a.sl + a.el));
+
+  async function saveLeave() {
+    if (!leaveForm.person_name.trim() || !leaveForm.date) return;
+    await supabase.from("leave_records").upsert({
+      person_name: leaveForm.person_name.trim(), date: leaveForm.date,
+      leave_type: leaveForm.leave_type, duration: leaveForm.leave_type === "EL" ? leaveForm.duration : "full",
+      created_by: user.id,
+    }, { onConflict: "person_name,date,leave_type" });
+    setLeaveForm({ person_name: "", date: "", leave_type: "SL", duration: "full" });
+    setShowLeaveModal(false);
+    loadData();
+  }
+  async function deleteLeave(id) {
+    if (!confirm("Delete this leave entry?")) return;
+    await supabase.from("leave_records").delete().eq("id", id);
+    loadData();
+  }
 
   // Compute overview stats
   const totalMembers = prodData?.members?.length || 0;
@@ -1106,13 +1148,16 @@ const COMP_LOGOS = {
                         {attIndex.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
                       </select>
                     </div>
+                    {isAdmin && (
+                      <button onClick={() => setShowLeaveModal(true)} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg">+ Update Leave</button>
+                    )}
                   </div>
                   {curAtt && (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                       {[
                         { label: "Late clock-ins", value: curAtt.late?.length || 0, sub: "After 9:45 AM", key: "late", color: "#ef4444", bg: "bg-red-50 border-red-100" },
                         { label: "Short hours", value: curAtt.short?.length || 0, sub: "Below 7.5 hrs", key: "short", color: "#f59e0b", bg: "bg-amber-50 border-amber-100" },
-                        { label: "SL / EL", value: curAtt.sle?.length || 0, sub: "Sick + emergency", key: "sle", color: "#6366f1", bg: "bg-indigo-50 border-indigo-100" },
+                        { label: "SL / EL", value: sleFromRecords.length || 0, sub: "Sick + emergency", key: "sle", color: "#6366f1", bg: "bg-indigo-50 border-indigo-100" },
                         { label: "Weekly view", value: Object.keys(curAtt.weekly || {}).length || "--", sub: "Weeks recorded", key: "weekly", color: "#3b82f6", bg: "bg-blue-50 border-blue-100" },
                       ].map(m => (
                         <div key={m.key} onClick={() => { setModal(m.key); if (m.key === "weekly") setAttWeek(Object.keys(curAtt.weekly)[0] || ""); }}
@@ -1126,6 +1171,49 @@ const COMP_LOGOS = {
                   )}
                 </>
               ) : isAdmin ? <InlineUpload type="att" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📅" text="No data yet" />}
+
+              {showLeaveModal && (
+                <div onClick={() => setShowLeaveModal(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                  <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[400px] max-w-[95%] shadow-xl">
+                    <h3 className="text-base font-semibold mb-4">Update Leave</h3>
+                    <div className="space-y-3">
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Person's name</span>
+                        <input value={leaveForm.person_name} onChange={e => setLeaveForm({ ...leaveForm, person_name: e.target.value })} placeholder="e.g. Marcus"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Date</span>
+                        <input type="date" value={leaveForm.date} onChange={e => setLeaveForm({ ...leaveForm, date: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Type</span>
+                        <select value={leaveForm.leave_type} onChange={e => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                          <option value="SL">Sick Leave (SL)</option>
+                          <option value="EL">Emergency Leave (EL)</option>
+                        </select>
+                      </label>
+                      {leaveForm.leave_type === "EL" && (
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-gray-500">Duration</span>
+                          <select value={leaveForm.duration} onChange={e => setLeaveForm({ ...leaveForm, duration: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                            <option value="full">Full Day</option>
+                            <option value="half_am">Half Day - AM</option>
+                            <option value="half_pm">Half Day - PM</option>
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <button onClick={saveLeave} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Save</button>
+                      <button onClick={() => setShowLeaveModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -1848,7 +1936,51 @@ const COMP_LOGOS = {
                     </tbody>
                   </>
                 )}
-                {modal === "sle" && <><thead><tr className="bg-gray-50"><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>SL</th><th className={thCR}>EL</th></tr></thead><tbody>{curAtt.sle.map((e, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td><td className={tdC}>{e.name}</td><td className={tdCR + " font-semibold"}>{e.sl}</td><td className={tdCR + " font-semibold"}>{e.el}</td></tr>)}</tbody></>}
+                {modal === "sle" && (
+                  <>
+                    <thead><tr className="bg-gray-50"><th className={thC}></th><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>SL</th><th className={thCR}>EL</th></tr></thead>
+                    <tbody>
+                      {sleFromRecords.map((e, i) => {
+                        const isOpen = expandedAttPerson === "sle|" + e.name;
+                        const durLabel = { full: "Full Day", half_am: "Half Day (AM)", half_pm: "Half Day (PM)" };
+                        return (
+                          <Fragment key={i}>
+                            <tr className="border-t border-gray-50 cursor-pointer hover:bg-gray-50" onClick={() => setExpandedAttPerson(isOpen ? null : "sle|" + e.name)}>
+                              <td className={tdC + " text-gray-300 w-4"}>{isOpen ? "▾" : "▸"}</td>
+                              <td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td>
+                              <td className={tdC}>{e.name}</td>
+                              <td className={tdCR + " font-semibold"}>{e.sl}</td>
+                              <td className={tdCR + " font-semibold"}>{e.el}</td>
+                            </tr>
+                            {isOpen && (
+                              <tr className="border-t border-gray-50 bg-gray-50/50">
+                                <td colSpan={5} className="px-4 py-3">
+                                  <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">{e.name}'s leave this month</p>
+                                  <table className="w-full text-sm">
+                                    <thead><tr className="text-left text-gray-400"><th className="pb-1 pr-4 font-medium">Date</th><th className="pb-1 pr-4 font-medium">Type</th><th className="pb-1 pr-4 font-medium">Duration</th><th className="pb-1"></th></tr></thead>
+                                    <tbody>
+                                      {e.details.sort((a, b) => a.date.localeCompare(b.date)).map(d => (
+                                        <tr key={d.id} className="border-t border-gray-100">
+                                          <td className="py-1.5 pr-4 text-gray-600">{d.date}</td>
+                                          <td className="py-1.5 pr-4"><span className={`font-medium px-2 py-0.5 rounded-full text-xs ${d.leave_type === "SL" ? "bg-amber-50 text-amber-600" : "bg-indigo-50 text-indigo-600"}`}>{d.leave_type}</span></td>
+                                          <td className="py-1.5 pr-4 text-gray-500">{durLabel[d.duration] || d.duration}</td>
+                                          <td className="py-1.5 text-right">{isAdmin && <button onClick={() => deleteLeave(d.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button>}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                      {sleFromRecords.length === 0 && (
+                        <tr><td colSpan={5} className="py-6 text-center text-gray-300 italic">No leave recorded for this month yet — use "+ Update Leave" to add some.</td></tr>
+                      )}
+                    </tbody>
+                  </>
+                )}
                 {modal === "weekly" && <><thead><tr className="bg-gray-50">{["Date","Name","Clock In","Clock Out","Hours","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead><tbody>{(curAtt.weekly[attWeek] || []).map((r, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC}>{r.date}</td><td className={tdC}>{r.name}</td><td className={tdC}>{r.ci}</td><td className={tdC}>{r.co}</td><td className={tdC}>{r.hrs}</td><td className={tdC}>{r.rm && <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}</td></tr>)}</tbody></>}
               </table>
             </div>
