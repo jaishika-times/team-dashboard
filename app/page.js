@@ -42,6 +42,14 @@ function extractUrls(text) {
 // One draft row for adding a new asset checkout to the currently selected date — supports
 // several people on one item by just typing their names comma-separated.
 const MONTH_NAMES_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const LEAVE_TYPES = {
+  SL: { label: "Sick Leave (SL)", color: "bg-amber-50 text-amber-600", needsRemark: false },
+  EL: { label: "Emergency Leave (EL)", color: "bg-indigo-50 text-indigo-600", needsRemark: true },
+  UL: { label: "Unpaid Leave (UL)", color: "bg-red-50 text-red-500", needsRemark: true },
+  RL: { label: "Replacement Leave (RL)", color: "bg-cyan-50 text-cyan-600", needsRemark: true },
+  AL: { label: "Annual Leave (AL)", color: "bg-green-50 text-green-600", needsRemark: false },
+  BL: { label: "Bereavement Leave (BL)", color: "bg-slate-100 text-slate-600", needsRemark: false },
+};
 function monthKeyOf(dateStr) { return (dateStr || "").slice(0, 7); } // "YYYY-MM"
 function monthLabel(monthKey) {
   const [y, m] = (monthKey || "").split("-");
@@ -506,7 +514,7 @@ export default function DashboardPage() {
   const [expandedAttPerson, setExpandedAttPerson] = useState(null);
   const [leaveRecords, setLeaveRecords] = useState([]);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
-  const [leaveForm, setLeaveForm] = useState({ person_name: "", date: "", leave_type: "SL", duration: "full" });
+  const [leaveForm, setLeaveForm] = useState({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" });
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -606,7 +614,7 @@ export default function DashboardPage() {
   const isAdmin = profile?.role === "admin";
   const curAtt = attData[attMonth];
 
-  // SL/EL never actually comes from the uploaded file — a raw punch export has no leave-type
+  // Leave never actually comes from the uploaded file — a raw punch export has no leave-type
   // information at all, so this is tracked manually instead, keyed by person + date. Filtered
   // to whichever month is currently selected, matching by year/month numbers (not string
   // prefix, since attMonth like "2026-9" isn't zero-padded the same way a stored date
@@ -618,22 +626,23 @@ export default function DashboardPage() {
   });
   const leaveByPerson = {};
   monthLeaves.forEach(r => {
-    if (!leaveByPerson[r.person_name]) leaveByPerson[r.person_name] = { name: r.person_name, sl: 0, el: 0, details: [] };
+    if (!leaveByPerson[r.person_name]) leaveByPerson[r.person_name] = { name: r.person_name, counts: {}, total: 0, details: [] };
     const amount = r.duration === "full" ? 1 : 0.5;
-    if (r.leave_type === "SL") leaveByPerson[r.person_name].sl += amount;
-    else leaveByPerson[r.person_name].el += amount;
+    leaveByPerson[r.person_name].counts[r.leave_type] = (leaveByPerson[r.person_name].counts[r.leave_type] || 0) + amount;
+    leaveByPerson[r.person_name].total += amount;
     leaveByPerson[r.person_name].details.push(r);
   });
-  const sleFromRecords = Object.values(leaveByPerson).sort((a, b) => (b.sl + b.el) - (a.sl + a.el));
+  const sleFromRecords = Object.values(leaveByPerson).sort((a, b) => b.total - a.total);
 
   async function saveLeave() {
     if (!leaveForm.person_name.trim() || !leaveForm.date) return;
     await supabase.from("leave_records").upsert({
       person_name: leaveForm.person_name.trim(), date: leaveForm.date,
-      leave_type: leaveForm.leave_type, duration: leaveForm.leave_type === "EL" ? leaveForm.duration : "full",
+      leave_type: leaveForm.leave_type, duration: leaveForm.duration,
+      remark: LEAVE_TYPES[leaveForm.leave_type]?.needsRemark ? leaveForm.remark.trim() : null,
       created_by: user.id,
     }, { onConflict: "person_name,date,leave_type" });
-    setLeaveForm({ person_name: "", date: "", leave_type: "SL", duration: "full" });
+    setLeaveForm({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" });
     setShowLeaveModal(false);
     loadData();
   }
@@ -1157,7 +1166,7 @@ const COMP_LOGOS = {
                       {[
                         { label: "Late clock-ins", value: curAtt.late?.length || 0, sub: "After 9:45 AM", key: "late", color: "#ef4444", bg: "bg-red-50 border-red-100" },
                         { label: "Short hours", value: curAtt.short?.length || 0, sub: "Below 7.5 hrs", key: "short", color: "#f59e0b", bg: "bg-amber-50 border-amber-100" },
-                        { label: "SL / EL", value: sleFromRecords.length || 0, sub: "Sick + emergency", key: "sle", color: "#6366f1", bg: "bg-indigo-50 border-indigo-100" },
+                        { label: "Leave", value: sleFromRecords.length || 0, sub: "SL / EL / UL / RL / AL / BL", key: "sle", color: "#6366f1", bg: "bg-indigo-50 border-indigo-100" },
                         { label: "Weekly view", value: Object.keys(curAtt.weekly || {}).length || "--", sub: "Weeks recorded", key: "weekly", color: "#3b82f6", bg: "bg-blue-50 border-blue-100" },
                       ].map(m => (
                         <div key={m.key} onClick={() => { setModal(m.key); if (m.key === "weekly") setAttWeek(Object.keys(curAtt.weekly)[0] || ""); }}
@@ -1191,19 +1200,23 @@ const COMP_LOGOS = {
                         <span className="text-xs text-gray-500">Type</span>
                         <select value={leaveForm.leave_type} onChange={e => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-                          <option value="SL">Sick Leave (SL)</option>
-                          <option value="EL">Emergency Leave (EL)</option>
+                          {Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>
                       </label>
-                      {leaveForm.leave_type === "EL" && (
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Duration</span>
+                        <select value={leaveForm.duration} onChange={e => setLeaveForm({ ...leaveForm, duration: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                          <option value="full">Full Day</option>
+                          <option value="half_am">Half Day - AM</option>
+                          <option value="half_pm">Half Day - PM</option>
+                        </select>
+                      </label>
+                      {LEAVE_TYPES[leaveForm.leave_type]?.needsRemark && (
                         <label className="flex flex-col gap-1">
-                          <span className="text-xs text-gray-500">Duration</span>
-                          <select value={leaveForm.duration} onChange={e => setLeaveForm({ ...leaveForm, duration: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-                            <option value="full">Full Day</option>
-                            <option value="half_am">Half Day - AM</option>
-                            <option value="half_pm">Half Day - PM</option>
-                          </select>
+                          <span className="text-xs text-gray-500">Remark</span>
+                          <input value={leaveForm.remark} onChange={e => setLeaveForm({ ...leaveForm, remark: e.target.value })} placeholder="Reason / notes"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         </label>
                       )}
                     </div>
@@ -1838,7 +1851,7 @@ const COMP_LOGOS = {
           <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-5 max-w-[860px] w-[92%] max-h-[82vh] overflow-y-auto shadow-xl">
             <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-100">
               <h3 className="text-base font-semibold">
-                {modal === "late" && "Late clock-ins (after 9:45 AM)"}{modal === "short" && "Short hours (below 7.5 hrs)"}{modal === "sle" && "SL / EL usage"}{modal === "weekly" && "Weekly attendance"}
+                {modal === "late" && "Late clock-ins (after 9:45 AM)"}{modal === "short" && "Short hours (below 7.5 hrs)"}{modal === "sle" && "Leave usage"}{modal === "weekly" && "Weekly attendance"}
               </h3>
               <button onClick={() => setModal(null)} className="text-xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">&times;</button>
             </div>
@@ -1938,7 +1951,7 @@ const COMP_LOGOS = {
                 )}
                 {modal === "sle" && (
                   <>
-                    <thead><tr className="bg-gray-50"><th className={thC}></th><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>SL</th><th className={thCR}>EL</th></tr></thead>
+                    <thead><tr className="bg-gray-50"><th className={thC}></th><th className={thC}>#</th><th className={thC}>Employee</th><th className={thC}>Breakdown</th><th className={thCR}>Total</th></tr></thead>
                     <tbody>
                       {sleFromRecords.map((e, i) => {
                         const isOpen = expandedAttPerson === "sle|" + e.name;
@@ -1949,21 +1962,28 @@ const COMP_LOGOS = {
                               <td className={tdC + " text-gray-300 w-4"}>{isOpen ? "▾" : "▸"}</td>
                               <td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td>
                               <td className={tdC}>{e.name}</td>
-                              <td className={tdCR + " font-semibold"}>{e.sl}</td>
-                              <td className={tdCR + " font-semibold"}>{e.el}</td>
+                              <td className={tdC}>
+                                <div className="flex flex-wrap gap-1">
+                                  {Object.entries(e.counts).map(([t, c]) => (
+                                    <span key={t} className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${LEAVE_TYPES[t]?.color || "bg-gray-100 text-gray-500"}`}>{t}: {c}</span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className={tdCR + " font-semibold"}>{e.total}</td>
                             </tr>
                             {isOpen && (
                               <tr className="border-t border-gray-50 bg-gray-50/50">
                                 <td colSpan={5} className="px-4 py-3">
                                   <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">{e.name}'s leave this month</p>
                                   <table className="w-full text-sm">
-                                    <thead><tr className="text-left text-gray-400"><th className="pb-1 pr-4 font-medium">Date</th><th className="pb-1 pr-4 font-medium">Type</th><th className="pb-1 pr-4 font-medium">Duration</th><th className="pb-1"></th></tr></thead>
+                                    <thead><tr className="text-left text-gray-400"><th className="pb-1 pr-4 font-medium">Date</th><th className="pb-1 pr-4 font-medium">Type</th><th className="pb-1 pr-4 font-medium">Duration</th><th className="pb-1 pr-4 font-medium">Remark</th><th className="pb-1"></th></tr></thead>
                                     <tbody>
                                       {e.details.sort((a, b) => a.date.localeCompare(b.date)).map(d => (
                                         <tr key={d.id} className="border-t border-gray-100">
                                           <td className="py-1.5 pr-4 text-gray-600">{d.date}</td>
-                                          <td className="py-1.5 pr-4"><span className={`font-medium px-2 py-0.5 rounded-full text-xs ${d.leave_type === "SL" ? "bg-amber-50 text-amber-600" : "bg-indigo-50 text-indigo-600"}`}>{d.leave_type}</span></td>
+                                          <td className="py-1.5 pr-4"><span className={`font-medium px-2 py-0.5 rounded-full text-xs ${LEAVE_TYPES[d.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>{d.leave_type}</span></td>
                                           <td className="py-1.5 pr-4 text-gray-500">{durLabel[d.duration] || d.duration}</td>
+                                          <td className="py-1.5 pr-4 text-gray-500">{d.remark || "—"}</td>
                                           <td className="py-1.5 text-right">{isAdmin && <button onClick={() => deleteLeave(d.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button>}</td>
                                         </tr>
                                       ))}
