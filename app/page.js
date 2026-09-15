@@ -2746,51 +2746,66 @@ function PeoplePage({ isAdmin, userId }) {
     setBusy(true);
     const norm = normalizeName(payload.staff_name);
     const existing = records.find(x => x.id !== modal && normalizeName(x.staff_name) === norm);
+    let error;
     if (existing) {
       // Same person already exists under this name (case/whitespace-insensitive) — merge into
       // that record instead of creating a duplicate row.
-      await supabase.from("people_lifecycle").update(payload).eq("id", existing.id);
+      ({ error } = await supabase.from("people_lifecycle").update(payload).eq("id", existing.id));
     } else if (modal === "add") {
-      await supabase.from("people_lifecycle").upsert(payload, { onConflict: "staff_name" });
+      ({ error } = await supabase.from("people_lifecycle").upsert(payload, { onConflict: "staff_name" }));
     } else {
-      await supabase.from("people_lifecycle").update(payload).eq("id", modal);
+      ({ error } = await supabase.from("people_lifecycle").update(payload).eq("id", modal));
     }
-    setBusy(false); setModal(null); silentReload();
+    setBusy(false);
+    if (error) { alert("Couldn't save: " + error.message); return; }
+    setModal(null); silentReload();
   }
 
   async function del(id) {
     if (!confirm("Delete this person's record?")) return;
+    const prevRecords = records;
     setRecords(prev => prev.filter(x => x.id !== id));
-    await supabase.from("people_lifecycle").delete().eq("id", id);
+    const { error } = await supabase.from("people_lifecycle").delete().eq("id", id);
+    if (error) { alert("Couldn't delete: " + error.message); setRecords(prevRecords); }
   }
 
-  // Updates the row in place immediately, then saves in the background — no reload, no flicker.
+  // Updates the row in place immediately, then saves in the background — no reload, no
+  // flicker. If the actual write fails, the optimistic change is reverted and the real error
+  // is shown, instead of silently looking successful and then disappearing on next refresh.
   async function changeStatus(id, status) {
     const patch = { status };
     const rec = records.find(x => x.id === id);
     if (status === "Extended" && !rec?.extension_months) patch.extension_months = 1;
+    const prevRecords = records;
     setRecords(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
-    await supabase.from("people_lifecycle").update(patch).eq("id", id);
+    const { error } = await supabase.from("people_lifecycle").update(patch).eq("id", id);
+    if (error) { alert("Couldn't update status: " + error.message); setRecords(prevRecords); }
   }
 
   // Sets how many extra months (1-3) the current extension covers. Calling this again later
   // (e.g. after the first extension month is up and they're still not confirmed) simply
   // bumps the count so another month gets added — same record, no new status change needed.
   async function setExtensionMonths(r, n) {
+    const prevRecords = records;
     setRecords(prev => prev.map(x => x.id === r.id ? { ...x, extension_months: n } : x));
-    await supabase.from("people_lifecycle").update({ extension_months: n }).eq("id", r.id);
+    const { error } = await supabase.from("people_lifecycle").update({ extension_months: n }).eq("id", r.id);
+    if (error) { alert("Couldn't update: " + error.message); setRecords(prevRecords); }
   }
 
   async function changeKeyDate(id, value) {
+    const prevRecords = records;
     setRecords(prev => prev.map(x => x.id === id ? { ...x, key_date: value } : x));
-    await supabase.from("people_lifecycle").update({ key_date: value }).eq("id", id);
+    const { error } = await supabase.from("people_lifecycle").update({ key_date: value }).eq("id", id);
+    if (error) { alert("Couldn't update date: " + error.message); setRecords(prevRecords); }
   }
 
   async function toggleProbationDone(r, key) {
     const current = r.probation?.[key] || {};
     const updated = { ...r.probation, [key]: { ...current, done: !current.done } };
+    const prevRecords = records;
     setRecords(prev => prev.map(x => x.id === r.id ? { ...x, probation: updated } : x));
-    await supabase.from("people_lifecycle").update({ probation: updated }).eq("id", r.id);
+    const { error } = await supabase.from("people_lifecycle").update({ probation: updated }).eq("id", r.id);
+    if (error) { alert("Couldn't update: " + error.message); setRecords(prevRecords); }
   }
 
   async function setProbationLink(r, key) {
@@ -2799,8 +2814,10 @@ function PeoplePage({ isAdmin, userId }) {
     if (input === null) return; // cancelled
     const url = input.trim() || null;
     const updated = { ...r.probation, [key]: { ...current, url } };
+    const prevRecords = records;
     setRecords(prev => prev.map(x => x.id === r.id ? { ...x, probation: updated } : x));
-    await supabase.from("people_lifecycle").update({ probation: updated }).eq("id", r.id);
+    const { error } = await supabase.from("people_lifecycle").update({ probation: updated }).eq("id", r.id);
+    if (error) { alert("Couldn't update: " + error.message); setRecords(prevRecords); }
   }
 
   function handleFile(e) {
