@@ -3044,9 +3044,7 @@ function PeoplePage({ isAdmin, userId }) {
                         <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${PROBATION_STATUS_COLORS[p.status]}`}>{p.status}</span>
                       </div>
                     ))}
-                    {r.type !== "Internship" && (
-                      <div className="text-xs text-gray-600 pt-1">{r.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
-                    )}
+                    <div className="text-xs text-gray-600 pt-1">{r.type === "Onboarding" ? "Confirmation date" : r.type === "Internship" ? "Internship End Date" : "Last Working Day"}: <span className="text-gray-800">{r.key_date || "—"}</span></div>
                   </div>
                   {r.type === "Onboarding" && (
                     <div className="mt-3 pt-3 border-t border-gray-50">
@@ -3142,15 +3140,14 @@ function PeoplePage({ isAdmin, userId }) {
                   {STATUS_OPTIONS[form.type].map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                 </select>
               </div>
-              <div className={`grid ${form.type === "Internship" ? "grid-cols-2" : "grid-cols-3"} gap-3`}>
+              <div className="grid grid-cols-3 gap-3">
                 <input value={form.month} onChange={e => setForm({ ...form, month: e.target.value })} placeholder="Month (e.g. August)"
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 <input value={form.join_date} onChange={e => setForm({ ...form, join_date: e.target.value })} placeholder="Join date"
                   className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                {form.type !== "Internship" && (
-                  <input value={form.key_date} onChange={e => setForm({ ...form, key_date: e.target.value })} placeholder={form.type === "Onboarding" ? "Confirmation date" : "Last Working Day"}
-                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                )}
+                <input value={form.key_date} onChange={e => setForm({ ...form, key_date: e.target.value })}
+                  placeholder={form.type === "Onboarding" ? "Confirmation date" : form.type === "Internship" ? "Internship End Date" : "Last Working Day"}
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
               </div>
 
               <p className="text-[11px] font-semibold text-gray-400 uppercase pt-2">Document links (URLs)</p>
