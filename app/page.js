@@ -42,6 +42,64 @@ function extractUrls(text) {
 // One draft row for adding a new asset checkout to the currently selected date — supports
 // several people on one item by just typing their names comma-separated.
 const MONTH_NAMES_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// Uploading a second file for a month that already has data was completely REPLACING it
+// (upsert on month_key overwrites the whole JSON blob) — this properly merges instead, by
+// combining the underlying daily rows (deduping on date+name, newest upload wins on an exact
+// overlap) and then re-deriving Late/Short from that merged set, rather than trying to merge
+// pre-computed summaries directly (which risks double-counting).
+function mergeAttendanceData(oldData, newData) {
+  if (!oldData) return newData;
+  const weekOf = (dateStr) => {
+    const day = parseInt(String(dateStr).split("/")[0], 10) || 1;
+    return day <= 7 ? "w1" : day <= 14 ? "w2" : day <= 21 ? "w3" : day <= 28 ? "w4" : "w5";
+  };
+  const dmyKey = (d) => { const [dd, mm, yy] = String(d).split("/").map(Number); return (yy || 0) * 10000 + (mm || 0) * 100 + (dd || 0); };
+
+  const merged = {}; // "date|name" -> row, new upload wins on an exact overlap
+  Object.values(oldData.weekly || {}).flat().forEach(r => { merged[r.date + "|" + r.name] = r; });
+  Object.values(newData.weekly || {}).flat().forEach(r => { merged[r.date + "|" + r.name] = r; });
+  const mergedRows = Object.values(merged);
+
+  const weekly = {};
+  mergedRows.forEach(r => { (weekly[weekOf(r.date)] = weekly[weekOf(r.date)] || []).push(r); });
+  Object.values(weekly).forEach(arr => arr.sort((a, b) => dmyKey(a.date) - dmyKey(b.date)));
+
+  const lT = 9 * 60 + 45;
+  const latC = {}, latD = {}, shC = {}, shD = {};
+  mergedRows.forEach(r => {
+    if (r.ci && r.ci !== "-") {
+      const tm = r.ci.match(/(\d{1,2}):(\d{2})/);
+      if (tm) {
+        const cim = parseInt(tm[1]) * 60 + parseInt(tm[2]);
+        if (cim > lT) { latC[r.name] = (latC[r.name] || 0) + 1; (latD[r.name] = latD[r.name] || []).push({ date: r.date, time: r.ci }); }
+      }
+    }
+    if (r.hrs && r.hrs !== "-") {
+      const hm = r.hrs.match(/(\d+)h\s*(\d+)m/);
+      if (hm) {
+        const th = (parseInt(hm[1]) * 60 + parseInt(hm[2])) / 60;
+        if (th > 0 && th < 7.5) { shC[r.name] = (shC[r.name] || 0) + 1; (shD[r.name] = shD[r.name] || []).push({ date: r.date, ci: r.ci, co: r.co, hrs: r.hrs }); }
+      }
+    }
+  });
+  const dayOf = (pd) => parseInt(String(pd).split("/")[0], 10) || 0;
+  Object.values(latD).forEach(arr => arr.sort((a, b) => dayOf(a.date) - dayOf(b.date)));
+  Object.values(shD).forEach(arr => arr.sort((a, b) => dayOf(a.date) - dayOf(b.date)));
+  const late = Object.entries(latC).map(([n, c]) => ({ name: n, count: c, details: latD[n] || [] })).sort((a, b) => b.count - a.count);
+  const short = Object.entries(shC).map(([n, c]) => ({ name: n, count: c, details: shD[n] || [] })).sort((a, b) => b.count - a.count);
+
+  return { late, short, sle: [], weekly };
+}
+
+async function saveAttendanceMerged(pending, userId) {
+  const { data: existing } = await supabase.from("attendance_records").select("data").eq("month_key", pending.monthKey).single();
+  const mergedData = mergeAttendanceData(existing?.data, pending.data);
+  return supabase.from("attendance_records").upsert(
+    { month_key: pending.monthKey, month_label: pending.monthLabel, data: mergedData, uploaded_by: userId },
+    { onConflict: "month_key" }
+  );
+}
+
 const LEAVE_TYPES = {
   SL: { label: "Sick Leave (SL)", color: "bg-amber-50 text-amber-600", needsRemark: false },
   EL: { label: "Emergency Leave (EL)", color: "bg-indigo-50 text-indigo-600", needsRemark: true },
@@ -2561,7 +2619,7 @@ function AdminPanel({ user, onDataUpdated }) {
 
   async function recordAtt() {
     if (!pendingAtt) return; setRecording(true);
-    await supabase.from("attendance_records").upsert({ month_key: pendingAtt.monthKey, month_label: pendingAtt.monthLabel, data: pendingAtt.data, uploaded_by: user.id }, { onConflict: "month_key" });
+    await saveAttendanceMerged(pendingAtt, user.id);
     setPendingAtt(null); setAttStatus(null); setRecording(false); onDataUpdated();
   }
 
@@ -3327,7 +3385,7 @@ function InlineUpload({ type, onRecorded, userId }) {
       await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries }, uploaded_by: userId });
     } else {
-      await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
+      await saveAttendanceMerged(pending, userId);
     }
     setPending(null); setRecording(false); onRecorded();
   }
@@ -3381,7 +3439,7 @@ function SmallUpload({ type, onRecorded, userId }) {
       await supabase.from("weekly_kpi").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("weekly_kpi").insert({ data: { entries: pending.entries }, uploaded_by: userId });
     } else {
-      await supabase.from("attendance_records").upsert({ month_key: pending.monthKey, month_label: pending.monthLabel, data: pending.data, uploaded_by: userId }, { onConflict: "month_key" });
+      await saveAttendanceMerged(pending, userId);
     }
     setPending(null); setRecording(false); onRecorded();
   }
