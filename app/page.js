@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { parseProductivity, parseAttendanceAuto, parseWeeklyKPI, parsePastedCSV, parsePeopleLifecycle } from "@/lib/parser";
@@ -503,6 +503,7 @@ export default function DashboardPage() {
   const [attMonth, setAttMonth] = useState("");
   const [modal, setModal] = useState(null);
   const [attWeek, setAttWeek] = useState("");
+  const [expandedAttPerson, setExpandedAttPerson] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -1763,8 +1764,90 @@ const COMP_LOGOS = {
             )}
             <div className="overflow-x-auto rounded-lg border border-gray-100">
               <table className="w-full text-sm">
-                {modal === "late" && <><thead><tr className="bg-gray-50"><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>Count</th></tr></thead><tbody>{curAtt.late.map((e, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td><td className={tdC}>{e.name}</td><td className={tdCR + " font-semibold"}>{e.count}</td></tr>)}</tbody></>}
-                {modal === "short" && <><thead><tr className="bg-gray-50"><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>Count</th></tr></thead><tbody>{curAtt.short.map((e, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td><td className={tdC}>{e.name}</td><td className={tdCR + " font-semibold"}>{e.count}</td></tr>)}</tbody></>}
+                {modal === "late" && (
+                  <>
+                    <thead><tr className="bg-gray-50"><th className={thC}></th><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>Count</th></tr></thead>
+                    <tbody>
+                      {curAtt.late.map((e, i) => {
+                        const isOpen = expandedAttPerson === "late|" + e.name;
+                        return (
+                          <Fragment key={i}>
+                            <tr className="border-t border-gray-50 cursor-pointer hover:bg-gray-50" onClick={() => setExpandedAttPerson(isOpen ? null : "late|" + e.name)}>
+                              <td className={tdC + " text-gray-300 w-4"}>{isOpen ? "▾" : "▸"}</td>
+                              <td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td>
+                              <td className={tdC}>{e.name}</td>
+                              <td className={tdCR + " font-semibold"}>{e.count}</td>
+                            </tr>
+                            {isOpen && (
+                              <tr className="border-t border-gray-50 bg-gray-50/50">
+                                <td colSpan={4} className="px-4 py-3">
+                                  <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">When {e.name} clocked in late</p>
+                                  <table className="w-full text-sm">
+                                    <thead><tr className="text-left text-gray-400"><th className="pb-1 pr-4 font-medium">Date</th><th className="pb-1 font-medium">Clocked in at</th></tr></thead>
+                                    <tbody>
+                                      {(e.details || []).map((d, di) => (
+                                        <tr key={di} className="border-t border-gray-100">
+                                          <td className="py-1.5 pr-4 text-gray-600">{d.date}</td>
+                                          <td className="py-1.5 font-medium text-red-500">{d.time}</td>
+                                        </tr>
+                                      ))}
+                                      {(!e.details || e.details.length === 0) && (
+                                        <tr><td colSpan={2} className="py-2 text-gray-300 italic">No per-day detail available for this upload</td></tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </>
+                )}
+                {modal === "short" && (
+                  <>
+                    <thead><tr className="bg-gray-50"><th className={thC}></th><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>Count</th></tr></thead>
+                    <tbody>
+                      {curAtt.short.map((e, i) => {
+                        const isOpen = expandedAttPerson === "short|" + e.name;
+                        return (
+                          <Fragment key={i}>
+                            <tr className="border-t border-gray-50 cursor-pointer hover:bg-gray-50" onClick={() => setExpandedAttPerson(isOpen ? null : "short|" + e.name)}>
+                              <td className={tdC + " text-gray-300 w-4"}>{isOpen ? "▾" : "▸"}</td>
+                              <td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td>
+                              <td className={tdC}>{e.name}</td>
+                              <td className={tdCR + " font-semibold"}>{e.count}</td>
+                            </tr>
+                            {isOpen && (
+                              <tr className="border-t border-gray-50 bg-gray-50/50">
+                                <td colSpan={4} className="px-4 py-3">
+                                  <p className="text-[11px] font-semibold text-gray-400 uppercase mb-2">{e.name}'s short days</p>
+                                  <table className="w-full text-sm">
+                                    <thead><tr className="text-left text-gray-400"><th className="pb-1 pr-4 font-medium">Date</th><th className="pb-1 pr-4 font-medium">Clock In</th><th className="pb-1 pr-4 font-medium">Clock Out</th><th className="pb-1 font-medium">Hours</th></tr></thead>
+                                    <tbody>
+                                      {(e.details || []).map((d, di) => (
+                                        <tr key={di} className="border-t border-gray-100">
+                                          <td className="py-1.5 pr-4 text-gray-600">{d.date}</td>
+                                          <td className="py-1.5 pr-4 text-gray-500">{d.ci}</td>
+                                          <td className="py-1.5 pr-4 text-gray-500">{d.co}</td>
+                                          <td className="py-1.5 font-medium text-amber-600">{d.hrs}</td>
+                                        </tr>
+                                      ))}
+                                      {(!e.details || e.details.length === 0) && (
+                                        <tr><td colSpan={4} className="py-2 text-gray-300 italic">No per-day detail available for this upload</td></tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </>
+                )}
                 {modal === "sle" && <><thead><tr className="bg-gray-50"><th className={thC}>#</th><th className={thC}>Employee</th><th className={thCR}>SL</th><th className={thCR}>EL</th></tr></thead><tbody>{curAtt.sle.map((e, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC + " font-semibold text-gray-300"}>{i + 1}</td><td className={tdC}>{e.name}</td><td className={tdCR + " font-semibold"}>{e.sl}</td><td className={tdCR + " font-semibold"}>{e.el}</td></tr>)}</tbody></>}
                 {modal === "weekly" && <><thead><tr className="bg-gray-50">{["Date","Name","Clock In","Clock Out","Hours","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead><tbody>{(curAtt.weekly[attWeek] || []).map((r, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC}>{r.date}</td><td className={tdC}>{r.name}</td><td className={tdC}>{r.ci}</td><td className={tdC}>{r.co}</td><td className={tdC}>{r.hrs}</td><td className={tdC}>{r.rm && <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}</td></tr>)}</tbody></>}
               </table>
