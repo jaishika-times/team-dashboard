@@ -48,10 +48,10 @@ const LEAVE_TYPES = {
   UL: { label: "Unpaid Leave (UL)", color: "bg-red-50 text-red-500", needsRemark: true },
   RL: { label: "Replacement Leave (RL)", color: "bg-cyan-50 text-cyan-600", needsRemark: true },
   AL: { label: "Annual Leave (AL)", color: "bg-green-50 text-green-600", needsRemark: false },
-  BL: { label: "Birthday Leave (BL)", color: "bg-pink-50 text-pink-600", needsRemark: false },
-  CL: { label: "Compassionate Leave (CL)", color: "bg-purple-50 text-purple-600", needsRemark: false },
-  HL: { label: "Hospitalization Leave (HL)", color: "bg-rose-50 text-rose-600", needsRemark: false },
-  ML: { label: "Maternity Leave (ML)", color: "bg-fuchsia-50 text-fuchsia-600", needsRemark: false },
+  BL: { label: "Birthday Leave (BL)", color: "bg-pink-50 text-pink-600", needsRemark: false, fullDayOnly: true },
+  CL: { label: "Compassionate Leave (CL)", color: "bg-purple-50 text-purple-600", needsRemark: false, fullDayOnly: true },
+  HL: { label: "Hospitalization Leave (HL)", color: "bg-rose-50 text-rose-600", needsRemark: false, fullDayOnly: true },
+  ML: { label: "Maternity Leave (ML)", color: "bg-fuchsia-50 text-fuchsia-600", needsRemark: false, fullDayOnly: true },
 };
 function monthKeyOf(dateStr) { return (dateStr || "").slice(0, 7); } // "YYYY-MM"
 function monthLabel(monthKey) {
@@ -639,9 +639,10 @@ export default function DashboardPage() {
 
   async function saveLeave() {
     if (!leaveForm.person_name.trim() || !leaveForm.date) return;
+    const isFullDayOnly = LEAVE_TYPES[leaveForm.leave_type]?.fullDayOnly;
     await supabase.from("leave_records").upsert({
       person_name: leaveForm.person_name.trim(), date: leaveForm.date,
-      leave_type: leaveForm.leave_type, duration: leaveForm.duration,
+      leave_type: leaveForm.leave_type, duration: isFullDayOnly ? "full" : leaveForm.duration,
       remark: LEAVE_TYPES[leaveForm.leave_type]?.needsRemark ? leaveForm.remark.trim() : null,
       created_by: user.id,
     }, { onConflict: "person_name,date,leave_type" });
@@ -1191,8 +1192,13 @@ const COMP_LOGOS = {
                     <div className="space-y-3">
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Person's name</span>
-                        <input value={leaveForm.person_name} onChange={e => setLeaveForm({ ...leaveForm, person_name: e.target.value })} placeholder="e.g. Marcus"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        <select value={leaveForm.person_name} onChange={e => setLeaveForm({ ...leaveForm, person_name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                          <option value="">Select a person...</option>
+                          {[...employees].sort((a, b) => a.name.localeCompare(b.name)).map(emp => (
+                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+                          ))}
+                        </select>
                       </label>
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Date</span>
@@ -1201,20 +1207,22 @@ const COMP_LOGOS = {
                       </label>
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Type</span>
-                        <select value={leaveForm.leave_type} onChange={e => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                        <select value={leaveForm.leave_type} onChange={e => setLeaveForm({ ...leaveForm, leave_type: e.target.value, duration: LEAVE_TYPES[e.target.value]?.fullDayOnly ? "full" : leaveForm.duration })}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
                           {Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>
                       </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="text-xs text-gray-500">Duration</span>
-                        <select value={leaveForm.duration} onChange={e => setLeaveForm({ ...leaveForm, duration: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-                          <option value="full">Full Day</option>
-                          <option value="half_am">Half Day - AM</option>
-                          <option value="half_pm">Half Day - PM</option>
-                        </select>
-                      </label>
+                      {!LEAVE_TYPES[leaveForm.leave_type]?.fullDayOnly && (
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-gray-500">Duration</span>
+                          <select value={leaveForm.duration} onChange={e => setLeaveForm({ ...leaveForm, duration: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                            <option value="full">Full Day</option>
+                            <option value="half_am">Half Day - AM</option>
+                            <option value="half_pm">Half Day - PM</option>
+                          </select>
+                        </label>
+                      )}
                       {LEAVE_TYPES[leaveForm.leave_type]?.needsRemark && (
                         <label className="flex flex-col gap-1">
                           <span className="text-xs text-gray-500">Remark</span>
