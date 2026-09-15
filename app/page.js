@@ -520,6 +520,9 @@ export default function DashboardPage() {
   const [leaveRecords, setLeaveRecords] = useState([]);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" });
+  const [dayStatusRecords, setDayStatusRecords] = useState([]);
+  const [showDayStatusModal, setShowDayStatusModal] = useState(false);
+  const [dayStatusForm, setDayStatusForm] = useState({ person_name: "", date: "", status_type: "WFH", duration: "full", remark: "" });
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -586,6 +589,8 @@ export default function DashboardPage() {
     if (periodRows) setAssetPeriods(periodRows);
     const { data: leaveRows } = await supabase.from("leave_records").select("*").order("date", { ascending: true });
     if (leaveRows) setLeaveRecords(leaveRows);
+    const { data: dayStatusRows } = await supabase.from("day_status_records").select("*").order("date", { ascending: true });
+    if (dayStatusRows) setDayStatusRecords(dayStatusRows);
     if (empRows) setEmployees(empRows);
 
     // Weekly KPI: merge the live-synced sheets with anything manually uploaded/pasted.
@@ -655,6 +660,32 @@ export default function DashboardPage() {
   async function deleteLeave(id) {
     if (!confirm("Delete this leave entry?")) return;
     await supabase.from("leave_records").delete().eq("id", id);
+    loadData();
+  }
+
+  // Attendance dates are stored as "D/M/YYYY" strings with no leading zeros (e.g. "2/9/2026"),
+  // so plain string sorting is wrong — "10/9/2026" would sort before "2/9/2026". This converts
+  // to a real comparable number (YYYYMMDD).
+  function dmyToSortKey(dateStr) {
+    const [d, m, y] = String(dateStr || "").split("/").map(Number);
+    return (y || 0) * 10000 + (m || 0) * 100 + (d || 0);
+  }
+
+  async function saveDayStatus() {
+    if (!dayStatusForm.person_name.trim() || !dayStatusForm.date) return;
+    await supabase.from("day_status_records").upsert({
+      person_name: dayStatusForm.person_name.trim(), date: dayStatusForm.date,
+      status_type: dayStatusForm.status_type, duration: dayStatusForm.duration,
+      remark: dayStatusForm.remark.trim() || null,
+      created_by: user.id,
+    }, { onConflict: "person_name,date,status_type" });
+    setDayStatusForm({ person_name: "", date: "", status_type: "WFH", duration: "full", remark: "" });
+    setShowDayStatusModal(false);
+    loadData();
+  }
+  async function deleteDayStatus(id) {
+    if (!confirm("Delete this entry?")) return;
+    await supabase.from("day_status_records").delete().eq("id", id);
     loadData();
   }
 
@@ -1164,7 +1195,10 @@ const COMP_LOGOS = {
                       </select>
                     </div>
                     {isAdmin && (
-                      <button onClick={() => setShowLeaveModal(true)} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg">+ Update Leave</button>
+                      <>
+                        <button onClick={() => setShowLeaveModal(true)} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg">+ Update Leave</button>
+                        <button onClick={() => setShowDayStatusModal(true)} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium rounded-lg">+ Update WFH / Work</button>
+                      </>
                     )}
                   </div>
                   {curAtt && (
@@ -1175,7 +1209,7 @@ const COMP_LOGOS = {
                         { label: "Leave", value: sleFromRecords.length || 0, sub: "SL / EL / UL / RL / AL / BL", key: "sle", color: "#6366f1", bg: "bg-indigo-50 border-indigo-100" },
                         { label: "Weekly view", value: Object.keys(curAtt.weekly || {}).length || "--", sub: "Weeks recorded", key: "weekly", color: "#3b82f6", bg: "bg-blue-50 border-blue-100" },
                       ].map(m => (
-                        <div key={m.key} onClick={() => { setModal(m.key); if (m.key === "weekly") setAttWeek(Object.keys(curAtt.weekly)[0] || ""); }}
+                        <div key={m.key} onClick={() => setModal(m.key)}
                           className={`rounded-xl p-4 cursor-pointer border transition-all hover:shadow-sm ${m.bg}`}>
                           <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: m.color }}>{m.label}</p>
                           <p className="text-3xl font-semibold" style={{ color: m.color }}>{m.value}</p>
@@ -1236,6 +1270,57 @@ const COMP_LOGOS = {
                     <div className="flex gap-2 mt-4">
                       <button onClick={saveLeave} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Save</button>
                       <button onClick={() => setShowLeaveModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showDayStatusModal && (
+                <div onClick={() => setShowDayStatusModal(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                  <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[400px] max-w-[95%] shadow-xl">
+                    <h3 className="text-base font-semibold mb-4">Update WFH / Work Related</h3>
+                    <div className="space-y-3">
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Person's name</span>
+                        <select value={dayStatusForm.person_name} onChange={e => setDayStatusForm({ ...dayStatusForm, person_name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                          <option value="">Select a person...</option>
+                          {[...employees].sort((a, b) => a.name.localeCompare(b.name)).map(emp => (
+                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Date</span>
+                        <input type="date" value={dayStatusForm.date} onChange={e => setDayStatusForm({ ...dayStatusForm, date: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Type</span>
+                        <select value={dayStatusForm.status_type} onChange={e => setDayStatusForm({ ...dayStatusForm, status_type: e.target.value, duration: e.target.value === "WORK_RELATED" && dayStatusForm.duration === "full" ? "half_am" : dayStatusForm.duration })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                          <option value="WFH">Work From Home (WFH)</option>
+                          <option value="WORK_RELATED">Work Related (shoot / off-site)</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">{dayStatusForm.status_type === "WORK_RELATED" ? "Time" : "Duration"}</span>
+                        <select value={dayStatusForm.duration} onChange={e => setDayStatusForm({ ...dayStatusForm, duration: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                          {dayStatusForm.status_type !== "WORK_RELATED" && <option value="full">Full Day</option>}
+                          <option value="half_am">AM</option>
+                          <option value="half_pm">PM</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">Remark (optional)</span>
+                        <input value={dayStatusForm.remark} onChange={e => setDayStatusForm({ ...dayStatusForm, remark: e.target.value })} placeholder="e.g. SchoolAdvisor shoot"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      </label>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <button onClick={saveDayStatus} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Save</button>
+                      <button onClick={() => setShowDayStatusModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
                     </div>
                   </div>
                 </div>
@@ -1869,19 +1954,16 @@ const COMP_LOGOS = {
               <button onClick={() => setModal(null)} className="text-xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">&times;</button>
             </div>
             {modal === "weekly" && (() => {
-              const datesInWeek = Array.from(new Set((curAtt.weekly[attWeek] || []).map(r => r.date)));
-              const activeDate = datesInWeek.includes(attDate) ? attDate : datesInWeek[0] || "";
+              const allMonthDates = Array.from(new Set(Object.values(curAtt.weekly).flat().map(r => r.date)))
+                .sort((a, b) => dmyToSortKey(a) - dmyToSortKey(b));
+              const activeDate = allMonthDates.includes(attDate) ? attDate : allMonthDates[allMonthDates.length - 1] || "";
               return (
                 <div className="flex gap-3 items-center mb-3 flex-wrap">
-                  <span className="text-xs text-gray-400">Week:</span>
-                  <select value={attWeek} onChange={e => { setAttWeek(e.target.value); setAttDate(""); }} className="px-2 py-1 border border-gray-200 rounded-lg text-sm">
-                    {Object.keys(curAtt.weekly).map(w => <option key={w} value={w}>{w.replace("w", "Week ")}</option>)}
-                  </select>
-                  {weeklySubView === "daily" && datesInWeek.length > 0 && (
+                  {weeklySubView === "daily" && allMonthDates.length > 0 && (
                     <>
                       <span className="text-xs text-gray-400">Date:</span>
                       <select value={activeDate} onChange={e => setAttDate(e.target.value)} className="px-2 py-1 border border-gray-200 rounded-lg text-sm">
-                        {datesInWeek.map(d => <option key={d} value={d}>{d}</option>)}
+                        {allMonthDates.map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </>
                   )}
@@ -1893,41 +1975,61 @@ const COMP_LOGOS = {
               );
             })()}
             {modal === "weekly" && weeklySubView === "daily" && (() => {
-              const datesInWeek = Array.from(new Set((curAtt.weekly[attWeek] || []).map(r => r.date)));
-              const activeDate = datesInWeek.includes(attDate) ? attDate : datesInWeek[0] || "";
-              const dayRows = (curAtt.weekly[attWeek] || []).filter(r => r.date === activeDate);
+              const allMonthDates = Array.from(new Set(Object.values(curAtt.weekly).flat().map(r => r.date)))
+                .sort((a, b) => dmyToSortKey(a) - dmyToSortKey(b));
+              const activeDate = allMonthDates.includes(attDate) ? attDate : allMonthDates[allMonthDates.length - 1] || "";
+              const [ad, am, ay] = activeDate.split("/").map(Number);
+              const activeDateISO = activeDate ? `${ay}-${String(am).padStart(2, "0")}-${String(ad).padStart(2, "0")}` : "";
+              const dayRows = Object.values(curAtt.weekly).flat().filter(r => r.date === activeDate);
+              const dayLeaves = leaveRecords.filter(r => r.date === activeDateISO);
+              const dayStatuses = dayStatusRecords.filter(r => r.date === activeDateISO);
+              // Some people won't have a punch row at all that day (on leave / WFH the whole
+              // day with nothing to clock) — still show them, with their attendance boxes blank.
+              const allNames = Array.from(new Set([...dayRows.map(r => r.name), ...dayLeaves.map(r => r.person_name), ...dayStatuses.map(r => r.person_name)]));
+              const durLabel = { full: "Full Day", half_am: "AM", half_pm: "PM" };
               return (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
-                  {dayRows.map((r, i) => (
-                    <div key={i} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm">
-                      <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
-                      <div className="p-4">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br from-blue-500 to-cyan-500 shrink-0">{r.name?.[0]}</div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold truncate">{r.name}</p>
-                            <p className="text-[11px] text-gray-400">{r.date}</p>
+                  {allNames.map((name, i) => {
+                    const r = dayRows.find(x => x.name === name);
+                    const leave = dayLeaves.find(x => x.person_name === name);
+                    const wfh = dayStatuses.find(x => x.person_name === name && x.status_type === "WFH");
+                    const workRelated = dayStatuses.find(x => x.person_name === name && x.status_type === "WORK_RELATED");
+                    return (
+                      <div key={i} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm">
+                        <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
+                        <div className="p-4">
+                          <div className="flex items-center gap-3 mb-3 flex-wrap">
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br from-blue-500 to-cyan-500 shrink-0">{name?.[0]}</div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold truncate">{name}</p>
+                              <p className="text-[11px] text-gray-400">{activeDate}</p>
+                            </div>
+                            <div className="ml-auto flex flex-wrap gap-1 justify-end">
+                              {r?.rm && <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}
+                              {leave && <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${LEAVE_TYPES[leave.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>{leave.leave_type} · {durLabel[leave.duration]}</span>}
+                              {wfh && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600">WFH · {durLabel[wfh.duration]}</span>}
+                              {workRelated && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-50 text-orange-600">Work Related · {durLabel[workRelated.duration]}</span>}
+                            </div>
                           </div>
-                          {r.rm && <span className={`ml-auto shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          <div className="bg-gray-50 rounded-lg py-2">
-                            <p className="text-[10px] text-gray-400 uppercase">Clock In</p>
-                            <p className="text-sm font-bold text-gray-800">{r.ci}</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg py-2">
-                            <p className="text-[10px] text-gray-400 uppercase">Clock Out</p>
-                            <p className="text-sm font-bold text-gray-800">{r.co}</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg py-2">
-                            <p className="text-[10px] text-gray-400 uppercase">Hours</p>
-                            <p className="text-sm font-bold text-blue-500">{r.hrs}</p>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="bg-gray-50 rounded-lg py-2">
+                              <p className="text-[10px] text-gray-400 uppercase">Clock In</p>
+                              <p className="text-sm font-bold text-gray-800">{r?.ci || "—"}</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg py-2">
+                              <p className="text-[10px] text-gray-400 uppercase">Clock Out</p>
+                              <p className="text-sm font-bold text-gray-800">{r?.co || "—"}</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg py-2">
+                              <p className="text-[10px] text-gray-400 uppercase">Hours</p>
+                              <p className="text-sm font-bold text-blue-500">{r?.hrs || "—"}</p>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                  {dayRows.length === 0 && <p className="col-span-2 text-center text-gray-300 italic py-8">No entries for this date</p>}
+                    );
+                  })}
+                  {allNames.length === 0 && <p className="col-span-2 text-center text-gray-300 italic py-8">No entries for this date</p>}
                 </div>
               );
             })()}
@@ -2077,20 +2179,30 @@ const COMP_LOGOS = {
             <div className="overflow-x-auto rounded-lg border border-gray-100">
               <table className="w-full text-sm">
                 {(() => {
-                  // Aggregate the same daily rows per person — total hours (parsed from "Xh
-                  // Ym" strings) and days present for the selected week, at a glance instead
-                  // of scrolling through every individual day.
-                  const rows = curAtt.weekly[attWeek] || [];
+                  // Aggregate every daily row for the whole month per person — total hours
+                  // (parsed from "Xh Ym" strings), days present, plus WFH and Work Related day
+                  // counts pulled in from the manual records.
+                  const rows = Object.values(curAtt.weekly).flat();
                   const byPerson = {};
                   rows.forEach(r => {
-                    if (!byPerson[r.name]) byPerson[r.name] = { name: r.name, days: 0, totalMins: 0 };
+                    if (!byPerson[r.name]) byPerson[r.name] = { name: r.name, days: 0, totalMins: 0, wfh: 0, workRelated: 0 };
                     const m = String(r.hrs || "").match(/(\d+)h\s*(\d+)m/);
                     if (m) { byPerson[r.name].totalMins += parseInt(m[1]) * 60 + parseInt(m[2]); byPerson[r.name].days += 1; }
+                  });
+                  const monthDayStatuses = dayStatusRecords.filter(r => {
+                    const d = new Date(r.date + "T00:00:00");
+                    return d.getFullYear() === attYear && d.getMonth() + 1 === attMon;
+                  });
+                  monthDayStatuses.forEach(r => {
+                    if (!byPerson[r.person_name]) byPerson[r.person_name] = { name: r.person_name, days: 0, totalMins: 0, wfh: 0, workRelated: 0 };
+                    const amount = r.duration === "full" ? 1 : 0.5;
+                    if (r.status_type === "WFH") byPerson[r.person_name].wfh += amount;
+                    else byPerson[r.person_name].workRelated += amount;
                   });
                   const summary = Object.values(byPerson).sort((a, b) => b.totalMins - a.totalMins);
                   return (
                     <>
-                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
+                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day","WFH Days","Work Related Days"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
                       <tbody>
                         {summary.map((s, i) => (
                           <tr key={i} className="border-t border-gray-50">
@@ -2098,9 +2210,11 @@ const COMP_LOGOS = {
                             <td className={tdC}>{s.days}</td>
                             <td className={tdC + " font-semibold"}>{Math.floor(s.totalMins / 60)}h {s.totalMins % 60}m</td>
                             <td className={tdC}>{s.days ? (Math.floor(s.totalMins / s.days / 60) + "h " + Math.round((s.totalMins / s.days) % 60) + "m") : "-"}</td>
+                            <td className={tdC}>{s.wfh || "—"}</td>
+                            <td className={tdC}>{s.workRelated || "—"}</td>
                           </tr>
                         ))}
-                        {summary.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-300 italic">No data for this week</td></tr>}
+                        {summary.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
                       </tbody>
                     </>
                   );
