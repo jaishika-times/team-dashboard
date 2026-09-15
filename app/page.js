@@ -514,6 +514,7 @@ export default function DashboardPage() {
   const [attMonth, setAttMonth] = useState("");
   const [modal, setModal] = useState(null);
   const [attWeek, setAttWeek] = useState("");
+  const [weeklySubView, setWeeklySubView] = useState("daily");
   const [expandedAttPerson, setExpandedAttPerson] = useState(null);
   const [leaveRecords, setLeaveRecords] = useState([]);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -1867,11 +1868,15 @@ const COMP_LOGOS = {
               <button onClick={() => setModal(null)} className="text-xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">&times;</button>
             </div>
             {modal === "weekly" && (
-              <div className="flex gap-2 items-center mb-3">
+              <div className="flex gap-3 items-center mb-3 flex-wrap">
                 <span className="text-xs text-gray-400">Week:</span>
                 <select value={attWeek} onChange={e => setAttWeek(e.target.value)} className="px-2 py-1 border border-gray-200 rounded-lg text-sm">
                   {Object.keys(curAtt.weekly).map(w => <option key={w} value={w}>{w.replace("w", "Week ")}</option>)}
                 </select>
+                <div className="flex bg-gray-100 rounded-lg p-0.5 ml-auto">
+                  <button onClick={() => setWeeklySubView("daily")} className={`px-3 py-1 rounded-md text-xs font-medium ${weeklySubView === "daily" ? "bg-white shadow-sm" : "text-gray-500"}`}>Daily</button>
+                  <button onClick={() => setWeeklySubView("summary")} className={`px-3 py-1 rounded-md text-xs font-medium ${weeklySubView === "summary" ? "bg-white shadow-sm" : "text-gray-500"}`}>Summary</button>
+                </div>
               </div>
             )}
             <div className="overflow-x-auto rounded-lg border border-gray-100">
@@ -2012,7 +2017,36 @@ const COMP_LOGOS = {
                     </tbody>
                   </>
                 )}
-                {modal === "weekly" && <><thead><tr className="bg-gray-50">{["Date","Name","Clock In","Clock Out","Hours","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead><tbody>{(curAtt.weekly[attWeek] || []).map((r, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC}>{r.date}</td><td className={tdC}>{r.name}</td><td className={tdC}>{r.ci}</td><td className={tdC}>{r.co}</td><td className={tdC}>{r.hrs}</td><td className={tdC}>{r.rm && <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}</td></tr>)}</tbody></>}
+                {modal === "weekly" && weeklySubView === "daily" && <><thead><tr className="bg-gray-50">{["Date","Name","Clock In","Clock Out","Hours","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead><tbody>{(curAtt.weekly[attWeek] || []).map((r, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC}>{r.date}</td><td className={tdC}>{r.name}</td><td className={tdC}>{r.ci}</td><td className={tdC}>{r.co}</td><td className={tdC}>{r.hrs}</td><td className={tdC}>{r.rm && <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}</td></tr>)}</tbody></>}
+                {modal === "weekly" && weeklySubView === "summary" && (() => {
+                  // Aggregate the same daily rows per person — total hours (parsed from "Xh
+                  // Ym" strings) and days present for the selected week, at a glance instead
+                  // of scrolling through every individual day.
+                  const rows = curAtt.weekly[attWeek] || [];
+                  const byPerson = {};
+                  rows.forEach(r => {
+                    if (!byPerson[r.name]) byPerson[r.name] = { name: r.name, days: 0, totalMins: 0 };
+                    const m = String(r.hrs || "").match(/(\d+)h\s*(\d+)m/);
+                    if (m) { byPerson[r.name].totalMins += parseInt(m[1]) * 60 + parseInt(m[2]); byPerson[r.name].days += 1; }
+                  });
+                  const summary = Object.values(byPerson).sort((a, b) => b.totalMins - a.totalMins);
+                  return (
+                    <>
+                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {summary.map((s, i) => (
+                          <tr key={i} className="border-t border-gray-50">
+                            <td className={tdC + " font-medium"}>{s.name}</td>
+                            <td className={tdC}>{s.days}</td>
+                            <td className={tdC + " font-semibold"}>{Math.floor(s.totalMins / 60)}h {s.totalMins % 60}m</td>
+                            <td className={tdC}>{s.days ? (Math.floor(s.totalMins / s.days / 60) + "h " + Math.round((s.totalMins / s.days) % 60) + "m") : "-"}</td>
+                          </tr>
+                        ))}
+                        {summary.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-300 italic">No data for this week</td></tr>}
+                      </tbody>
+                    </>
+                  );
+                })()}
               </table>
             </div>
           </div>
