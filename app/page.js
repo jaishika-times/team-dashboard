@@ -48,7 +48,10 @@ const LEAVE_TYPES = {
   UL: { label: "Unpaid Leave (UL)", color: "bg-red-50 text-red-500", needsRemark: true },
   RL: { label: "Replacement Leave (RL)", color: "bg-cyan-50 text-cyan-600", needsRemark: true },
   AL: { label: "Annual Leave (AL)", color: "bg-green-50 text-green-600", needsRemark: false },
-  BL: { label: "Bereavement Leave (BL)", color: "bg-slate-100 text-slate-600", needsRemark: false },
+  BL: { label: "Birthday Leave (BL)", color: "bg-pink-50 text-pink-600", needsRemark: false },
+  CL: { label: "Compassionate Leave (CL)", color: "bg-purple-50 text-purple-600", needsRemark: false },
+  HL: { label: "Hospitalization Leave (HL)", color: "bg-rose-50 text-rose-600", needsRemark: false },
+  ML: { label: "Maternity Leave (ML)", color: "bg-fuchsia-50 text-fuchsia-600", needsRemark: false },
 };
 function monthKeyOf(dateStr) { return (dateStr || "").slice(0, 7); } // "YYYY-MM"
 function monthLabel(monthKey) {
