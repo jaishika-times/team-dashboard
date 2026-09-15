@@ -514,6 +514,7 @@ export default function DashboardPage() {
   const [attMonth, setAttMonth] = useState("");
   const [modal, setModal] = useState(null);
   const [attWeek, setAttWeek] = useState("");
+  const [attDate, setAttDate] = useState("");
   const [weeklySubView, setWeeklySubView] = useState("daily");
   const [expandedAttPerson, setExpandedAttPerson] = useState(null);
   const [leaveRecords, setLeaveRecords] = useState([]);
@@ -1867,18 +1868,70 @@ const COMP_LOGOS = {
               </h3>
               <button onClick={() => setModal(null)} className="text-xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">&times;</button>
             </div>
-            {modal === "weekly" && (
-              <div className="flex gap-3 items-center mb-3 flex-wrap">
-                <span className="text-xs text-gray-400">Week:</span>
-                <select value={attWeek} onChange={e => setAttWeek(e.target.value)} className="px-2 py-1 border border-gray-200 rounded-lg text-sm">
-                  {Object.keys(curAtt.weekly).map(w => <option key={w} value={w}>{w.replace("w", "Week ")}</option>)}
-                </select>
-                <div className="flex bg-gray-100 rounded-lg p-0.5 ml-auto">
-                  <button onClick={() => setWeeklySubView("daily")} className={`px-3 py-1 rounded-md text-xs font-medium ${weeklySubView === "daily" ? "bg-white shadow-sm" : "text-gray-500"}`}>Daily</button>
-                  <button onClick={() => setWeeklySubView("summary")} className={`px-3 py-1 rounded-md text-xs font-medium ${weeklySubView === "summary" ? "bg-white shadow-sm" : "text-gray-500"}`}>Summary</button>
+            {modal === "weekly" && (() => {
+              const datesInWeek = Array.from(new Set((curAtt.weekly[attWeek] || []).map(r => r.date)));
+              const activeDate = datesInWeek.includes(attDate) ? attDate : datesInWeek[0] || "";
+              return (
+                <div className="flex gap-3 items-center mb-3 flex-wrap">
+                  <span className="text-xs text-gray-400">Week:</span>
+                  <select value={attWeek} onChange={e => { setAttWeek(e.target.value); setAttDate(""); }} className="px-2 py-1 border border-gray-200 rounded-lg text-sm">
+                    {Object.keys(curAtt.weekly).map(w => <option key={w} value={w}>{w.replace("w", "Week ")}</option>)}
+                  </select>
+                  {weeklySubView === "daily" && datesInWeek.length > 0 && (
+                    <>
+                      <span className="text-xs text-gray-400">Date:</span>
+                      <select value={activeDate} onChange={e => setAttDate(e.target.value)} className="px-2 py-1 border border-gray-200 rounded-lg text-sm">
+                        {datesInWeek.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </>
+                  )}
+                  <div className="flex bg-gray-100 rounded-lg p-0.5 ml-auto">
+                    <button onClick={() => setWeeklySubView("daily")} className={`px-3 py-1 rounded-md text-xs font-medium ${weeklySubView === "daily" ? "bg-white shadow-sm" : "text-gray-500"}`}>Daily</button>
+                    <button onClick={() => setWeeklySubView("summary")} className={`px-3 py-1 rounded-md text-xs font-medium ${weeklySubView === "summary" ? "bg-white shadow-sm" : "text-gray-500"}`}>Summary</button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
+            {modal === "weekly" && weeklySubView === "daily" && (() => {
+              const datesInWeek = Array.from(new Set((curAtt.weekly[attWeek] || []).map(r => r.date)));
+              const activeDate = datesInWeek.includes(attDate) ? attDate : datesInWeek[0] || "";
+              const dayRows = (curAtt.weekly[attWeek] || []).filter(r => r.date === activeDate);
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+                  {dayRows.map((r, i) => (
+                    <div key={i} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm">
+                      <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
+                      <div className="p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br from-blue-500 to-cyan-500 shrink-0">{r.name?.[0]}</div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold truncate">{r.name}</p>
+                            <p className="text-[11px] text-gray-400">{r.date}</p>
+                          </div>
+                          {r.rm && <span className={`ml-auto shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="bg-gray-50 rounded-lg py-2">
+                            <p className="text-[10px] text-gray-400 uppercase">Clock In</p>
+                            <p className="text-sm font-bold text-gray-800">{r.ci}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg py-2">
+                            <p className="text-[10px] text-gray-400 uppercase">Clock Out</p>
+                            <p className="text-sm font-bold text-gray-800">{r.co}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg py-2">
+                            <p className="text-[10px] text-gray-400 uppercase">Hours</p>
+                            <p className="text-sm font-bold text-blue-500">{r.hrs}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {dayRows.length === 0 && <p className="col-span-2 text-center text-gray-300 italic py-8">No entries for this date</p>}
+                </div>
+              );
+            })()}
+            {modal !== "weekly" && (
             <div className="overflow-x-auto rounded-lg border border-gray-100">
               <table className="w-full text-sm">
                 {modal === "late" && (
@@ -2017,8 +2070,13 @@ const COMP_LOGOS = {
                     </tbody>
                   </>
                 )}
-                {modal === "weekly" && weeklySubView === "daily" && <><thead><tr className="bg-gray-50">{["Date","Name","Clock In","Clock Out","Hours","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead><tbody>{(curAtt.weekly[attWeek] || []).map((r, i) => <tr key={i} className="border-t border-gray-50"><td className={tdC}>{r.date}</td><td className={tdC}>{r.name}</td><td className={tdC}>{r.ci}</td><td className={tdC}>{r.co}</td><td className={tdC}>{r.hrs}</td><td className={tdC}>{r.rm && <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}</td></tr>)}</tbody></>}
-                {modal === "weekly" && weeklySubView === "summary" && (() => {
+              </table>
+            </div>
+            )}
+            {modal === "weekly" && weeklySubView === "summary" && (
+            <div className="overflow-x-auto rounded-lg border border-gray-100">
+              <table className="w-full text-sm">
+                {(() => {
                   // Aggregate the same daily rows per person — total hours (parsed from "Xh
                   // Ym" strings) and days present for the selected week, at a glance instead
                   // of scrolling through every individual day.
@@ -2049,6 +2107,7 @@ const COMP_LOGOS = {
                 })()}
               </table>
             </div>
+            )}
           </div>
         </div>
       )}
