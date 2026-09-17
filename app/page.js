@@ -582,9 +582,11 @@ export default function DashboardPage() {
   const [leaveRecords, setLeaveRecords] = useState([]);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" });
+  const [editingLeaveId, setEditingLeaveId] = useState(null);
   const [dayStatusRecords, setDayStatusRecords] = useState([]);
   const [showDayStatusModal, setShowDayStatusModal] = useState(false);
   const [dayStatusForm, setDayStatusForm] = useState({ person_name: "", date: "", status_type: "WFH", duration: "full", remark: "" });
+  const [editingDayStatusId, setEditingDayStatusId] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -728,19 +730,37 @@ export default function DashboardPage() {
   async function saveLeave() {
     if (!leaveForm.person_name.trim() || !leaveForm.date) return;
     const isFullDayOnly = LEAVE_TYPES[leaveForm.leave_type]?.fullDayOnly;
-    const { error } = await supabase.from("leave_records").upsert({
+    const payload = {
       person_name: leaveForm.person_name.trim(), date: leaveForm.date,
       leave_type: leaveForm.leave_type, duration: isFullDayOnly ? "full" : leaveForm.duration,
       remark: LEAVE_TYPES[leaveForm.leave_type]?.needsRemark ? leaveForm.remark.trim() : null,
-      created_by: user.id,
-    }, { onConflict: "person_name,date,leave_type" });
+    };
+    // Editing an existing entry updates that exact row by id, so changing its date or leave
+    // type doesn't collide with (or silently overwrite) some other unrelated entry that
+    // happens to share the new person/date/type combo — a plain upsert can't tell "this is
+    // the same entry, moved" from "this is a different entry that happens to land on the
+    // same day", so it has to go through id once one is being edited.
+    const { error } = editingLeaveId
+      ? await supabase.from("leave_records").update(payload).eq("id", editingLeaveId)
+      : await supabase.from("leave_records").upsert({ ...payload, created_by: user.id }, { onConflict: "person_name,date,leave_type" });
     // Silent failures here (a bad RLS policy, a constraint mismatch) previously looked
     // exactly like a successful save — the modal closed and nothing told you it didn't
     // actually land, which is why the Leave stat could look "stuck".
     if (error) { alert("Couldn't save leave: " + error.message); return; }
     setLeaveForm({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" });
+    setEditingLeaveId(null);
     setShowLeaveModal(false);
     loadData();
+  }
+  function editLeave(r) {
+    setLeaveForm({ person_name: r.person_name, date: r.date, leave_type: r.leave_type, duration: r.duration, remark: r.remark || "" });
+    setEditingLeaveId(r.id);
+    setShowLeaveModal(true);
+  }
+  function closeLeaveModal() {
+    setShowLeaveModal(false);
+    setEditingLeaveId(null);
+    setLeaveForm({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" });
   }
   async function deleteLeave(id) {
     if (!confirm("Delete this leave entry?")) return;
@@ -766,16 +786,29 @@ export default function DashboardPage() {
 
   async function saveDayStatus() {
     if (!dayStatusForm.person_name.trim() || !dayStatusForm.date) return;
-    const { error } = await supabase.from("day_status_records").upsert({
+    const payload = {
       person_name: dayStatusForm.person_name.trim(), date: dayStatusForm.date,
       status_type: dayStatusForm.status_type, duration: dayStatusForm.duration,
       remark: dayStatusForm.remark.trim() || null,
-      created_by: user.id,
-    }, { onConflict: "person_name,date,status_type" });
+    };
+    const { error } = editingDayStatusId
+      ? await supabase.from("day_status_records").update(payload).eq("id", editingDayStatusId)
+      : await supabase.from("day_status_records").upsert({ ...payload, created_by: user.id }, { onConflict: "person_name,date,status_type" });
     if (error) { alert("Couldn't save: " + error.message); return; }
     setDayStatusForm({ person_name: "", date: "", status_type: "WFH", duration: "full", remark: "" });
+    setEditingDayStatusId(null);
     setShowDayStatusModal(false);
     loadData();
+  }
+  function editDayStatus(r) {
+    setDayStatusForm({ person_name: r.person_name, date: r.date, status_type: r.status_type, duration: r.duration, remark: r.remark || "" });
+    setEditingDayStatusId(r.id);
+    setShowDayStatusModal(true);
+  }
+  function closeDayStatusModal() {
+    setShowDayStatusModal(false);
+    setEditingDayStatusId(null);
+    setDayStatusForm({ person_name: "", date: "", status_type: "WFH", duration: "full", remark: "" });
   }
   async function deleteDayStatus(id) {
     if (!confirm("Delete this entry?")) return;
@@ -1291,8 +1324,8 @@ const COMP_LOGOS = {
                     </div>
                     {isAdmin && (
                       <>
-                        <button onClick={() => setShowLeaveModal(true)} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg">+ Update Leave</button>
-                        <button onClick={() => setShowDayStatusModal(true)} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium rounded-lg">+ Update WFH / Work</button>
+                        <button onClick={() => { setEditingLeaveId(null); setLeaveForm({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" }); setShowLeaveModal(true); }} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg">+ Update Leave</button>
+                        <button onClick={() => { setEditingDayStatusId(null); setDayStatusForm({ person_name: "", date: "", status_type: "WFH", duration: "full", remark: "" }); setShowDayStatusModal(true); }} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium rounded-lg">+ Update WFH / Work</button>
                       </>
                     )}
                   </div>
@@ -1317,9 +1350,9 @@ const COMP_LOGOS = {
               ) : isAdmin ? <InlineUpload type="att" onRecorded={loadData} userId={user.id} /> : <EmptyState icon="📅" text="No data yet" />}
 
               {showLeaveModal && (
-                <div onClick={() => setShowLeaveModal(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                <div onClick={closeLeaveModal} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
                   <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[400px] max-w-[95%] shadow-xl">
-                    <h3 className="text-base font-semibold mb-4">Update Leave</h3>
+                    <h3 className="text-base font-semibold mb-4">{editingLeaveId ? "Edit Leave" : "Update Leave"}</h3>
                     <div className="space-y-3">
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Person's name</span>
@@ -1363,17 +1396,26 @@ const COMP_LOGOS = {
                       )}
                     </div>
                     <div className="flex gap-2 mt-4">
-                      <button onClick={saveLeave} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Save</button>
-                      <button onClick={() => setShowLeaveModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      <button onClick={saveLeave} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">{editingLeaveId ? "Save changes" : "Save"}</button>
+                      <button onClick={closeLeaveModal} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      {editingLeaveId && (
+                        <button onClick={async () => {
+                          if (!confirm("Delete this leave entry?")) return;
+                          const { error } = await supabase.from("leave_records").delete().eq("id", editingLeaveId);
+                          if (error) { alert("Couldn't delete: " + error.message); return; }
+                          closeLeaveModal();
+                          loadData();
+                        }} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Delete</button>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
               {showDayStatusModal && (
-                <div onClick={() => setShowDayStatusModal(false)} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+                <div onClick={closeDayStatusModal} className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
                   <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 w-[400px] max-w-[95%] shadow-xl">
-                    <h3 className="text-base font-semibold mb-4">Update WFH / Work Related</h3>
+                    <h3 className="text-base font-semibold mb-4">{editingDayStatusId ? "Edit WFH / Work Related" : "Update WFH / Work Related"}</h3>
                     <div className="space-y-3">
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Person's name</span>
@@ -1414,8 +1456,17 @@ const COMP_LOGOS = {
                       </label>
                     </div>
                     <div className="flex gap-2 mt-4">
-                      <button onClick={saveDayStatus} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">Save</button>
-                      <button onClick={() => setShowDayStatusModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      <button onClick={saveDayStatus} className="flex-1 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg">{editingDayStatusId ? "Save changes" : "Save"}</button>
+                      <button onClick={closeDayStatusModal} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                      {editingDayStatusId && (
+                        <button onClick={async () => {
+                          if (!confirm("Delete this entry?")) return;
+                          const { error } = await supabase.from("day_status_records").delete().eq("id", editingDayStatusId);
+                          if (error) { alert("Couldn't delete: " + error.message); return; }
+                          closeDayStatusModal();
+                          loadData();
+                        }} className="px-4 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">Delete</button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2140,9 +2191,28 @@ const COMP_LOGOS = {
                             </div>
                             <div className="ml-auto flex flex-wrap gap-1 justify-end">
                               {r?.rm && <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}
-                              {leave && <span title={leave.remark || undefined} className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${LEAVE_TYPES[leave.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>{leave.leave_type} · {durLabel[leave.duration]}</span>}
-                              {wfh && <span title={wfh.remark || undefined} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600">WFH · {durLabel[wfh.duration]}</span>}
-                              {workRelated && <span title={workRelated.remark || undefined} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-50 text-orange-600">Work Related · {durLabel[workRelated.duration]}</span>}
+                              {/* Admins can click straight into edit from the badge itself — this
+                                  is the only place people actually look at a leave/WFH/Work Related
+                                  entry after saving it, so it's also the most natural place to fix
+                                  or remove one instead of having to hunt for it in another tab. */}
+                              {leave && (
+                                <span title={leave.remark || undefined} className={`inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full ${LEAVE_TYPES[leave.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>
+                                  {isAdmin ? <button onClick={() => editLeave(leave)} className="hover:underline">{leave.leave_type} · {durLabel[leave.duration]}</button> : <>{leave.leave_type} · {durLabel[leave.duration]}</>}
+                                  {isAdmin && <button onClick={() => deleteLeave(leave.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>}
+                                </span>
+                              )}
+                              {wfh && (
+                                <span title={wfh.remark || undefined} className="inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full bg-cyan-50 text-cyan-600">
+                                  {isAdmin ? <button onClick={() => editDayStatus(wfh)} className="hover:underline">WFH · {durLabel[wfh.duration]}</button> : <>WFH · {durLabel[wfh.duration]}</>}
+                                  {isAdmin && <button onClick={() => deleteDayStatus(wfh.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>}
+                                </span>
+                              )}
+                              {workRelated && (
+                                <span title={workRelated.remark || undefined} className="inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full bg-orange-50 text-orange-600">
+                                  {isAdmin ? <button onClick={() => editDayStatus(workRelated)} className="hover:underline">Work Related · {durLabel[workRelated.duration]}</button> : <>Work Related · {durLabel[workRelated.duration]}</>}
+                                  {isAdmin && <button onClick={() => deleteDayStatus(workRelated.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>}
+                                </span>
+                              )}
                               {!leave && !wfh && !workRelated && !r && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">No record</span>}
                             </div>
                           </div>
@@ -2297,7 +2367,7 @@ const COMP_LOGOS = {
                                           <td className="py-1.5 pr-4"><span className={`font-medium px-2 py-0.5 rounded-full text-xs ${LEAVE_TYPES[d.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>{d.leave_type}</span></td>
                                           <td className="py-1.5 pr-4 text-gray-500">{durLabel[d.duration] || d.duration}</td>
                                           <td className="py-1.5 pr-4 text-gray-500">{d.remark || "—"}</td>
-                                          <td className="py-1.5 text-right">{isAdmin && <button onClick={() => deleteLeave(d.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button>}</td>
+                                          <td className="py-1.5 text-right whitespace-nowrap">{isAdmin && <><button onClick={() => editLeave(d)} className="text-gray-300 hover:text-gray-600 text-xs mr-2">✎</button><button onClick={() => deleteLeave(d.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button></>}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -2345,13 +2415,13 @@ const COMP_LOGOS = {
                   });
                   monthLeaves.forEach(r => {
                     const e = ensure(isoToDMY(r.date), r.person_name);
-                    e.tags.push({ text: `${r.leave_type} · ${durLabel[r.duration]}`, color: LEAVE_TYPES[r.leave_type]?.color || "bg-gray-100 text-gray-500" });
+                    e.tags.push({ text: `${r.leave_type} · ${durLabel[r.duration]}`, color: LEAVE_TYPES[r.leave_type]?.color || "bg-gray-100 text-gray-500", kind: "leave", record: r });
                     if (r.remark) e.remarks.push(r.remark);
                   });
                   monthDayStatuses.forEach(r => {
                     const e = ensure(isoToDMY(r.date), r.person_name);
                     const isWfh = r.status_type === "WFH";
-                    e.tags.push({ text: `${isWfh ? "WFH" : "Work Related"} · ${durLabel[r.duration]}`, color: isWfh ? "bg-cyan-50 text-cyan-600" : "bg-orange-50 text-orange-600" });
+                    e.tags.push({ text: `${isWfh ? "WFH" : "Work Related"} · ${durLabel[r.duration]}`, color: isWfh ? "bg-cyan-50 text-cyan-600" : "bg-orange-50 text-orange-600", kind: "daystatus", record: r });
                     if (r.remark) e.remarks.push(r.remark);
                   });
                   const entries = Object.values(byKey).sort((a, b) => dmyToSortKey(a.date) - dmyToSortKey(b.date) || a.name.localeCompare(b.name));
@@ -2367,7 +2437,16 @@ const COMP_LOGOS = {
                               <td className={tdC + " font-medium"}>{e.name}</td>
                               <td className={tdC}>
                                 <div className="flex flex-wrap gap-1 items-center">
-                                  {e.tags.map((t, ti) => <span key={ti} className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${t.color}`}>{t.text}</span>)}
+                                  {e.tags.map((t, ti) => (
+                                    <span key={ti} className={`inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full ${t.color}`}>
+                                      {isAdmin ? (
+                                        <button onClick={() => t.kind === "leave" ? editLeave(t.record) : editDayStatus(t.record)} className="hover:underline">{t.text}</button>
+                                      ) : t.text}
+                                      {isAdmin && (
+                                        <button onClick={() => t.kind === "leave" ? deleteLeave(t.record.id) : deleteDayStatus(t.record.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>
+                                      )}
+                                    </span>
+                                  ))}
                                   {e.present && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Present{e.hrs ? ` · ${e.hrs}` : ""}</span>}
                                   {!e.tags.length && !e.present && <span className="text-gray-300">—</span>}
                                 </div>
