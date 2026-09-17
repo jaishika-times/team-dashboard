@@ -1401,7 +1401,11 @@ const COMP_LOGOS = {
               if (e.month) { monthsSet.add(e.month); if (!weeksPerMonth[e.month]) weeksPerMonth[e.month] = new Set(); }
               if (e.month && e.week) weeksPerMonth[e.month].add(e.week);
             });
-            const MONTH_SORT_ORDER = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            // Months here are already normalized to 3-letter form ("Jan".."Dec") by normMonth
+            // above — this list has to match that exact form, or indexOf() never finds a hit
+            // and the whole sort silently becomes a no-op (the real bug: dropdown order was
+            // just Set-insertion/data-arrival order). Verified against normMonth's own map.
+            const MONTH_SORT_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
             const months = Array.from(monthsSet).sort((a, b) => MONTH_SORT_ORDER.indexOf(a) - MONTH_SORT_ORDER.indexOf(b));
             const curMonth = kpiPeriod.split("|")[0] || months[months.length - 1] || "";
             const weeksForMonth = Array.from(weeksPerMonth[curMonth] || []).sort((a,b) => parseInt(a) - parseInt(b));
