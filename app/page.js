@@ -2080,8 +2080,27 @@ const COMP_LOGOS = {
               const dayStatuses = dayStatusRecords.filter(r => r.date === activeDateISO);
               // Some people won't have a punch row at all that day (on leave / WFH the whole
               // day with nothing to clock) — still show them, with their attendance boxes blank.
-              const allNames = Array.from(new Set([...dayRows.map(r => r.name), ...dayLeaves.map(r => r.person_name), ...dayStatuses.map(r => r.person_name)]));
+              // Sorted alphabetically (not Set-insertion order) so the same name always lands
+              // in the same spot and the grid reads like a roster, not a shuffled list.
+              const allNames = Array.from(new Set([...dayRows.map(r => r.name), ...dayLeaves.map(r => r.person_name), ...dayStatuses.map(r => r.person_name)]))
+                .sort((a, b) => a.localeCompare(b));
               const durLabel = { full: "Full Day", half_am: "AM", half_pm: "PM" };
+              // One accent color per day so the card is scannable at a glance without reading
+              // every badge — leave takes priority over WFH/Work Related, which takes priority
+              // over an ordinary present day, which takes priority over no record at all.
+              const statusAccent = (leave, wfh, workRelated, r) => {
+                if (leave) return "from-amber-500 to-orange-400";
+                if (wfh || workRelated) return "from-cyan-500 to-blue-400";
+                if (r) return "from-emerald-500 to-green-400";
+                return "from-gray-300 to-gray-200";
+              };
+              const remarkLine = (leave, wfh, workRelated) => {
+                const parts = [];
+                if (leave?.remark) parts.push(leave.remark);
+                if (wfh?.remark) parts.push(wfh.remark);
+                if (workRelated?.remark) parts.push(workRelated.remark);
+                return parts.join(" · ");
+              };
               return (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
                   {allNames.map((name, i) => {
@@ -2089,9 +2108,10 @@ const COMP_LOGOS = {
                     const leave = dayLeaves.find(x => x.person_name === name);
                     const wfh = dayStatuses.find(x => x.person_name === name && x.status_type === "WFH");
                     const workRelated = dayStatuses.find(x => x.person_name === name && x.status_type === "WORK_RELATED");
+                    const remark = remarkLine(leave, wfh, workRelated);
                     return (
                       <div key={i} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm">
-                        <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
+                        <div className={`h-1 bg-gradient-to-r ${statusAccent(leave, wfh, workRelated, r)}`} />
                         <div className="p-4">
                           <div className="flex items-center gap-3 mb-3 flex-wrap">
                             <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br from-blue-500 to-cyan-500 shrink-0">{name?.[0]}</div>
@@ -2101,9 +2121,10 @@ const COMP_LOGOS = {
                             </div>
                             <div className="ml-auto flex flex-wrap gap-1 justify-end">
                               {r?.rm && <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${r.rm.toUpperCase().includes("WFH") ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-500"}`}>{r.rm}</span>}
-                              {leave && <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${LEAVE_TYPES[leave.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>{leave.leave_type} · {durLabel[leave.duration]}</span>}
-                              {wfh && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600">WFH · {durLabel[wfh.duration]}</span>}
-                              {workRelated && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-50 text-orange-600">Work Related · {durLabel[workRelated.duration]}</span>}
+                              {leave && <span title={leave.remark || undefined} className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${LEAVE_TYPES[leave.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>{leave.leave_type} · {durLabel[leave.duration]}</span>}
+                              {wfh && <span title={wfh.remark || undefined} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600">WFH · {durLabel[wfh.duration]}</span>}
+                              {workRelated && <span title={workRelated.remark || undefined} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-50 text-orange-600">Work Related · {durLabel[workRelated.duration]}</span>}
+                              {!leave && !wfh && !workRelated && !r && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">No record</span>}
                             </div>
                           </div>
                           <div className="grid grid-cols-3 gap-2 text-center">
@@ -2120,6 +2141,13 @@ const COMP_LOGOS = {
                               <p className="text-sm font-bold text-blue-500">{r?.hrs || "—"}</p>
                             </div>
                           </div>
+                          {/* The remark entered when Leave / WFH / Work Related was saved wasn't
+                              shown anywhere on this card before — only the type + duration badge —
+                              so a reason like "SchoolAdvisor shoot" was invisible unless you opened
+                              the edit modal again. Now it's printed directly under the boxes. */}
+                          {remark && (
+                            <p className="text-[11px] text-gray-400 mt-2 truncate" title={remark}>📝 {remark}</p>
+                          )}
                         </div>
                       </div>
                     );
@@ -2282,7 +2310,7 @@ const COMP_LOGOS = {
                   // wouldn't appear in this summary at all — folding leave in fixes both.
                   const rows = Object.values(curAtt.weekly).flat();
                   const byPerson = {};
-                  const blank = name => ({ name, days: 0, totalMins: 0, wfh: 0, workRelated: 0, leave: 0 });
+                  const blank = name => ({ name, days: 0, totalMins: 0, wfh: 0, workRelated: 0, leave: 0, remarks: [] });
                   rows.forEach(r => {
                     if (!byPerson[r.name]) byPerson[r.name] = blank(r.name);
                     const m = String(r.hrs || "").match(/(\d+)h\s*(\d+)m/);
@@ -2297,6 +2325,7 @@ const COMP_LOGOS = {
                     const amount = r.duration === "full" ? 1 : 0.5;
                     if (r.status_type === "WFH") byPerson[r.person_name].wfh += amount;
                     else byPerson[r.person_name].workRelated += amount;
+                    if (r.remark) byPerson[r.person_name].remarks.push(r.remark);
                   });
                   // monthLeaves is the same leave_records-for-this-month filter already
                   // computed above (used by the Leave stat card) - reused here so both stay
@@ -2304,13 +2333,16 @@ const COMP_LOGOS = {
                   monthLeaves.forEach(r => {
                     if (!byPerson[r.person_name]) byPerson[r.person_name] = blank(r.person_name);
                     byPerson[r.person_name].leave += r.duration === "full" ? 1 : 0.5;
+                    if (r.remark) byPerson[r.person_name].remarks.push(r.remark);
                   });
                   const summary = Object.values(byPerson).sort((a, b) => b.totalMins - a.totalMins);
                   return (
                     <>
-                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day","Leave Days","WFH Days","Work Related Days"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
+                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day","Leave Days","WFH Days","Work Related Days","Remarks"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
                       <tbody>
-                        {summary.map((s, i) => (
+                        {summary.map((s, i) => {
+                          const remarkText = s.remarks.join(" · ");
+                          return (
                           <tr key={i} className="border-t border-gray-50">
                             <td className={tdC + " font-medium"}>{s.name}</td>
                             <td className={tdC}>{s.days}</td>
@@ -2319,9 +2351,11 @@ const COMP_LOGOS = {
                             <td className={tdC}>{s.leave || "—"}</td>
                             <td className={tdC}>{s.wfh || "—"}</td>
                             <td className={tdC}>{s.workRelated || "—"}</td>
+                            <td className={tdC + " text-gray-400 max-w-[220px] truncate"} title={remarkText || undefined}>{remarkText || "—"}</td>
                           </tr>
-                        ))}
-                        {summary.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
+                          );
+                        })}
+                        {summary.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
                       </tbody>
                     </>
                   );
