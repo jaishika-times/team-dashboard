@@ -698,9 +698,12 @@ export default function DashboardPage() {
   // not the Overview/People roster (Overview may be missing people, or spell a name
   // differently) — pulled from every uploaded month, not just the one currently in view, so
   // someone can be logged even if the visible month has no punch row for them yet.
+  // "Rajah 2" is a duplicate biometric-device enrollment for the same person, not a second
+  // real employee — excluded from the picker so it can't be selected by mistake.
+  const ATTENDANCE_NAME_EXCLUDE = new Set(["rajah 2"]);
   const attendanceNames = Array.from(new Set(
     Object.values(attData).flatMap(m => Object.values(m?.weekly || {}).flat().map(r => r.name))
-  )).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  )).filter(Boolean).filter(n => !ATTENDANCE_NAME_EXCLUDE.has(n.trim().toLowerCase())).sort((a, b) => a.localeCompare(b));
 
   // Leave never actually comes from the uploaded file — a raw punch export has no leave-type
   // information at all, so this is tracked manually instead, keyed by person + date. Filtered
