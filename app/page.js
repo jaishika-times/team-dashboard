@@ -676,7 +676,16 @@ export default function DashboardPage() {
     setKpiData({ entries: Array.from(mergedKpi.values()) });
 
     const { data: attRows } = await supabase.from("attendance_records").select("*").order("month_key", { ascending: false });
-    if (attRows?.length) { setAttIndex(attRows.map(r => ({ key: r.month_key, label: r.month_label }))); const map = {}; attRows.forEach(r => { map[r.month_key] = r.data; }); setAttData(map); setAttMonth(attRows[0].month_key); }
+    if (attRows?.length) {
+      setAttIndex(attRows.map(r => ({ key: r.month_key, label: r.month_label })));
+      const map = {}; attRows.forEach(r => { map[r.month_key] = r.data; }); setAttData(map);
+      // loadData() re-runs after every save (leave, WFH, upload, etc), not just on first
+      // load — defaulting to the newest month every single time was yanking whichever
+      // month an admin was actually looking at back to the latest one right after they
+      // saved something in an older month, making the save look like it hadn't happened.
+      // Keep the current selection if it's still valid; only default on first load.
+      setAttMonth(prev => (prev && map[prev]) ? prev : attRows[0].month_key);
+    }
   }
 
   async function logout() { await supabase.auth.signOut(); router.push("/login"); }
@@ -685,6 +694,13 @@ export default function DashboardPage() {
 
   const isAdmin = profile?.role === "admin";
   const curAtt = attData[attMonth];
+  // Person pickers for Leave / WFH / Work Related must follow the actual attendance sheet,
+  // not the Overview/People roster (Overview may be missing people, or spell a name
+  // differently) — pulled from every uploaded month, not just the one currently in view, so
+  // someone can be logged even if the visible month has no punch row for them yet.
+  const attendanceNames = Array.from(new Set(
+    Object.values(attData).flatMap(m => Object.values(m?.weekly || {}).flat().map(r => r.name))
+  )).filter(Boolean).sort((a, b) => a.localeCompare(b));
 
   // Leave never actually comes from the uploaded file — a raw punch export has no leave-type
   // information at all, so this is tracked manually instead, keyed by person + date. Filtered
@@ -709,19 +725,24 @@ export default function DashboardPage() {
   async function saveLeave() {
     if (!leaveForm.person_name.trim() || !leaveForm.date) return;
     const isFullDayOnly = LEAVE_TYPES[leaveForm.leave_type]?.fullDayOnly;
-    await supabase.from("leave_records").upsert({
+    const { error } = await supabase.from("leave_records").upsert({
       person_name: leaveForm.person_name.trim(), date: leaveForm.date,
       leave_type: leaveForm.leave_type, duration: isFullDayOnly ? "full" : leaveForm.duration,
       remark: LEAVE_TYPES[leaveForm.leave_type]?.needsRemark ? leaveForm.remark.trim() : null,
       created_by: user.id,
     }, { onConflict: "person_name,date,leave_type" });
+    // Silent failures here (a bad RLS policy, a constraint mismatch) previously looked
+    // exactly like a successful save — the modal closed and nothing told you it didn't
+    // actually land, which is why the Leave stat could look "stuck".
+    if (error) { alert("Couldn't save leave: " + error.message); return; }
     setLeaveForm({ person_name: "", date: "", leave_type: "SL", duration: "full", remark: "" });
     setShowLeaveModal(false);
     loadData();
   }
   async function deleteLeave(id) {
     if (!confirm("Delete this leave entry?")) return;
-    await supabase.from("leave_records").delete().eq("id", id);
+    const { error } = await supabase.from("leave_records").delete().eq("id", id);
+    if (error) { alert("Couldn't delete: " + error.message); return; }
     loadData();
   }
 
@@ -735,19 +756,21 @@ export default function DashboardPage() {
 
   async function saveDayStatus() {
     if (!dayStatusForm.person_name.trim() || !dayStatusForm.date) return;
-    await supabase.from("day_status_records").upsert({
+    const { error } = await supabase.from("day_status_records").upsert({
       person_name: dayStatusForm.person_name.trim(), date: dayStatusForm.date,
       status_type: dayStatusForm.status_type, duration: dayStatusForm.duration,
       remark: dayStatusForm.remark.trim() || null,
       created_by: user.id,
     }, { onConflict: "person_name,date,status_type" });
+    if (error) { alert("Couldn't save: " + error.message); return; }
     setDayStatusForm({ person_name: "", date: "", status_type: "WFH", duration: "full", remark: "" });
     setShowDayStatusModal(false);
     loadData();
   }
   async function deleteDayStatus(id) {
     if (!confirm("Delete this entry?")) return;
-    await supabase.from("day_status_records").delete().eq("id", id);
+    const { error } = await supabase.from("day_status_records").delete().eq("id", id);
+    if (error) { alert("Couldn't delete: " + error.message); return; }
     loadData();
   }
 
@@ -1293,8 +1316,8 @@ const COMP_LOGOS = {
                         <select value={leaveForm.person_name} onChange={e => setLeaveForm({ ...leaveForm, person_name: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
                           <option value="">Select a person...</option>
-                          {[...employees].sort((a, b) => a.name.localeCompare(b.name)).map(emp => (
-                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+                          {attendanceNames.map(name => (
+                            <option key={name} value={name}>{name}</option>
                           ))}
                         </select>
                       </label>
@@ -1347,8 +1370,8 @@ const COMP_LOGOS = {
                         <select value={dayStatusForm.person_name} onChange={e => setDayStatusForm({ ...dayStatusForm, person_name: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
                           <option value="">Select a person...</option>
-                          {[...employees].sort((a, b) => a.name.localeCompare(b.name)).map(emp => (
-                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+                          {attendanceNames.map(name => (
+                            <option key={name} value={name}>{name}</option>
                           ))}
                         </select>
                       </label>
@@ -2249,12 +2272,16 @@ const COMP_LOGOS = {
               <table className="w-full text-sm">
                 {(() => {
                   // Aggregate every daily row for the whole month per person — total hours
-                  // (parsed from "Xh Ym" strings), days present, plus WFH and Work Related day
-                  // counts pulled in from the manual records.
+                  // (parsed from "Xh Ym" strings), days present, plus WFH, Work Related, and
+                  // Leave day counts pulled in from the manual records. Leave was previously
+                  // missing here entirely (only WFH/Work Related showed), and a person on
+                  // leave the whole month with no punches and no WFH/Work Related entry
+                  // wouldn't appear in this summary at all — folding leave in fixes both.
                   const rows = Object.values(curAtt.weekly).flat();
                   const byPerson = {};
+                  const blank = name => ({ name, days: 0, totalMins: 0, wfh: 0, workRelated: 0, leave: 0 });
                   rows.forEach(r => {
-                    if (!byPerson[r.name]) byPerson[r.name] = { name: r.name, days: 0, totalMins: 0, wfh: 0, workRelated: 0 };
+                    if (!byPerson[r.name]) byPerson[r.name] = blank(r.name);
                     const m = String(r.hrs || "").match(/(\d+)h\s*(\d+)m/);
                     if (m) { byPerson[r.name].totalMins += parseInt(m[1]) * 60 + parseInt(m[2]); byPerson[r.name].days += 1; }
                   });
@@ -2263,15 +2290,22 @@ const COMP_LOGOS = {
                     return d.getFullYear() === attYear && d.getMonth() + 1 === attMon;
                   });
                   monthDayStatuses.forEach(r => {
-                    if (!byPerson[r.person_name]) byPerson[r.person_name] = { name: r.person_name, days: 0, totalMins: 0, wfh: 0, workRelated: 0 };
+                    if (!byPerson[r.person_name]) byPerson[r.person_name] = blank(r.person_name);
                     const amount = r.duration === "full" ? 1 : 0.5;
                     if (r.status_type === "WFH") byPerson[r.person_name].wfh += amount;
                     else byPerson[r.person_name].workRelated += amount;
                   });
+                  // monthLeaves is the same leave_records-for-this-month filter already
+                  // computed above (used by the Leave stat card) - reused here so both stay
+                  // in sync rather than duplicating the filter logic.
+                  monthLeaves.forEach(r => {
+                    if (!byPerson[r.person_name]) byPerson[r.person_name] = blank(r.person_name);
+                    byPerson[r.person_name].leave += r.duration === "full" ? 1 : 0.5;
+                  });
                   const summary = Object.values(byPerson).sort((a, b) => b.totalMins - a.totalMins);
                   return (
                     <>
-                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day","WFH Days","Work Related Days"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
+                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day","Leave Days","WFH Days","Work Related Days"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
                       <tbody>
                         {summary.map((s, i) => (
                           <tr key={i} className="border-t border-gray-50">
@@ -2279,11 +2313,12 @@ const COMP_LOGOS = {
                             <td className={tdC}>{s.days}</td>
                             <td className={tdC + " font-semibold"}>{Math.floor(s.totalMins / 60)}h {s.totalMins % 60}m</td>
                             <td className={tdC}>{s.days ? (Math.floor(s.totalMins / s.days / 60) + "h " + Math.round((s.totalMins / s.days) % 60) + "m") : "-"}</td>
+                            <td className={tdC}>{s.leave || "—"}</td>
                             <td className={tdC}>{s.wfh || "—"}</td>
                             <td className={tdC}>{s.workRelated || "—"}</td>
                           </tr>
                         ))}
-                        {summary.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
+                        {summary.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
                       </tbody>
                     </>
                   );
