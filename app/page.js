@@ -1671,10 +1671,11 @@ const COMP_LOGOS = {
                           <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</h3>
                           <ExportMenu
                             filename={`KPI Progress Report - ${curMonth}${kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}`}
-                            header={["Team", "Name", "Total Target / Task", "Estimated Time", "Time Produced", "Completed", "Progress"]}
+                            header={["Team", "Name", "Total Target / Task", "Estimated Time", "Time Produced", "Completed", "Progress", "Links"]}
                             rows={kpiTeams.flatMap(team => byTeam[team].map(e => {
                               const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) + "%" : "";
-                              return [team, e.employee, e.target, e.estTime || "", e.producedTime || "", e.completed, pct];
+                              const linkUrls = extractUrls(e.links).map(u => u.url).join(", ");
+                              return [team, e.employee, team === "Design" ? "" : e.target, e.estTime || "", e.producedTime || "", e.completed, pct, linkUrls];
                             }))}
                           />
                         </div>
@@ -1689,6 +1690,7 @@ const COMP_LOGOS = {
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Time Produced</th>
                                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Completed</th>
                                 <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Progress</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Links</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1708,11 +1710,12 @@ const COMP_LOGOS = {
                                     <tr key={team + i} className="border-b border-gray-50 hover:bg-gray-50">
                                       {i === 0 ? <td className="px-4 py-2.5 font-semibold align-top" rowSpan={byTeam[team].length}><span className="text-xs px-2 py-0.5 rounded text-white" style={{ background: TEAM_COLORS[team] || "#888" }}>{team}</span></td> : null}
                                       <td className="px-4 py-2.5 font-medium">{e.employee}</td>
-                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.target}</td>
+                                      <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{team === "Design" ? "" : e.target}</td>
                                       <td className="px-4 py-2.5 text-gray-400">{e.estTime || "—"}</td>
                                       <td className="px-4 py-2.5 text-gray-400">{e.producedTime || "—"}</td>
                                       <td className="px-4 py-2.5 text-gray-500 max-w-[200px]">{e.completed}</td>
                                       <td className={`px-4 py-2.5 text-right font-bold ${pctColor}`}>{pct !== null ? pct + "%" : "..."}</td>
+                                      <td className="px-4 py-2.5"><KpiDocs links={e.links} /></td>
                                     </tr>
                                   );
                                 })
@@ -3095,6 +3098,7 @@ function PeoplePage({ isAdmin, userId }) {
   const inProbation = onboardingRecs.filter(r => (r.status || "Probation") === "Probation" || r.status === "Extended").length;
   const confirmed = onboardingRecs.filter(r => r.status === "Confirmed").length;
   const terminated = onboardingRecs.filter(r => r.status === "Terminated").length;
+  const internRecs = records.filter(r => r.type === "Internship");
 
   const filtered = records
     .filter(r => tab === "all" || r.type === tab)
@@ -3131,7 +3135,7 @@ function PeoplePage({ isAdmin, userId }) {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-3 mb-5">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-5">
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
           <p className="text-2xl font-bold">{records.length}</p>
           <p className="text-[11px] text-gray-400">Total tracked</p>
@@ -3143,6 +3147,10 @@ function PeoplePage({ isAdmin, userId }) {
         <div className="bg-green-50 rounded-xl p-4 border border-green-100 text-center">
           <p className="text-2xl font-bold text-green-600">{confirmed}</p>
           <p className="text-[11px] text-gray-400">Confirmed</p>
+        </div>
+        <div className="bg-purple-50 rounded-xl p-4 border border-purple-100 text-center">
+          <p className="text-2xl font-bold text-purple-600">{internRecs.length}</p>
+          <p className="text-[11px] text-gray-400">Internship</p>
         </div>
         <div className="bg-red-50 rounded-xl p-4 border border-red-100 text-center">
           <p className="text-2xl font-bold text-red-500">{terminated}</p>
