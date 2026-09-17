@@ -1434,17 +1434,21 @@ const COMP_LOGOS = {
                       </label>
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Type</span>
-                        <select value={dayStatusForm.status_type} onChange={e => setDayStatusForm({ ...dayStatusForm, status_type: e.target.value, duration: e.target.value === "WORK_RELATED" && dayStatusForm.duration === "full" ? "half_am" : dayStatusForm.duration })}
+                        <select value={dayStatusForm.status_type} onChange={e => setDayStatusForm({ ...dayStatusForm, status_type: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
                           <option value="WFH">Work From Home (WFH)</option>
                           <option value="WORK_RELATED">Work Related (shoot / off-site)</option>
                         </select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-gray-500">{dayStatusForm.status_type === "WORK_RELATED" ? "Time" : "Duration"}</span>
+                        <span className="text-xs text-gray-500">Duration</span>
+                        {/* Work Related used to force AM/PM only, with no Full Day option at
+                            all — a full-day shoot or off-site day (a very normal case) had no
+                            way to be recorded correctly, so people were stuck picking a half
+                            that didn't match what actually happened. */}
                         <select value={dayStatusForm.duration} onChange={e => setDayStatusForm({ ...dayStatusForm, duration: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-                          {dayStatusForm.status_type !== "WORK_RELATED" && <option value="full">Full Day</option>}
+                          <option value="full">Full Day</option>
                           <option value="half_am">AM</option>
                           <option value="half_pm">PM</option>
                         </select>
