@@ -2196,21 +2196,36 @@ const COMP_LOGOS = {
                                   entry after saving it, so it's also the most natural place to fix
                                   or remove one instead of having to hunt for it in another tab. */}
                               {leave && (
-                                <span title={leave.remark || undefined} className={`inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full ${LEAVE_TYPES[leave.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>
-                                  {isAdmin ? <button onClick={() => editLeave(leave)} className="hover:underline">{leave.leave_type} · {durLabel[leave.duration]}</button> : <>{leave.leave_type} · {durLabel[leave.duration]}</>}
-                                  {isAdmin && <button onClick={() => deleteLeave(leave.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>}
+                                <span title={leave.remark || undefined} className={`inline-flex items-center gap-1.5 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full ${LEAVE_TYPES[leave.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>
+                                  <span>{leave.leave_type} · {durLabel[leave.duration]}</span>
+                                  {isAdmin && (
+                                    <span className="flex items-center gap-0.5">
+                                      <button onClick={e => { e.stopPropagation(); editLeave(leave); }} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Edit">✎</button>
+                                      <button onClick={e => { e.stopPropagation(); deleteLeave(leave.id); }} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Remove">✕</button>
+                                    </span>
+                                  )}
                                 </span>
                               )}
                               {wfh && (
-                                <span title={wfh.remark || undefined} className="inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full bg-cyan-50 text-cyan-600">
-                                  {isAdmin ? <button onClick={() => editDayStatus(wfh)} className="hover:underline">WFH · {durLabel[wfh.duration]}</button> : <>WFH · {durLabel[wfh.duration]}</>}
-                                  {isAdmin && <button onClick={() => deleteDayStatus(wfh.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>}
+                                <span title={wfh.remark || undefined} className="inline-flex items-center gap-1.5 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full bg-cyan-50 text-cyan-600">
+                                  <span>WFH · {durLabel[wfh.duration]}</span>
+                                  {isAdmin && (
+                                    <span className="flex items-center gap-0.5">
+                                      <button onClick={e => { e.stopPropagation(); editDayStatus(wfh); }} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Edit">✎</button>
+                                      <button onClick={e => { e.stopPropagation(); deleteDayStatus(wfh.id); }} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Remove">✕</button>
+                                    </span>
+                                  )}
                                 </span>
                               )}
                               {workRelated && (
-                                <span title={workRelated.remark || undefined} className="inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full bg-orange-50 text-orange-600">
-                                  {isAdmin ? <button onClick={() => editDayStatus(workRelated)} className="hover:underline">Work Related · {durLabel[workRelated.duration]}</button> : <>Work Related · {durLabel[workRelated.duration]}</>}
-                                  {isAdmin && <button onClick={() => deleteDayStatus(workRelated.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>}
+                                <span title={workRelated.remark || undefined} className="inline-flex items-center gap-1.5 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full bg-orange-50 text-orange-600">
+                                  <span>Work Related · {durLabel[workRelated.duration]}</span>
+                                  {isAdmin && (
+                                    <span className="flex items-center gap-0.5">
+                                      <button onClick={e => { e.stopPropagation(); editDayStatus(workRelated); }} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Edit">✎</button>
+                                      <button onClick={e => { e.stopPropagation(); deleteDayStatus(workRelated.id); }} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Remove">✕</button>
+                                    </span>
+                                  )}
                                 </span>
                               )}
                               {!leave && !wfh && !workRelated && !r && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">No record</span>}
@@ -2367,7 +2382,7 @@ const COMP_LOGOS = {
                                           <td className="py-1.5 pr-4"><span className={`font-medium px-2 py-0.5 rounded-full text-xs ${LEAVE_TYPES[d.leave_type]?.color || "bg-gray-100 text-gray-500"}`}>{d.leave_type}</span></td>
                                           <td className="py-1.5 pr-4 text-gray-500">{durLabel[d.duration] || d.duration}</td>
                                           <td className="py-1.5 pr-4 text-gray-500">{d.remark || "—"}</td>
-                                          <td className="py-1.5 text-right whitespace-nowrap">{isAdmin && <><button onClick={() => editLeave(d)} className="text-gray-300 hover:text-gray-600 text-xs mr-2">✎</button><button onClick={() => deleteLeave(d.id)} className="text-red-300 hover:text-red-600 text-xs">✕</button></>}</td>
+                                          <td className="py-1.5 text-right whitespace-nowrap">{isAdmin && <><button onClick={() => editLeave(d)} className="text-gray-400 hover:text-gray-700 text-sm px-1.5 py-0.5 rounded hover:bg-gray-100" title="Edit">✎</button><button onClick={() => deleteLeave(d.id)} className="text-red-400 hover:text-red-600 text-sm px-1.5 py-0.5 rounded hover:bg-red-50" title="Remove">✕</button></>}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -2446,12 +2461,13 @@ const COMP_LOGOS = {
                               <td className={tdC}>
                                 <div className="flex flex-wrap gap-1 items-center">
                                   {e.tags.map((t, ti) => (
-                                    <span key={ti} className={`inline-flex items-center gap-1 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full ${t.color}`}>
-                                      {isAdmin ? (
-                                        <button onClick={() => t.kind === "leave" ? editLeave(t.record) : editDayStatus(t.record)} className="hover:underline">{t.text}</button>
-                                      ) : t.text}
+                                    <span key={ti} className={`inline-flex items-center gap-1.5 text-[10px] font-medium pl-2 pr-1 py-0.5 rounded-full ${t.color}`}>
+                                      <span>{t.text}</span>
                                       {isAdmin && (
-                                        <button onClick={() => t.kind === "leave" ? deleteLeave(t.record.id) : deleteDayStatus(t.record.id)} className="opacity-50 hover:opacity-100 px-0.5" title="Remove">✕</button>
+                                        <span className="flex items-center gap-0.5">
+                                          <button onClick={() => t.kind === "leave" ? editLeave(t.record) : editDayStatus(t.record)} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Edit">✎</button>
+                                          <button onClick={() => t.kind === "leave" ? deleteLeave(t.record.id) : deleteDayStatus(t.record.id)} className="w-4 h-4 flex items-center justify-center rounded hover:bg-black/10" title="Remove">✕</button>
+                                        </span>
                                       )}
                                     </span>
                                   ))}
