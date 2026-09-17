@@ -2427,7 +2427,7 @@ const COMP_LOGOS = {
                   const entries = Object.values(byKey).sort((a, b) => dmyToSortKey(a.date) - dmyToSortKey(b.date) || a.name.localeCompare(b.name));
                   return (
                     <>
-                      <thead><tr className="bg-gray-50">{["Date","Name","Status","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
+                      <thead><tr className="bg-gray-50">{["Date","Name","Clock In","Clock Out","Hours","Status","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
                       <tbody>
                         {entries.map((e, i) => {
                           const remarkText = e.remarks.join(" · ");
@@ -2435,6 +2435,14 @@ const COMP_LOGOS = {
                             <tr key={i} className="border-t border-gray-50">
                               <td className={tdC + " text-gray-500 whitespace-nowrap"}>{e.date}</td>
                               <td className={tdC + " font-medium"}>{e.name}</td>
+                              {/* Clock in/out/hours are their own columns now (not folded into a
+                                  "Present" status chip) — a half-day leave or Work Related entry
+                                  still has a real punch for the half of the day they were in, and
+                                  that was getting dropped because the old "Present" chip only
+                                  showed up when it was the ONLY thing that day. */}
+                              <td className={tdC + " text-gray-600"}>{e.ci || "—"}</td>
+                              <td className={tdC + " text-gray-600"}>{e.co || "—"}</td>
+                              <td className={tdC + " font-medium text-blue-500"}>{e.hrs || "—"}</td>
                               <td className={tdC}>
                                 <div className="flex flex-wrap gap-1 items-center">
                                   {e.tags.map((t, ti) => (
@@ -2447,7 +2455,7 @@ const COMP_LOGOS = {
                                       )}
                                     </span>
                                   ))}
-                                  {e.present && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Present{e.hrs ? ` · ${e.hrs}` : ""}</span>}
+                                  {e.present && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Present</span>}
                                   {!e.tags.length && !e.present && <span className="text-gray-300">—</span>}
                                 </div>
                               </td>
@@ -2455,7 +2463,7 @@ const COMP_LOGOS = {
                             </tr>
                           );
                         })}
-                        {entries.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
+                        {entries.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
                       </tbody>
                     </>
                   );
