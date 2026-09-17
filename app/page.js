@@ -756,6 +756,13 @@ export default function DashboardPage() {
     const [d, m, y] = String(dateStr || "").split("/").map(Number);
     return (y || 0) * 10000 + (m || 0) * 100 + (d || 0);
   }
+  // leave_records / day_status_records store dates as ISO ("2026-09-05"); the uploaded
+  // punch sheet stores them as "D/M/YYYY" with no leading zeros ("5/9/2026"). Converts the
+  // former to the latter so leave/WFH/Work Related dates can be merged into punch-date lists.
+  function isoToDMY(iso) {
+    const [y, m, d] = String(iso || "").split("-").map(Number);
+    return `${d}/${m}/${y}`;
+  }
 
   async function saveDayStatus() {
     if (!dayStatusForm.person_name.trim() || !dayStatusForm.date) return;
@@ -2049,8 +2056,16 @@ const COMP_LOGOS = {
               <button onClick={() => setModal(null)} className="text-xl text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">&times;</button>
             </div>
             {modal === "weekly" && (() => {
-              const allMonthDates = Array.from(new Set(Object.values(curAtt.weekly).flat().map(r => r.date)))
-                .sort((a, b) => dmyToSortKey(a) - dmyToSortKey(b));
+              // The date dropdown used to be built only from punch dates — if a day had a
+              // leave/WFH/Work Related entry but nobody at all happened to clock in that day,
+              // the date never appeared in this list and so could never be selected, making
+              // that entry look like it "didn't update" even though it saved fine. Union in
+              // the leave and day-status dates for the selected month too.
+              const allMonthDates = Array.from(new Set([
+                ...Object.values(curAtt.weekly).flat().map(r => r.date),
+                ...monthLeaves.map(r => isoToDMY(r.date)),
+                ...dayStatusRecords.filter(r => { const d = new Date(r.date + "T00:00:00"); return d.getFullYear() === attYear && d.getMonth() + 1 === attMon; }).map(r => isoToDMY(r.date)),
+              ])).sort((a, b) => dmyToSortKey(a) - dmyToSortKey(b));
               const activeDate = allMonthDates.includes(attDate) ? attDate : allMonthDates[allMonthDates.length - 1] || "";
               return (
                 <div className="flex gap-3 items-center mb-3 flex-wrap">
@@ -2070,8 +2085,12 @@ const COMP_LOGOS = {
               );
             })()}
             {modal === "weekly" && weeklySubView === "daily" && (() => {
-              const allMonthDates = Array.from(new Set(Object.values(curAtt.weekly).flat().map(r => r.date)))
-                .sort((a, b) => dmyToSortKey(a) - dmyToSortKey(b));
+              // Same union as the date-picker above — see comment there.
+              const allMonthDates = Array.from(new Set([
+                ...Object.values(curAtt.weekly).flat().map(r => r.date),
+                ...monthLeaves.map(r => isoToDMY(r.date)),
+                ...dayStatusRecords.filter(r => { const d = new Date(r.date + "T00:00:00"); return d.getFullYear() === attYear && d.getMonth() + 1 === attMon; }).map(r => isoToDMY(r.date)),
+              ])).sort((a, b) => dmyToSortKey(a) - dmyToSortKey(b));
               const activeDate = allMonthDates.includes(attDate) ? attDate : allMonthDates[allMonthDates.length - 1] || "";
               const [ad, am, ay] = activeDate.split("/").map(Number);
               const activeDateISO = activeDate ? `${ay}-${String(am).padStart(2, "0")}-${String(ad).padStart(2, "0")}` : "";
@@ -2302,60 +2321,62 @@ const COMP_LOGOS = {
             <div className="overflow-x-auto rounded-lg border border-gray-100">
               <table className="w-full text-sm">
                 {(() => {
-                  // Aggregate every daily row for the whole month per person — total hours
-                  // (parsed from "Xh Ym" strings), days present, plus WFH, Work Related, and
-                  // Leave day counts pulled in from the manual records. Leave was previously
-                  // missing here entirely (only WFH/Work Related showed), and a person on
-                  // leave the whole month with no punches and no WFH/Work Related entry
-                  // wouldn't appear in this summary at all — folding leave in fixes both.
-                  const rows = Object.values(curAtt.weekly).flat();
-                  const byPerson = {};
-                  const blank = name => ({ name, days: 0, totalMins: 0, wfh: 0, workRelated: 0, leave: 0, remarks: [] });
-                  rows.forEach(r => {
-                    if (!byPerson[r.name]) byPerson[r.name] = blank(r.name);
-                    const m = String(r.hrs || "").match(/(\d+)h\s*(\d+)m/);
-                    if (m) { byPerson[r.name].totalMins += parseInt(m[1]) * 60 + parseInt(m[2]); byPerson[r.name].days += 1; }
-                  });
+                  // Replaced the old aggregated-hours table (days present, total/avg hours)
+                  // with a plain date-wise log: one row per person per day that had anything
+                  // to report, its status, and the remark if any — this is what was actually
+                  // asked for ("name, dates - present or wfh or work related, in a table"),
+                  // and it sources leave/WFH/Work Related directly from the records rather
+                  // than from the punch-date list, so an entry always shows up here even on
+                  // a day nobody happened to clock in.
+                  const durLabel = { full: "Full Day", half_am: "AM", half_pm: "PM" };
                   const monthDayStatuses = dayStatusRecords.filter(r => {
                     const d = new Date(r.date + "T00:00:00");
                     return d.getFullYear() === attYear && d.getMonth() + 1 === attMon;
                   });
-                  monthDayStatuses.forEach(r => {
-                    if (!byPerson[r.person_name]) byPerson[r.person_name] = blank(r.person_name);
-                    const amount = r.duration === "full" ? 1 : 0.5;
-                    if (r.status_type === "WFH") byPerson[r.person_name].wfh += amount;
-                    else byPerson[r.person_name].workRelated += amount;
-                    if (r.remark) byPerson[r.person_name].remarks.push(r.remark);
+                  const byKey = {};
+                  const ensure = (date, name) => {
+                    const k = date + "|" + name;
+                    if (!byKey[k]) byKey[k] = { date, name, tags: [], remarks: [], present: false };
+                    return byKey[k];
+                  };
+                  Object.values(curAtt.weekly).flat().forEach(r => {
+                    const e = ensure(r.date, r.name);
+                    e.present = true; e.ci = r.ci; e.co = r.co; e.hrs = r.hrs;
                   });
-                  // monthLeaves is the same leave_records-for-this-month filter already
-                  // computed above (used by the Leave stat card) - reused here so both stay
-                  // in sync rather than duplicating the filter logic.
                   monthLeaves.forEach(r => {
-                    if (!byPerson[r.person_name]) byPerson[r.person_name] = blank(r.person_name);
-                    byPerson[r.person_name].leave += r.duration === "full" ? 1 : 0.5;
-                    if (r.remark) byPerson[r.person_name].remarks.push(r.remark);
+                    const e = ensure(isoToDMY(r.date), r.person_name);
+                    e.tags.push({ text: `${r.leave_type} · ${durLabel[r.duration]}`, color: LEAVE_TYPES[r.leave_type]?.color || "bg-gray-100 text-gray-500" });
+                    if (r.remark) e.remarks.push(r.remark);
                   });
-                  const summary = Object.values(byPerson).sort((a, b) => b.totalMins - a.totalMins);
+                  monthDayStatuses.forEach(r => {
+                    const e = ensure(isoToDMY(r.date), r.person_name);
+                    const isWfh = r.status_type === "WFH";
+                    e.tags.push({ text: `${isWfh ? "WFH" : "Work Related"} · ${durLabel[r.duration]}`, color: isWfh ? "bg-cyan-50 text-cyan-600" : "bg-orange-50 text-orange-600" });
+                    if (r.remark) e.remarks.push(r.remark);
+                  });
+                  const entries = Object.values(byKey).sort((a, b) => dmyToSortKey(a.date) - dmyToSortKey(b.date) || a.name.localeCompare(b.name));
                   return (
                     <>
-                      <thead><tr className="bg-gray-50">{["Name","Days Present","Total Hours","Avg Hours/Day","Leave Days","WFH Days","Work Related Days","Remarks"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
+                      <thead><tr className="bg-gray-50">{["Date","Name","Status","Remark"].map(h => <th key={h} className={thC}>{h}</th>)}</tr></thead>
                       <tbody>
-                        {summary.map((s, i) => {
-                          const remarkText = s.remarks.join(" · ");
+                        {entries.map((e, i) => {
+                          const remarkText = e.remarks.join(" · ");
                           return (
-                          <tr key={i} className="border-t border-gray-50">
-                            <td className={tdC + " font-medium"}>{s.name}</td>
-                            <td className={tdC}>{s.days}</td>
-                            <td className={tdC + " font-semibold"}>{Math.floor(s.totalMins / 60)}h {s.totalMins % 60}m</td>
-                            <td className={tdC}>{s.days ? (Math.floor(s.totalMins / s.days / 60) + "h " + Math.round((s.totalMins / s.days) % 60) + "m") : "-"}</td>
-                            <td className={tdC}>{s.leave || "—"}</td>
-                            <td className={tdC}>{s.wfh || "—"}</td>
-                            <td className={tdC}>{s.workRelated || "—"}</td>
-                            <td className={tdC + " text-gray-400 max-w-[220px] truncate"} title={remarkText || undefined}>{remarkText || "—"}</td>
-                          </tr>
+                            <tr key={i} className="border-t border-gray-50">
+                              <td className={tdC + " text-gray-500 whitespace-nowrap"}>{e.date}</td>
+                              <td className={tdC + " font-medium"}>{e.name}</td>
+                              <td className={tdC}>
+                                <div className="flex flex-wrap gap-1 items-center">
+                                  {e.tags.map((t, ti) => <span key={ti} className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${t.color}`}>{t.text}</span>)}
+                                  {e.present && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Present{e.hrs ? ` · ${e.hrs}` : ""}</span>}
+                                  {!e.tags.length && !e.present && <span className="text-gray-300">—</span>}
+                                </div>
+                              </td>
+                              <td className={tdC + " text-gray-400 max-w-[220px] truncate"} title={remarkText || undefined}>{remarkText || "—"}</td>
+                            </tr>
                           );
                         })}
-                        {summary.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
+                        {entries.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-300 italic">No data for this month</td></tr>}
                       </tbody>
                     </>
                   );
