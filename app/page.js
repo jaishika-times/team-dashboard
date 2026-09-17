@@ -22,7 +22,11 @@ const TEAM_GRADIENTS = {Design:"from-indigo-500 to-purple-600",Video:"from-blue-
 function extractUrls(text) {
   if (!text) return [];
   const results = [];
-  const mdLinkRe = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  // Greedy [.+] rather than [^\]]+ — a link's visible label can itself contain square
+  // brackets (e.g. "KLFC [REDCAP] Dec 2026", a real one from the Content sheet), and a
+  // non-greedy/no-bracket match stops at that inner "]" and fails the whole line silently,
+  // dropping a real link down to "—". Verified against that exact real label before fixing.
+  const mdLinkRe = /\[(.+)\]\((https?:\/\/[^\s)]+)\)/g;
   String(text).split("\n").map(l => l.trim()).filter(Boolean).forEach(line => {
     let matched = false;
     let m;
