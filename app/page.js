@@ -168,27 +168,79 @@ function rangeLabel(g) {
   return g.start === g.end ? formatShortDate(g.start) : `${formatShortDate(g.start)} - ${formatShortDate(g.end)}`;
 }
 
+// Picks one or more assets for a single checkout entry, with a type-to-filter search
+// instead of scrolling a long native <select> to find e.g. "VR14" — click the button to
+// open a small panel, type part of the code or name to narrow the list, and check off
+// everything that's going out together (several items taken in one trip are now one
+// entry with one "who took" / "purpose" / date, not one row each).
+function AssetPicker({ assets, selectedIds, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onOutside(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, []);
+
+  const sorted = [...assets].sort((a, b) => a.code.localeCompare(b.code));
+  const filtered = sorted.filter(a => search ? (a.code + " " + a.name).toLowerCase().includes(search.toLowerCase()) : true);
+  const selected = assets.filter(a => selectedIds.includes(a.id));
+
+  function toggle(id) {
+    onChange(selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id]);
+  }
+
+  return (
+    <div className="relative flex-1 min-w-[200px]" ref={ref}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 text-sm px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-left">
+        <span className={`truncate ${selected.length ? "text-gray-800" : "text-gray-400"}`}>
+          {selected.length ? selected.map(a => a.code).join(", ") : "Select item(s)..."}
+        </span>
+        <span className="text-gray-300 shrink-0">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 w-full min-w-[240px] bg-white border border-gray-200 rounded-lg shadow-lg">
+          <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Type VR number or name..."
+            className="w-full px-2 py-1.5 text-sm border-b border-gray-100 rounded-t-lg outline-none" />
+          <div className="max-h-52 overflow-y-auto">
+            {filtered.map(a => (
+              <label key={a.id} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={selectedIds.includes(a.id)} onChange={() => toggle(a.id)} />
+                <span className="font-mono text-xs text-gray-400 w-12 shrink-0">{a.code}</span>
+                <span className="truncate">{a.name}</span>
+              </label>
+            ))}
+            {filtered.length === 0 && <p className="text-xs text-gray-300 text-center py-3">No matches</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AddEntryRow({ assets, onAdd, defaultDate }) {
-  const [assetId, setAssetId] = useState("");
+  const [assetIds, setAssetIds] = useState([]);
   const [peopleInput, setPeopleInput] = useState("");
+  const [purpose, setPurpose] = useState("");
   const [dateTaken, setDateTaken] = useState(defaultDate || new Date().toISOString().split("T")[0]);
   const [dateReturned, setDateReturned] = useState("");
 
   function submit() {
-    if (!assetId || !peopleInput.trim() || !dateTaken) return;
-    onAdd({ asset_id: assetId, held_by: peopleInput, date_taken: dateTaken, date_returned: dateReturned });
-    setAssetId(""); setPeopleInput(""); setDateReturned("");
+    if (!assetIds.length || !peopleInput.trim() || !dateTaken) return;
+    onAdd({ asset_ids: assetIds, held_by: peopleInput, purpose, date_taken: dateTaken, date_returned: dateReturned });
+    setAssetIds([]); setPeopleInput(""); setPurpose(""); setDateReturned("");
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2 p-3 bg-indigo-50/60 rounded-xl border border-dashed border-indigo-200">
-      <select value={assetId} onChange={e => setAssetId(e.target.value)}
-        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg flex-1 min-w-[160px] bg-white">
-        <option value="">Select item...</option>
-        {[...assets].sort((a, b) => a.code.localeCompare(b.code)).map(a => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-      </select>
+      <AssetPicker assets={assets} selectedIds={assetIds} onChange={setAssetIds} />
       <input value={peopleInput} onChange={e => setPeopleInput(e.target.value)} placeholder="Who took it? (comma-separate for multiple)"
-        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg flex-1 min-w-[200px] bg-white" />
+        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg flex-1 min-w-[180px] bg-white" />
+      <input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Purpose (optional)"
+        className="text-sm px-2 py-1.5 border border-gray-200 rounded-lg flex-1 min-w-[160px] bg-white" />
       <label className="flex flex-col gap-0.5">
         <span className="text-[10px] text-gray-400">Date taken</span>
         <input type="date" value={dateTaken} onChange={e => setDateTaken(e.target.value)}
@@ -1893,11 +1945,16 @@ const COMP_LOGOS = {
             }
 
             async function addRowForPeriod(row) {
-              if (!row.asset_id || !row.held_by.trim() || !row.date_taken) return;
-              await supabase.from("asset_checkouts").insert({
-                asset_id: row.asset_id, held_by: row.held_by.trim(), date_taken: row.date_taken,
-                date_returned: row.date_returned || null, created_by: user.id,
-              });
+              if (!row.asset_ids?.length || !row.held_by.trim() || !row.date_taken) return;
+              // Several items taken out together (e.g. two VR headsets for the same shoot)
+              // are one insert with one row per item, all sharing the same people/purpose/
+              // dates — was previously one asset per entry, forcing a separate row (and a
+              // separate re-typed "who took it") for every item taken in a single trip.
+              const { error } = await supabase.from("asset_checkouts").insert(row.asset_ids.map(asset_id => ({
+                asset_id, held_by: row.held_by.trim(), purpose: row.purpose?.trim() || null,
+                date_taken: row.date_taken, date_returned: row.date_returned || null, created_by: user.id,
+              })));
+              if (error) { alert("Couldn't save: " + error.message); return; }
               loadData();
             }
 
@@ -1960,6 +2017,7 @@ const COMP_LOGOS = {
                             <thead>
                               <tr className="border-b border-gray-100">
                                 <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Item</th>
+                                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Purpose</th>
                                 <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Who Took</th>
                                 <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Taken</th>
                                 <th className="text-left text-[11px] font-semibold text-gray-400 uppercase px-2 py-2">Returned</th>
@@ -1976,6 +2034,7 @@ const COMP_LOGOS = {
                                       <p className="text-sm font-semibold text-gray-800">{asset?.name || "(deleted item)"}</p>
                                       <p className="text-gray-400 font-mono text-[11px]">{asset?.code}</p>
                                     </td>
+                                    <td className="px-2 py-2.5 text-gray-500 text-xs max-w-[160px] truncate" title={c.purpose || undefined}>{c.purpose || "—"}</td>
                                     <td className="px-2 py-2.5">
                                       <div className="flex flex-wrap gap-1">
                                         {people.map((p, i) => (
@@ -1997,7 +2056,7 @@ const COMP_LOGOS = {
                                 );
                               })}
                               {entriesForPeriod.length === 0 && (
-                                <tr><td colSpan={isAdmin ? 5 : 4} className="text-center text-sm text-gray-300 py-6">No assets recorded in this range yet.</td></tr>
+                                <tr><td colSpan={isAdmin ? 6 : 5} className="text-center text-sm text-gray-300 py-6">No assets recorded in this range yet.</td></tr>
                               )}
                             </tbody>
                           </table>
