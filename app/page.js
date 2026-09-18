@@ -1985,8 +1985,8 @@ const COMP_LOGOS = {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
-                  <div className="px-5 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between flex-wrap gap-3">
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-6">
+                  <div className="px-5 py-4 rounded-t-2xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between flex-wrap gap-3">
                     <span className="text-base font-bold">📋 Entries</span>
                     <div className="flex items-center gap-2">
                       <select value={activePeriod?.id || ""} onChange={e => setSelectedPeriodId(e.target.value)}
