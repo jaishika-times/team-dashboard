@@ -403,17 +403,18 @@ function CSETimesheetView() {
 // Content and Video's real daily tracker — same idea as CSE's, different columns (Activity
 // Type, Client, Task, Notes/Description), live from their actual shared sheet instead of the
 // old Google Form.
-function ContentVideoTrackerView({ team }) {
+function ContentVideoTrackerView({ team, endpoint }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
+  const apiPath = endpoint || "/api/live-content-video-tracker";
 
   useEffect(() => {
     let cancelled = false;
     setData(null);
     setError(null);
     setSelectedDay(null);
-    fetch(`/api/live-content-video-tracker?team=${encodeURIComponent(team)}`, { cache: "no-store" })
+    fetch(`${apiPath}?team=${encodeURIComponent(team)}`, { cache: "no-store" })
       .then(r => r.json())
       .then(json => {
         if (cancelled) return;
@@ -424,22 +425,22 @@ function ContentVideoTrackerView({ team }) {
       })
       .catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [team]);
+  }, [team, apiPath]);
 
   if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the {team} tracker: {error}</p>;
   if (!data) return <div className="flex items-center gap-2 py-4 text-xs text-gray-400"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live tracker…</div>;
 
   const allDays = Array.from(new Set(data.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
   const activeDay = selectedDay || allDays[allDays.length - 1];
-  const teamColor = team === "Video" ? "#3b82f6" : team === "Design" ? "#6366f1" : "#10b981";
-  const teamGradient = team === "Video" ? "from-blue-500 to-cyan-500" : team === "Design" ? "from-indigo-500 to-purple-600" : "from-emerald-500 to-teal-500";
+  const teamColor = TEAM_COLORS[team] || "#10b981";
+  const teamGradient = TEAM_GRADIENTS[team] || "from-emerald-500 to-teal-500";
 
   return (
     <div>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
         <div className={`px-5 py-4 bg-gradient-to-r ${teamGradient} text-white flex items-center justify-between flex-wrap gap-3`}>
           <div>
-            <span className="text-base font-bold">{team === "Video" ? "🎬" : team === "Design" ? "🎨" : "✍️"} Live {team} Tracker</span>
+            <span className="text-base font-bold">{TEAM_ICONS[team] || "✍️"} Live {team} Tracker</span>
             <p className="text-[11px] text-white/70 mt-0.5">Day-by-day, task-by-task, straight from the team's sheet</p>
           </div>
           {allDays.length > 0 && (
@@ -1268,7 +1269,7 @@ const COMP_LOGOS = {
                         const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
                         // CSE/Content/Video/Design can also be opened to their live tracker even on a
                         // day with no historical form entries — those track "now," not a picked date.
-                        const hasLiveTracker = ["CSE", "Content", "Video", "Design"].includes(team);
+                        const hasLiveTracker = ["CSE", "Content", "Video", "Design", "HR", "Finance"].includes(team);
                         const isClickable = members.length > 0 || hasLiveTracker;
                         const isSelected = selectedProdTeam === team;
                         return (
@@ -1305,6 +1306,8 @@ const COMP_LOGOS = {
                           <CSETimesheetView />
                         ) : selectedProdTeam === "Content" || selectedProdTeam === "Video" || selectedProdTeam === "Design" ? (
                           <ContentVideoTrackerView team={selectedProdTeam} />
+                        ) : selectedProdTeam === "HR" || selectedProdTeam === "Finance" ? (
+                          <ContentVideoTrackerView team={selectedProdTeam} endpoint="/api/live-hr" />
                         ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {allMems.filter(m => m.team === selectedProdTeam).map(({ name }) => {
