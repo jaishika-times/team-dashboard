@@ -277,6 +277,26 @@ function parseDesignMonthBlock(blockRows) {
   return people;
 }
 
+// Pulls the day-of-month out of a "Working Date" cell regardless of how Sheets formatted it.
+// The old code assumed a fixed "YYYY-MM-DD" layout and just sliced characters 8-9 out of the
+// string — but Sheets normally displays dates as "DD/MM/YYYY" (the standard format here), so
+// that slice was actually grabbing the last two digits of the YEAR, not the day. That silently
+// misassigned tasks to the wrong week (or an essentially random one) whenever the cell wasn't
+// in the one format the old code assumed, which is what was causing weekly KPI counts to be
+// off. This checks each common layout explicitly, then falls back to JS's own date parser for
+// anything else, before giving up.
+function extractDayOfMonth(dateStr) {
+  const s = String(dateStr || "").trim();
+  if (!s) return NaN;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); // ISO: YYYY-MM-DD
+  if (m) return parseInt(m[3], 10);
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/); // DD/MM/YYYY, D-M-YYYY, etc.
+  if (m) return parseInt(m[1], 10);
+  const d = new Date(s); // fallback: "September 5, 2026", "5 Sep 2026", etc.
+  if (!isNaN(d.getTime())) return d.getDate();
+  return NaN;
+}
+
 function deriveDesignStatus(pctFraction) {
   if (pctFraction === null) return "";
   const pct = pctFraction * 100;
@@ -324,7 +344,7 @@ async function getDesignFromWorkloadSheet() {
       const month = normalizeMonth(monthMatch[1]);
       const weekGroups = {};
       tasks.forEach(t => {
-        const day = parseInt((t.workingDate || "").slice(8, 10), 10);
+        const day = extractDayOfMonth(t.workingDate);
         const week = isNaN(day) ? 1 : Math.ceil(day / 7);
         (weekGroups[week] = weekGroups[week] || []).push(t);
       });
