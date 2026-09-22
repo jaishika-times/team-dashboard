@@ -497,6 +497,142 @@ function ContentVideoTrackerView({ team, endpoint }) {
   );
 }
 
+// Weekly Website Traffic Report — a summary table (one row per portal per week) that expands,
+// per row, into the channel-by-channel breakdown ("how it comes") straight from the sheet.
+function WebsiteTrafficView() {
+  const [weeks, setWeeks] = useState(null);
+  const [error, setError] = useState(null);
+  const [openKey, setOpenKey] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/live-website-traffic", { cache: "no-store" })
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled) return;
+        if (json.error) { setError(json.error); return; }
+        setWeeks(json.weeks);
+      })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const PORTAL_STYLE = {
+    "AfterSchool": { gradient: "from-sky-500 to-blue-600", color: "#0284c7", icon: "🏫" },
+    "School Advisor": { gradient: "from-violet-500 to-purple-600", color: "#7c3aed", icon: "🎓" },
+    "FB Group": { gradient: "from-blue-600 to-indigo-600", color: "#4f46e5", icon: "👥" },
+  };
+  const fmt = n => (n || 0).toLocaleString();
+  const yoy = (curr, prior) => {
+    if (!prior) return null;
+    const pct = ((curr - prior) / prior) * 100;
+    return { pct, up: pct >= 0 };
+  };
+
+  return (
+    <>
+      <h1 className="text-xl font-semibold mb-1">🌐 Website Traffic Report</h1>
+      <p className="text-sm text-gray-400 mb-5">Weekly, straight from the traffic sheet — click a row to see how the numbers break down by channel.</p>
+
+      {error && <p className="text-sm text-red-400 py-4">Couldn't load the traffic report: {error}</p>}
+      {!error && !weeks && (
+        <div className="flex items-center gap-2 py-4 text-xs text-gray-400">
+          <span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live traffic data…
+        </div>
+      )}
+
+      {weeks && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 rounded-t-2xl bg-gradient-to-r from-sky-500 to-indigo-600 text-white">
+            <span className="text-base font-bold">📊 Summary</span>
+            <p className="text-[11px] text-white/70 mt-0.5">Total Users / Sessions for AfterSchool &amp; School Advisor · New Members / Email Database for the FB Group</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-400 border-b border-gray-100 bg-gray-50/50">
+                <th className="py-2.5 px-4 text-[11px] uppercase tracking-wide">Portal</th>
+                <th className="py-2.5 px-4 text-[11px] uppercase tracking-wide">Week</th>
+                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">Total Users</th>
+                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">Sessions</th>
+                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">New Members</th>
+                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">Email DB</th>
+                <th className="py-2.5 px-4 text-center text-[11px] uppercase tracking-wide">Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((w, i) => {
+                const key = `${w.portal}|${w.weekLabel}`;
+                const isOpen = openKey === key;
+                const style = PORTAL_STYLE[w.portal] || { gradient: "from-gray-500 to-gray-600", color: "#6b7280", icon: "🌐" };
+                const isChannel = Array.isArray(w.channels);
+                const usersYoy = isChannel ? yoy(w.totalUsers, w.priorYearTotalUsers) : null;
+                return (
+                  <Fragment key={key}>
+                    <tr onClick={() => setOpenKey(isOpen ? null : key)}
+                      className={`border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors ${isOpen ? "bg-gray-50" : ""}`}>
+                      <td className="py-3 px-4 font-medium text-gray-700 whitespace-nowrap">{style.icon} {w.portal}</td>
+                      <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{w.weekLabel}</td>
+                      <td className="py-3 px-4 text-right font-semibold" style={{ color: style.color }}>{isChannel ? fmt(w.totalUsers) : "–"}</td>
+                      <td className="py-3 px-4 text-right text-gray-600">{isChannel ? fmt(w.totalSessions) : "–"}</td>
+                      <td className="py-3 px-4 text-right text-gray-600">{!isChannel ? fmt(w.newMembers) : "–"}</td>
+                      <td className="py-3 px-4 text-right text-gray-600">{!isChannel ? fmt(w.emailDatabase) : "–"}</td>
+                      <td className="py-3 px-4 text-center text-gray-300">{isOpen ? "▲" : "▼"}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="bg-gray-50/60">
+                        <td colSpan={7} className="px-4 pb-4 pt-1">
+                          {isChannel ? (
+                            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                              <div className={`h-1 bg-gradient-to-r ${style.gradient}`} />
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="text-left text-gray-400 border-b border-gray-100">
+                                    <th className="py-2 px-3 text-[11px] uppercase tracking-wide">Channel</th>
+                                    <th className="py-2 px-3 text-right text-[11px] uppercase tracking-wide">Users</th>
+                                    <th className="py-2 px-3 text-right text-[11px] uppercase tracking-wide">Sessions</th>
+                                    {w.priorYearLabel && <th className="py-2 px-3 text-right text-[11px] uppercase tracking-wide text-gray-300">Users ({w.priorYearLabel.slice(-4)})</th>}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {w.channels.map((c, ci) => (
+                                    <tr key={ci} className="border-b border-gray-50 last:border-0">
+                                      <td className="py-2 px-3 font-medium text-gray-600">{c.name}</td>
+                                      <td className="py-2 px-3 text-right" style={{ color: style.color }}>{fmt(c.users)}</td>
+                                      <td className="py-2 px-3 text-right text-gray-500">{fmt(c.sessions)}</td>
+                                      {w.priorYearLabel && <td className="py-2 px-3 text-right text-gray-300">{c.priorUsers > 0 ? fmt(c.priorUsers) : "–"}</td>}
+                                    </tr>
+                                  ))}
+                                  <tr className="bg-gray-50/70 font-semibold">
+                                    <td className="py-2 px-3 text-gray-700">Total</td>
+                                    <td className="py-2 px-3 text-right" style={{ color: style.color }}>{fmt(w.totalUsers)}</td>
+                                    <td className="py-2 px-3 text-right text-gray-600">{fmt(w.totalSessions)}</td>
+                                    {w.priorYearLabel && <td className="py-2 px-3 text-right text-gray-400">{w.priorYearTotalUsers > 0 ? fmt(w.priorYearTotalUsers) : "–"}{usersYoy && w.priorYearTotalUsers > 0 && <span className={`ml-1 text-[10px] font-medium ${usersYoy.up ? "text-emerald-500" : "text-red-400"}`}>{usersYoy.up ? "▲" : "▼"}{Math.abs(usersYoy.pct).toFixed(0)}%</span>}</td>}
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="bg-white rounded-xl border border-gray-100 p-4 flex gap-6">
+                              <div><p className="text-[11px] uppercase tracking-wide text-gray-400">New Members</p><p className="text-lg font-bold" style={{ color: style.color }}>{fmt(w.newMembers)}</p></div>
+                              <div><p className="text-[11px] uppercase tracking-wide text-gray-400">Email Database</p><p className="text-lg font-bold" style={{ color: style.color }}>{fmt(w.emailDatabase)}</p></div>
+                              <p className="text-xs text-gray-300 self-center">Engagement screenshots &amp; top posts are on the source sheet.</p>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {weeks.length === 0 && <tr><td colSpan={7} className="text-center text-sm text-gray-300 py-6">No weeks found yet</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Design's real workload data — month blocks, grouped here by day (each task carries its own
 // working date) to match the day-by-day pattern the other live team views use. No. of Tasks,
 // Task Name, and Produced Hours per the requested format.
@@ -908,6 +1044,7 @@ export default function DashboardPage() {
     { id: "attendance", icon: "◷", label: "Attendance" },
     { id: "kpi", icon: "◆", label: "Weekly KPI" },
     { id: "assets", icon: "◫", label: "Assets" },
+    { id: "traffic", icon: "🌐", label: "Website Traffic" },
     { id: "people", icon: "◐", label: "People" },
     { id: "kpipkg", icon: "🗂", label: "Overall KPI" },
   ];
@@ -2150,6 +2287,9 @@ const COMP_LOGOS = {
           })()}
 
 
+
+          {/* ===== WEBSITE TRAFFIC ===== */}
+          {page === "traffic" && <WebsiteTrafficView />}
 
           {/* ===== PEOPLE ===== */}
           {page === "people" && <PeoplePage isAdmin={isAdmin} userId={user.id} />}
