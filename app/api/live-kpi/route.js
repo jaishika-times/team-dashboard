@@ -297,6 +297,22 @@ function extractDayOfMonth(dateStr) {
   return NaN;
 }
 
+const MONTH_INDEX = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+
+// Real Monday-Sunday calendar weeks, numbered within the month — NOT fixed day-of-month
+// blocks (1-7, 8-14, ...), which don't line up with actual weeks whenever the 1st of the
+// month isn't a Monday. Confirmed against the team's own week boundaries: Sep 2026 (1st is a
+// Tuesday) has Week 3 = Sep 14-18 (14-20 including the empty weekend) and Week 4 starting
+// Sep 21 — this formula reproduces exactly that. The 1st's weekday determines how much the
+// day count needs to shift so week boundaries land on Mondays.
+function weekOfMonth(monthAbbr, year, day) {
+  const monthIdx = MONTH_INDEX[monthAbbr];
+  if (!monthIdx || !year || isNaN(day)) return 1;
+  const firstDow = new Date(Date.UTC(year, monthIdx - 1, 1)).getUTCDay(); // 0=Sun..6=Sat
+  const mondayOffset = (firstDow + 6) % 7; // days the 1st sits past the preceding Monday
+  return Math.ceil((day + mondayOffset) / 7);
+}
+
 function deriveDesignStatus(pctFraction) {
   if (pctFraction === null) return "";
   const pct = pctFraction * 100;
@@ -342,10 +358,11 @@ async function getDesignFromWorkloadSheet() {
       const monthMatch = monthLabel.match(MONTH_BLOCK_RE);
       if (!monthMatch) continue;
       const month = normalizeMonth(monthMatch[1]);
+      const year = parseInt(monthMatch[2], 10);
       const weekGroups = {};
       tasks.forEach(t => {
         const day = extractDayOfMonth(t.workingDate);
-        const week = isNaN(day) ? 1 : Math.ceil(day / 7);
+        const week = weekOfMonth(month, year, day);
         (weekGroups[week] = weekGroups[week] || []).push(t);
       });
       for (const [week, weekTasks] of Object.entries(weekGroups)) {
