@@ -309,39 +309,59 @@ function ExportMenu({ filename, header, rows }) {
   );
 }
 
-// CSE's real timesheet is far richer than the standard productivity form — day-by-day,
-// time-slot-level detail with remarks. Live from their actual Google Sheet rather than the
-// CSV form everyone else uses, since that's genuinely how this team tracks their work.
-function CSETimesheetView() {
+// Builds the "Day|Date" option list in true chronological order. Sheet rows aren't a
+// reliable order to fall back on — one person adds new days at the top, another at the
+// bottom — so this sorts by the dateKey the API resolves from each row's date text, and
+// only falls back to the raw label for entries whose date couldn't be parsed (placed first,
+// so an unparseable date never gets mistaken for "the latest day").
+function sortedDayKeys(people) {
+  const keyFor = {};
+  people.forEach(p => p.entries.forEach(e => {
+    const k = `${e.day}|${e.date}`;
+    if (!(k in keyFor)) keyFor[k] = e.dateKey || null;
+  }));
+  return Object.keys(keyFor).sort((a, b) => {
+    const ka = keyFor[a], kb = keyFor[b];
+    if (ka && kb) return ka.localeCompare(kb);
+    if (ka) return 1;
+    if (kb) return -1;
+    return a.localeCompare(b);
+  });
+}
+
+// Shared by CSE and Knowledge — both teams' real day-by-day, task-by-task timesheets, live
+// from their actual Google Sheets rather than the CSV form everyone else uses, since that's
+// genuinely how these teams track their work. Only the endpoint, label and color differ.
+function TeamTimesheetView({ endpoint, teamLabel, gradient, accent }) {
   const [data, setData] = useState(null); // null = loading
   const [error, setError] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null); // "Day|Date" key
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/live-cse-timesheet", { cache: "no-store" })
+    fetch(endpoint, { cache: "no-store" })
       .then(r => r.json())
       .then(json => {
         if (cancelled) return;
         if (json.error) { setError(json.error); return; }
         setData(json.people);
-        const allDays = Array.from(new Set(json.people.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
+        const allDays = sortedDayKeys(json.people);
         setSelectedDay(allDays[allDays.length - 1] || null);
       })
       .catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, []);
+  }, [endpoint]);
 
-  if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the CSE timesheet: {error}</p>;
+  if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the {teamLabel} timesheet: {error}</p>;
   if (!data) return <div className="flex items-center gap-2 py-4 text-xs text-gray-400"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live timesheet…</div>;
 
-  const allDays = Array.from(new Set(data.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
+  const allDays = sortedDayKeys(data);
   const activeDay = selectedDay || allDays[allDays.length - 1];
 
   return (
     <div>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
-        <div className="px-5 py-4 bg-gradient-to-r from-red-500 to-rose-600 text-white flex items-center justify-between flex-wrap gap-3">
+        <div className={`px-5 py-4 bg-gradient-to-r ${gradient} text-white flex items-center justify-between flex-wrap gap-3`}>
           <div>
             <span className="text-base font-bold">⏱️ Live Timesheet</span>
             <p className="text-[11px] text-white/70 mt-0.5">Day-by-day, task-by-task, straight from the team's sheet</p>
@@ -360,14 +380,14 @@ function CSETimesheetView() {
           const total = dayEntries.reduce((s, e) => s + (e.hours || 0), 0);
           return (
             <div key={person} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="h-1 bg-gradient-to-r from-red-500 to-rose-600" />
+              <div className={`h-1 bg-gradient-to-r ${gradient}`} />
               <div className="p-5">
                 <div className="flex justify-between items-center mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br from-red-500 to-rose-600">{person[0]}</div>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br ${gradient}`}>{person[0]}</div>
                     <p className="text-base font-semibold">{person}</p>
                   </div>
-                  {total > 0 && <span className="text-2xl font-bold text-red-500">{total.toFixed(2)}h</span>}
+                  {total > 0 && <span className="text-2xl font-bold" style={{ color: accent }}>{total.toFixed(2)}h</span>}
                 </div>
                 {dayEntries.length > 0 ? (
                   <table className="w-full text-sm">
@@ -384,7 +404,7 @@ function CSETimesheetView() {
                         <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
                           <td className="py-2 pr-2 font-medium text-gray-700">{e.task}</td>
                           <td className="py-2 pr-2 text-gray-400">{e.description}</td>
-                          <td className="py-2 text-right font-medium text-red-500 whitespace-nowrap">{e.hours > 0 ? e.hours + "h" : ""}</td>
+                          <td className="py-2 text-right font-medium whitespace-nowrap" style={{ color: accent }}>{e.hours > 0 ? e.hours + "h" : ""}</td>
                           <td className="py-2 pl-2 text-gray-400">{e.remarks}</td>
                         </tr>
                       ))}
@@ -398,6 +418,14 @@ function CSETimesheetView() {
       </div>
     </div>
   );
+}
+
+function CSETimesheetView() {
+  return <TeamTimesheetView endpoint="/api/live-cse-timesheet" teamLabel="CSE" gradient="from-red-500 to-rose-600" accent="#ef4444" />;
+}
+
+function KnowledgeTimesheetView() {
+  return <TeamTimesheetView endpoint="/api/live-knowledge-tracker" teamLabel="Knowledge" gradient="from-cyan-500 to-blue-500" accent="#06b6d4" />;
 }
 
 // Content and Video's real daily tracker — same idea as CSE's, different columns (Activity
@@ -1460,7 +1488,7 @@ const COMP_LOGOS = {
                         const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
                         // CSE/Content/Video/Design can also be opened to their live tracker even on a
                         // day with no historical form entries — those track "now," not a picked date.
-                        const hasLiveTracker = ["CSE", "Content", "Video", "Design", "HR", "Finance"].includes(team);
+                        const hasLiveTracker = ["CSE", "Content", "Video", "Design", "HR", "Finance", "Knowledge"].includes(team);
                         const isClickable = members.length > 0 || hasLiveTracker;
                         const isSelected = selectedProdTeam === team;
                         return (
@@ -1495,6 +1523,8 @@ const COMP_LOGOS = {
                         </div>
                         {selectedProdTeam === "CSE" ? (
                           <CSETimesheetView />
+                        ) : selectedProdTeam === "Knowledge" ? (
+                          <KnowledgeTimesheetView />
                         ) : selectedProdTeam === "Content" || selectedProdTeam === "Video" || selectedProdTeam === "Design" ? (
                           <ContentVideoTrackerView team={selectedProdTeam} />
                         ) : selectedProdTeam === "HR" || selectedProdTeam === "Finance" ? (
