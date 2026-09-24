@@ -309,23 +309,41 @@ function ExportMenu({ filename, header, rows }) {
   );
 }
 
-// Builds the "Day|Date" option list in true chronological order. Sheet rows aren't a
-// reliable order to fall back on — one person adds new days at the top, another at the
-// bottom — so this sorts by the dateKey the API resolves from each row's date text, and
-// only falls back to the raw label for entries whose date couldn't be parsed (placed first,
-// so an unparseable date never gets mistaken for "the latest day").
+// Groups entries by the real calendar date (the API's resolved dateKey), not by the raw
+// "Day|Date" text the sheet happens to show — different people write the same date
+// differently ("Wed" vs "Wednesday", "23/9/2026" vs "23 Sept"), and sheets sometimes have the
+// weekday just wrong, which used to produce duplicate/inconsistent entries for the same day.
+// An entry whose date couldn't be parsed at all falls back to its own raw "Day|Date" key so
+// it's still visible, just kept out of the real chronological run (sorted first).
+function dayGroupKey(e) {
+  return e.dateKey || `raw:${e.day}|${e.date}`;
+}
+
+// The display label is always derived from the real date (so the weekday shown is correct,
+// even if a person's sheet had it wrong) rather than trusted from the sheet text.
+function dayGroupLabel(key, people) {
+  if (!key.startsWith("raw:")) {
+    const d = new Date(key + "T00:00:00Z");
+    const weekday = d.toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+    const day = d.getUTCDate();
+    const month = d.toLocaleDateString("en-GB", { month: "long", timeZone: "UTC" });
+    return `${weekday} — ${day} ${month}`;
+  }
+  for (const p of people) {
+    const e = p.entries.find(en => dayGroupKey(en) === key);
+    if (e) return `${e.day || "?"} — ${e.date || "?"}`;
+  }
+  return key;
+}
+
 function sortedDayKeys(people) {
-  const keyFor = {};
-  people.forEach(p => p.entries.forEach(e => {
-    const k = `${e.day}|${e.date}`;
-    if (!(k in keyFor)) keyFor[k] = e.dateKey || null;
-  }));
-  return Object.keys(keyFor).sort((a, b) => {
-    const ka = keyFor[a], kb = keyFor[b];
-    if (ka && kb) return ka.localeCompare(kb);
-    if (ka) return 1;
-    if (kb) return -1;
-    return a.localeCompare(b);
+  const seen = new Set();
+  people.forEach(p => p.entries.forEach(e => seen.add(dayGroupKey(e))));
+  return Array.from(seen).sort((a, b) => {
+    const ra = a.startsWith("raw:"), rb = b.startsWith("raw:");
+    if (!ra && !rb) return a.localeCompare(b); // both real dateKeys (YYYY-MM-DD) sort chronologically as strings
+    if (ra && rb) return a.localeCompare(b);
+    return ra ? -1 : 1; // unresolved dates first, so they never get mistaken for "the latest day"
   });
 }
 
@@ -369,14 +387,14 @@ function TeamTimesheetView({ endpoint, teamLabel, gradient, accent }) {
           {allDays.length > 0 && (
             <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
               className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-              {allDays.map(d => <option key={d} value={d}>{d.replace("|", " — ")}</option>)}
+              {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, data)}</option>)}
             </select>
           )}
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {data.map(({ person, entries }) => {
-          const dayEntries = entries.filter(e => `${e.day}|${e.date}` === activeDay);
+          const dayEntries = entries.filter(e => dayGroupKey(e) === activeDay);
           const total = dayEntries.reduce((s, e) => s + (e.hours || 0), 0);
           return (
             <div key={person} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
