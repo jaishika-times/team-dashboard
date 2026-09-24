@@ -55,7 +55,7 @@ function parseDateHeader(text) {
   return { label: `${d1} ${mon1} - ${d2} ${mon2} ${year}`, year: parseInt(year, 10), endDate };
 }
 
-function parseChannelTab(rows, portal) {
+function parseChannelTab(rows, portal, gid) {
   const weeks = [];
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r];
@@ -90,6 +90,7 @@ function parseChannelTab(rows, portal) {
       portal,
       weekLabel: current.label,
       endDate: current.endDate ? current.endDate.toISOString().slice(0, 10) : null,
+      sheetUrl: gid !== undefined ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit#gid=${gid}&range=A${r + 1}` : null,
       totalUsers: total?.users ?? 0,
       totalSessions: total?.sessions ?? 0,
       priorYearLabel: prior?.label || null,
@@ -113,7 +114,7 @@ function guessYear(day, month, refDate) {
   return { year, date: candidate };
 }
 
-function parseFbTab(rows) {
+function parseFbTab(rows, gid) {
   const weeks = [];
   const now = new Date();
   for (let r = 0; r < rows.length; r++) {
@@ -125,12 +126,21 @@ function parseFbTab(rows) {
     const { year, date: endDate } = guessYear(d2, mo2, now);
     const newMembers = num(cell(rows[r + 2], 1));
     const emailDatabase = num(cell(rows[r + 3], 1));
+    // The screenshots (Engagement Screenshot, Active Members Screenshot, Top posts) are pasted
+    // images, not cell values or =IMAGE() formulas — the Sheets API has no way to read those
+    // out, so instead of trying to sync them, this links straight to where they sit in the
+    // sheet (row r+7, 1-indexed: title, date range, New Members, Email Database, blank,
+    // "Facebook Engagement" header, then the screenshot row itself).
+    const sheetUrl = gid !== undefined
+      ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit#gid=${gid}&range=A${r + 7}`
+      : null;
     weeks.push({
       portal: "FB Group",
       weekLabel: `${d1}/${mo1} - ${d2}/${mo2}/${year}`,
       endDate: endDate.toISOString().slice(0, 10),
       newMembers,
       emailDatabase,
+      sheetUrl,
     });
     r += 3;
   }
@@ -142,9 +152,11 @@ export async function GET() {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
 
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties.title" });
-    const allTitles = (meta.data.sheets || []).map(s => s.properties.title);
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties(title,sheetId)" });
+    const allProps = (meta.data.sheets || []).map(s => s.properties);
+    const allTitles = allProps.map(p => p.title);
     const resolve = name => allTitles.find(t => t.trim().toLowerCase() === name.trim().toLowerCase()) || name;
+    const gidFor = name => allProps.find(p => p.title.trim().toLowerCase() === name.trim().toLowerCase())?.sheetId;
 
     const wantedTabs = [...CHANNEL_TABS.map(t => t.tabName), FB_TAB.tabName].map(resolve);
     const res = await sheets.spreadsheets.get({
@@ -161,9 +173,9 @@ export async function GET() {
 
     let weeks = [];
     for (const { tabName, portal } of CHANNEL_TABS) {
-      weeks = weeks.concat(parseChannelTab(rowsFor(tabName), portal));
+      weeks = weeks.concat(parseChannelTab(rowsFor(tabName), portal, gidFor(tabName)));
     }
-    weeks = weeks.concat(parseFbTab(rowsFor(FB_TAB.tabName)));
+    weeks = weeks.concat(parseFbTab(rowsFor(FB_TAB.tabName), gidFor(FB_TAB.tabName)));
 
     weeks.sort((a, b) => {
       if (a.endDate && b.endDate && a.endDate !== b.endDate) return b.endDate.localeCompare(a.endDate);
