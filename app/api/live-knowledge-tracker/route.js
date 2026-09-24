@@ -124,10 +124,24 @@ function parsePersonTab(rows, personName) {
   let remarksCol = findCol(header, ["remark"]);
   if (remarksCol === -1) remarksCol = findCol(header, ["status"]);
 
+  // Some tabs repeat the header row again further down (e.g. a new month's block). If it
+  // isn't skipped, "Day"/"Date"/"Task" land in the data as a garbage entry with an
+  // unparseable date. Detected generically: the row's Day/Date/Task cells match their own
+  // column headers verbatim.
+  const isHeaderRepeat = row => {
+    const checks = [dayCol, dateCol, taskCol].filter(c => c >= 0);
+    if (!checks.length) return false;
+    return checks.every(c => {
+      const v = (row[c] || "").trim().toLowerCase();
+      return v !== "" && v === (header[c] || "").trim().toLowerCase();
+    });
+  };
+
   let currentDay = "", currentDate = "";
   const entries = [];
   for (let r = headerIdx + 1; r < rows.length; r++) {
     const row = rows[r];
+    if (isHeaderRepeat(row)) continue;
     if (dayCol >= 0 && (row[dayCol] || "").trim()) currentDay = row[dayCol].trim();
     if (dateCol >= 0 && (row[dateCol] || "").trim()) currentDate = row[dateCol].trim();
     const task = taskCol >= 0 ? (row[taskCol] || "").trim() : "";
