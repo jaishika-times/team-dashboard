@@ -502,9 +502,8 @@ function ContentVideoTrackerView({ team, endpoint }) {
 function WebsiteTrafficView() {
   const [weeks, setWeeks] = useState(null);
   const [error, setError] = useState(null);
-  const [portal, setPortal] = useState(null);
   const [weekLabel, setWeekLabel] = useState(null);
-  const [compareMode, setCompareMode] = useState("week"); // "week" | "year"
+  const [fbWeekLabel, setFbWeekLabel] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -514,28 +513,16 @@ function WebsiteTrafficView() {
         if (cancelled) return;
         if (json.error) { setError(json.error); return; }
         setWeeks(json.weeks);
-        const firstPortal = json.weeks[0]?.portal || null;
-        setPortal(firstPortal);
-        setWeekLabel(json.weeks.find(w => w.portal === firstPortal)?.weekLabel || null);
+        const channelWeeks = json.weeks.filter(w => Array.isArray(w.channels));
+        setWeekLabel(channelWeeks[0]?.weekLabel || null);
+        const fbWeeks = json.weeks.filter(w => w.portal === "FB Group");
+        setFbWeekLabel(fbWeeks[0]?.weekLabel || null);
       })
       .catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
   }, []);
 
-  const PORTAL_STYLE = {
-    "AfterSchool": { gradient: "from-sky-500 to-blue-600", color: "#0284c7", icon: "🏫" },
-    "School Advisor": { gradient: "from-violet-500 to-purple-600", color: "#7c3aed", icon: "🎓" },
-    "FB Group": { gradient: "from-blue-600 to-indigo-600", color: "#4f46e5", icon: "👥" },
-  };
-  const fmt = n => (n || 0).toLocaleString();
-  const delta = (curr, prior) => {
-    if (prior === null || prior === undefined || prior === 0) return null;
-    const pct = ((curr - prior) / prior) * 100;
-    return { pct, up: pct >= 0 };
-  };
-  const DeltaBadge = ({ d, size }) => !d ? null : (
-    <span className={`inline-flex items-center gap-0.5 font-semibold ${size === "lg" ? "text-sm" : "text-[11px]"} ${d.up ? "text-emerald-500" : "text-red-400"}`}>{d.up ? "▲" : "▼"}{Math.abs(d.pct).toFixed(0)}%</span>
-  );
+  const fmt = n => (n === null || n === undefined || n === 0) ? "-" : n.toLocaleString();
 
   if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the traffic report: {error}</p>;
   if (!weeks) return (
@@ -544,203 +531,106 @@ function WebsiteTrafficView() {
     </div>
   );
 
-  const portals = Array.from(new Set(weeks.map(w => w.portal)));
-  // Per portal, weeks oldest-to-newest — used to find "the latest week" and "the week before".
-  const weeksByPortal = {};
-  weeks.forEach(w => { (weeksByPortal[w.portal] = weeksByPortal[w.portal] || []).push(w); });
-  Object.values(weeksByPortal).forEach(arr => arr.sort((a, b) => (a.endDate || "").localeCompare(b.endDate || "")));
+  const channelPortals = ["AfterSchool", "School Advisor"];
+  // AfterSchool and School Advisor share the same "Date : ..." week blocks in the sheet, so one
+  // dropdown drives both. FB Group runs on its own date blocks, so it gets its own dropdown.
+  const weekOptions = Array.from(new Set(weeks.filter(w => Array.isArray(w.channels)).map(w => w.weekLabel)));
+  const activeWeekLabel = weekLabel && weekOptions.includes(weekLabel) ? weekLabel : weekOptions[0];
+  const rowsForWeek = channelPortals.map(portal => ({
+    portal,
+    week: weeks.find(w => w.portal === portal && w.weekLabel === activeWeekLabel) || null,
+  }));
+  const priorYear = rowsForWeek.find(r => r.week?.priorYearLabel)?.week?.priorYearLabel?.slice(-4) || "";
+  const currYear = activeWeekLabel ? activeWeekLabel.slice(-4) : "";
+  const weekRangeNoYear = activeWeekLabel ? activeWeekLabel.replace(` ${currYear}`, "") : "";
 
-  const activePortal = portal || portals[0];
-  const activeWeeks = weeksByPortal[activePortal] || [];
-  const activeWeekLabel = weekLabel && activeWeeks.some(w => w.weekLabel === weekLabel) ? weekLabel : activeWeeks[activeWeeks.length - 1]?.weekLabel;
-  const idx = activeWeeks.findIndex(w => w.weekLabel === activeWeekLabel);
-  const w = activeWeeks[idx];
-  const prevWeek = idx > 0 ? activeWeeks[idx - 1] : null;
-  const style = PORTAL_STYLE[activePortal] || { gradient: "from-gray-500 to-gray-600", color: "#6b7280", icon: "🌐" };
-  const isChannel = w && Array.isArray(w.channels);
+  const fbWeekOptions = weeks.filter(w => w.portal === "FB Group").map(w => w.weekLabel);
+  const activeFbWeekLabel = fbWeekLabel && fbWeekOptions.includes(fbWeekLabel) ? fbWeekLabel : fbWeekOptions[0];
+  const fbWeek = weeks.find(w => w.portal === "FB Group" && w.weekLabel === activeFbWeekLabel) || null;
+
+  const th = "border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 text-center";
+  const thLeft = "border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 text-left";
+  const td = "border border-gray-200 px-3 py-1.5 text-sm text-gray-700 text-right";
+  const tdLeft = "border border-gray-200 px-3 py-1.5 text-sm text-gray-700 text-left";
 
   return (
     <>
-      <h1 className="text-xl font-semibold mb-1">🌐 Website Traffic Report</h1>
-      <p className="text-sm text-gray-400 mb-5">Weekly, straight from the traffic sheet.</p>
-
-      {/* Portal picker — one glance at all three, latest week */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-        {portals.map(p => {
-          const pStyle = PORTAL_STYLE[p] || { gradient: "from-gray-500 to-gray-600", color: "#6b7280", icon: "🌐" };
-          const pWeeks = weeksByPortal[p] || [];
-          const latest = pWeeks[pWeeks.length - 1];
-          const before = pWeeks.length > 1 ? pWeeks[pWeeks.length - 2] : null;
-          const latestIsChannel = latest && Array.isArray(latest.channels);
-          const headline = latestIsChannel ? latest.totalUsers : latest?.newMembers;
-          const headlinePrior = latestIsChannel ? before?.totalUsers : before?.newMembers;
-          const d = delta(headline, headlinePrior);
-          const isActive = activePortal === p;
-          return (
-            <button key={p} onClick={() => { setPortal(p); setWeekLabel(pWeeks[pWeeks.length - 1]?.weekLabel || null); }}
-              className={`text-left rounded-2xl overflow-hidden border shadow-sm transition-all ${isActive ? "border-transparent ring-2 ring-offset-2" : "border-gray-100 hover:shadow-md"}`}
-              style={isActive ? { "--tw-ring-color": pStyle.color } : {}}>
-              <div className={`px-5 py-4 bg-gradient-to-br ${pStyle.gradient} text-white`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-base font-bold">{pStyle.icon} {p}</span>
-                  {isActive && <span className="text-[10px] font-semibold bg-white/25 px-2 py-0.5 rounded-full">Viewing</span>}
-                </div>
-                <p className="text-[11px] text-white/70 mt-0.5">{latest?.weekLabel || "—"}</p>
-              </div>
-              <div className="bg-white px-5 py-4">
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">{latestIsChannel ? "Total Users" : "New Members"}</p>
-                <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="text-3xl font-bold" style={{ color: pStyle.color }}>{fmt(headline)}</span>
-                  <DeltaBadge d={d} />
-                </div>
-              </div>
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+        <h1 className="text-xl font-semibold">🌐 Website Traffic Report</h1>
+        {weekOptions.length > 1 && (
+          <select value={activeWeekLabel} onChange={e => setWeekLabel(e.target.value)}
+            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700">
+            {weekOptions.map(wl => <option key={wl} value={wl}>{wl}</option>)}
+          </select>
+        )}
       </div>
 
-      {w && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className={`px-5 py-4 bg-gradient-to-r ${style.gradient} text-white flex items-center justify-between flex-wrap gap-3`}>
-            <div>
-              <span className="text-base font-bold">{style.icon} {activePortal}</span>
-              <p className="text-[11px] text-white/70 mt-0.5">Week of {w.weekLabel}</p>
-            </div>
-            {activeWeeks.length > 1 && (
-              <select value={activeWeekLabel} onChange={e => setWeekLabel(e.target.value)}
-                className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-                {[...activeWeeks].reverse().map(ww => <option key={ww.weekLabel} value={ww.weekLabel}>{ww.weekLabel}</option>)}
-              </select>
-            )}
-          </div>
+      {/* Same table as the sheet's own "Weekly Portal Traffic Report" — Portal / Name / Total
+          Users & Sessions for last year, Total Users & Sessions for this year. */}
+      <div className="overflow-x-auto mb-6">
+        <p className="text-sm font-semibold text-gray-700 mb-2">Weekly Portal Traffic Report ({weekRangeNoYear})</p>
+        <table className="border-collapse w-full max-w-3xl">
+          <thead>
+            <tr>
+              <th className={th} rowSpan={2}>Portal</th>
+              <th className={th} rowSpan={2}>Name</th>
+              <th className={th} colSpan={2}>{priorYear}</th>
+              <th className={th} colSpan={2}>{currYear}</th>
+            </tr>
+            <tr>
+              <th className={th}>Total Users</th>
+              <th className={th}>Sessions</th>
+              <th className={th}>Total Users</th>
+              <th className={th}>Sessions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rowsForWeek.map(({ portal, week: w }) => {
+              const shortName = portal === "AfterSchool" ? "AFS" : portal === "School Advisor" ? "SA" : portal;
+              if (!w) return (
+                <tr key={portal}><td className={tdLeft}>{shortName}</td><td className={tdLeft} colSpan={5}>No data for this week</td></tr>
+              );
+              return w.channels.map((c, ci) => (
+                <tr key={portal + ci}>
+                  {ci === 0 && <td className={tdLeft + " font-semibold"} rowSpan={w.channels.length}>{shortName}</td>}
+                  <td className={tdLeft}>{c.name}</td>
+                  <td className={td}>{fmt(c.priorUsers)}</td>
+                  <td className={td}>{fmt(c.priorSessions)}</td>
+                  <td className={td}>{fmt(c.users)}</td>
+                  <td className={td}>{fmt(c.sessions)}</td>
+                </tr>
+              ));
+            })}
+          </tbody>
+        </table>
+      </div>
 
-          <div className="p-5">
-            {/* Headline stat tiles */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {isChannel ? (
-                <>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Total Users</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-3xl font-bold" style={{ color: style.color }}>{fmt(w.totalUsers)}</span>
-                      <DeltaBadge d={prevWeek && delta(w.totalUsers, prevWeek.totalUsers)} size="lg" />
-                    </div>
-                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.totalUsers)} the week before</p>}
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Sessions</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-3xl font-bold text-gray-700">{fmt(w.totalSessions)}</span>
-                      <DeltaBadge d={prevWeek && delta(w.totalSessions, prevWeek.totalSessions)} size="lg" />
-                    </div>
-                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.totalSessions)} the week before</p>}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">New Members</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-3xl font-bold" style={{ color: style.color }}>{fmt(w.newMembers)}</span>
-                      <DeltaBadge d={prevWeek && delta(w.newMembers, prevWeek.newMembers)} size="lg" />
-                    </div>
-                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.newMembers)} the week before</p>}
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Email Database</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-3xl font-bold text-gray-700">{fmt(w.emailDatabase)}</span>
-                      <DeltaBadge d={prevWeek && delta(w.emailDatabase, prevWeek.emailDatabase)} size="lg" />
-                    </div>
-                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.emailDatabase)} the week before</p>}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Channel breakdown — simple horizontal bars, easiest thing to scan at a glance */}
-            {isChannel && (
-              <div className="mb-2">
-                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-3">Where the traffic comes from</p>
-                <div className="space-y-3">
-                  {w.channels.map((c, ci) => {
-                    const share = w.totalUsers > 0 ? (c.users / w.totalUsers) * 100 : 0;
-                    return (
-                      <div key={ci}>
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="font-medium text-gray-600">{c.name}</span>
-                          <span className="text-gray-500">{fmt(c.users)} users · {fmt(c.sessions)} sessions <span className="text-gray-300">({share.toFixed(0)}%)</span></span>
-                        </div>
-                        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${Math.max(share, 2)}%`, background: style.color }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Comparison toggle — last week vs same week last year, one clean table either way */}
-            {isChannel && (prevWeek || w.priorYearLabel) && (
-              <div className="mt-6 pt-5 border-t border-gray-100">
-                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Compare</p>
-                  <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-xs font-medium">
-                    <button onClick={() => setCompareMode("week")} disabled={!prevWeek}
-                      className={`px-3 py-1.5 rounded-md transition-colors ${compareMode === "week" ? "bg-white shadow-sm text-gray-800" : "text-gray-400"} ${!prevWeek ? "opacity-40 cursor-not-allowed" : ""}`}>vs Last Week</button>
-                    <button onClick={() => setCompareMode("year")} disabled={!w.priorYearLabel}
-                      className={`px-3 py-1.5 rounded-md transition-colors ${compareMode === "year" ? "bg-white shadow-sm text-gray-800" : "text-gray-400"} ${!w.priorYearLabel ? "opacity-40 cursor-not-allowed" : ""}`}>vs Last Year</button>
-                  </div>
-                </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-400 border-b border-gray-100">
-                      <th className="py-2 text-[11px] uppercase tracking-wide">Channel</th>
-                      <th className="py-2 text-right text-[11px] uppercase tracking-wide">Users now</th>
-                      <th className="py-2 text-right text-[11px] uppercase tracking-wide text-gray-300">{compareMode === "week" ? "Users last week" : `Users ${w.priorYearLabel?.slice(-4) || ""}`}</th>
-                      <th className="py-2 text-right text-[11px] uppercase tracking-wide">Change</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {w.channels.map((c, ci) => {
-                      const priorVal = compareMode === "week"
-                        ? prevWeek?.channels?.find(pc => pc.name === c.name)?.users
-                        : c.priorUsers;
-                      const d = delta(c.users, priorVal);
-                      return (
-                        <tr key={ci} className="border-b border-gray-50 last:border-0">
-                          <td className="py-2 font-medium text-gray-600">{c.name}</td>
-                          <td className="py-2 text-right" style={{ color: style.color }}>{fmt(c.users)}</td>
-                          <td className="py-2 text-right text-gray-300">{priorVal > 0 ? fmt(priorVal) : (compareMode === "year" ? "NA" : "–")}</td>
-                          <td className="py-2 text-right"><DeltaBadge d={d} /></td>
-                        </tr>
-                      );
-                    })}
-                    <tr className="bg-gray-50/70 font-semibold">
-                      <td className="py-2 text-gray-700">Total</td>
-                      <td className="py-2 text-right" style={{ color: style.color }}>{fmt(w.totalUsers)}</td>
-                      <td className="py-2 text-right text-gray-400">{compareMode === "week" ? (prevWeek ? fmt(prevWeek.totalUsers) : "–") : (w.priorYearTotalUsers > 0 ? fmt(w.priorYearTotalUsers) : "NA")}</td>
-                      <td className="py-2 text-right"><DeltaBadge d={compareMode === "week" ? (prevWeek && delta(w.totalUsers, prevWeek.totalUsers)) : delta(w.totalUsers, w.priorYearTotalUsers)} /></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {!isChannel && (
-              <p className="text-xs text-gray-300 pt-2 border-t border-gray-100">Engagement screenshots &amp; top posts are on the source sheet.</p>
-            )}
-          </div>
+      {/* FB Group runs on its own weekly blocks in the sheet — New Members / Email Database,
+          no channel breakdown, so it gets its own small table rather than being forced into
+          the columns above. */}
+      <div className="overflow-x-auto">
+        <div className="flex items-center gap-3 mb-2">
+          <p className="text-sm font-semibold text-gray-700">Facebook Group Weekly Report</p>
+          {fbWeekOptions.length > 1 && (
+            <select value={activeFbWeekLabel} onChange={e => setFbWeekLabel(e.target.value)}
+              className="text-xs px-2 py-1 border border-gray-200 rounded-lg text-gray-600">
+              {fbWeekOptions.map(wl => <option key={wl} value={wl}>{wl}</option>)}
+            </select>
+          )}
         </div>
-      )}
+        {fbWeek ? (
+          <table className="border-collapse w-full max-w-md">
+            <tbody>
+              <tr><td className={thLeft}>New Members</td><td className={td}>{fmt(fbWeek.newMembers)}</td></tr>
+              <tr><td className={thLeft}>Email Database</td><td className={td}>{fmt(fbWeek.emailDatabase)}</td></tr>
+            </tbody>
+          </table>
+        ) : <p className="text-sm text-gray-300">No FB data found</p>}
+      </div>
     </>
   );
 }
 
-// Design's real workload data — month blocks, grouped here by day (each task carries its own
-// working date) to match the day-by-day pattern the other live team views use. No. of Tasks,
-// Task Name, and Produced Hours per the requested format.
 function DesignTrackerView() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
