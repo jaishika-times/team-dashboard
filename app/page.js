@@ -502,7 +502,9 @@ function ContentVideoTrackerView({ team, endpoint }) {
 function WebsiteTrafficView() {
   const [weeks, setWeeks] = useState(null);
   const [error, setError] = useState(null);
-  const [openKey, setOpenKey] = useState(null);
+  const [portal, setPortal] = useState(null);
+  const [weekLabel, setWeekLabel] = useState(null);
+  const [compareMode, setCompareMode] = useState("week"); // "week" | "year"
 
   useEffect(() => {
     let cancelled = false;
@@ -512,6 +514,9 @@ function WebsiteTrafficView() {
         if (cancelled) return;
         if (json.error) { setError(json.error); return; }
         setWeeks(json.weeks);
+        const firstPortal = json.weeks[0]?.portal || null;
+        setPortal(firstPortal);
+        setWeekLabel(json.weeks.find(w => w.portal === firstPortal)?.weekLabel || null);
       })
       .catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
@@ -528,183 +533,205 @@ function WebsiteTrafficView() {
     const pct = ((curr - prior) / prior) * 100;
     return { pct, up: pct >= 0 };
   };
-  const DeltaBadge = ({ d }) => !d ? null : (
-    <span className={`ml-1.5 text-[10px] font-semibold ${d.up ? "text-emerald-500" : "text-red-400"}`}>{d.up ? "▲" : "▼"}{Math.abs(d.pct).toFixed(0)}%</span>
+  const DeltaBadge = ({ d, size }) => !d ? null : (
+    <span className={`inline-flex items-center gap-0.5 font-semibold ${size === "lg" ? "text-sm" : "text-[11px]"} ${d.up ? "text-emerald-500" : "text-red-400"}`}>{d.up ? "▲" : "▼"}{Math.abs(d.pct).toFixed(0)}%</span>
   );
 
-  // Week-over-week: for each portal, its weeks sorted oldest-to-newest so we can look at
-  // "the week right before this one" per portal (portals don't share the same week boundaries).
+  if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the traffic report: {error}</p>;
+  if (!weeks) return (
+    <div className="flex items-center gap-2 py-4 text-xs text-gray-400">
+      <span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live traffic data…
+    </div>
+  );
+
+  const portals = Array.from(new Set(weeks.map(w => w.portal)));
+  // Per portal, weeks oldest-to-newest — used to find "the latest week" and "the week before".
   const weeksByPortal = {};
-  (weeks || []).forEach(w => { (weeksByPortal[w.portal] = weeksByPortal[w.portal] || []).push(w); });
+  weeks.forEach(w => { (weeksByPortal[w.portal] = weeksByPortal[w.portal] || []).push(w); });
   Object.values(weeksByPortal).forEach(arr => arr.sort((a, b) => (a.endDate || "").localeCompare(b.endDate || "")));
-  const prevWeekOf = w => {
-    const arr = weeksByPortal[w.portal] || [];
-    const idx = arr.findIndex(x => x.weekLabel === w.weekLabel);
-    return idx > 0 ? arr[idx - 1] : null;
-  };
-  const prevChannel = (prevWeek, name) => prevWeek?.channels?.find(c => c.name === name) || null;
+
+  const activePortal = portal || portals[0];
+  const activeWeeks = weeksByPortal[activePortal] || [];
+  const activeWeekLabel = weekLabel && activeWeeks.some(w => w.weekLabel === weekLabel) ? weekLabel : activeWeeks[activeWeeks.length - 1]?.weekLabel;
+  const idx = activeWeeks.findIndex(w => w.weekLabel === activeWeekLabel);
+  const w = activeWeeks[idx];
+  const prevWeek = idx > 0 ? activeWeeks[idx - 1] : null;
+  const style = PORTAL_STYLE[activePortal] || { gradient: "from-gray-500 to-gray-600", color: "#6b7280", icon: "🌐" };
+  const isChannel = w && Array.isArray(w.channels);
 
   return (
     <>
       <h1 className="text-xl font-semibold mb-1">🌐 Website Traffic Report</h1>
-      <p className="text-sm text-gray-400 mb-5">Weekly, straight from the traffic sheet — click a row to see the channel breakdown, this week vs last week, and this week vs the same week last year.</p>
+      <p className="text-sm text-gray-400 mb-5">Weekly, straight from the traffic sheet.</p>
 
-      {error && <p className="text-sm text-red-400 py-4">Couldn't load the traffic report: {error}</p>}
-      {!error && !weeks && (
-        <div className="flex items-center gap-2 py-4 text-xs text-gray-400">
-          <span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live traffic data…
-        </div>
-      )}
+      {/* Portal picker — one glance at all three, latest week */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        {portals.map(p => {
+          const pStyle = PORTAL_STYLE[p] || { gradient: "from-gray-500 to-gray-600", color: "#6b7280", icon: "🌐" };
+          const pWeeks = weeksByPortal[p] || [];
+          const latest = pWeeks[pWeeks.length - 1];
+          const before = pWeeks.length > 1 ? pWeeks[pWeeks.length - 2] : null;
+          const latestIsChannel = latest && Array.isArray(latest.channels);
+          const headline = latestIsChannel ? latest.totalUsers : latest?.newMembers;
+          const headlinePrior = latestIsChannel ? before?.totalUsers : before?.newMembers;
+          const d = delta(headline, headlinePrior);
+          const isActive = activePortal === p;
+          return (
+            <button key={p} onClick={() => { setPortal(p); setWeekLabel(pWeeks[pWeeks.length - 1]?.weekLabel || null); }}
+              className={`text-left rounded-2xl overflow-hidden border shadow-sm transition-all ${isActive ? "border-transparent ring-2 ring-offset-2" : "border-gray-100 hover:shadow-md"}`}
+              style={isActive ? { "--tw-ring-color": pStyle.color } : {}}>
+              <div className={`px-5 py-4 bg-gradient-to-br ${pStyle.gradient} text-white`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-base font-bold">{pStyle.icon} {p}</span>
+                  {isActive && <span className="text-[10px] font-semibold bg-white/25 px-2 py-0.5 rounded-full">Viewing</span>}
+                </div>
+                <p className="text-[11px] text-white/70 mt-0.5">{latest?.weekLabel || "—"}</p>
+              </div>
+              <div className="bg-white px-5 py-4">
+                <p className="text-[11px] uppercase tracking-wide text-gray-400">{latestIsChannel ? "Total Users" : "New Members"}</p>
+                <div className="flex items-baseline gap-2 mt-0.5">
+                  <span className="text-3xl font-bold" style={{ color: pStyle.color }}>{fmt(headline)}</span>
+                  <DeltaBadge d={d} />
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
-      {weeks && (
+      {w && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 rounded-t-2xl bg-gradient-to-r from-sky-500 to-indigo-600 text-white">
-            <span className="text-base font-bold">📊 Summary</span>
-            <p className="text-[11px] text-white/70 mt-0.5">Total Users / Sessions for AfterSchool &amp; School Advisor · New Members / Email Database for the FB Group</p>
+          <div className={`px-5 py-4 bg-gradient-to-r ${style.gradient} text-white flex items-center justify-between flex-wrap gap-3`}>
+            <div>
+              <span className="text-base font-bold">{style.icon} {activePortal}</span>
+              <p className="text-[11px] text-white/70 mt-0.5">Week of {w.weekLabel}</p>
+            </div>
+            {activeWeeks.length > 1 && (
+              <select value={activeWeekLabel} onChange={e => setWeekLabel(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                {[...activeWeeks].reverse().map(ww => <option key={ww.weekLabel} value={ww.weekLabel}>{ww.weekLabel}</option>)}
+              </select>
+            )}
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-400 border-b border-gray-100 bg-gray-50/50">
-                <th className="py-2.5 px-4 text-[11px] uppercase tracking-wide">Portal</th>
-                <th className="py-2.5 px-4 text-[11px] uppercase tracking-wide">Week</th>
-                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">Total Users</th>
-                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">Sessions</th>
-                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">New Members</th>
-                <th className="py-2.5 px-4 text-right text-[11px] uppercase tracking-wide">Email DB</th>
-                <th className="py-2.5 px-4 text-center text-[11px] uppercase tracking-wide">Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {weeks.map((w, i) => {
-                const key = `${w.portal}|${w.weekLabel}`;
-                const isOpen = openKey === key;
-                const style = PORTAL_STYLE[w.portal] || { gradient: "from-gray-500 to-gray-600", color: "#6b7280", icon: "🌐" };
-                const isChannel = Array.isArray(w.channels);
-                const prevWeek = prevWeekOf(w);
-                const usersWow = prevWeek ? delta(isChannel ? w.totalUsers : w.newMembers, isChannel ? prevWeek.totalUsers : prevWeek.newMembers) : null;
-                const sessWow = prevWeek && isChannel ? delta(w.totalSessions, prevWeek.totalSessions) : null;
-                const emailWow = prevWeek && !isChannel ? delta(w.emailDatabase, prevWeek.emailDatabase) : null;
-                const priorYear = w.priorYearLabel ? w.priorYearLabel.slice(-4) : null;
-                const currYear = w.weekLabel.slice(-4);
-                return (
-                  <Fragment key={key}>
-                    <tr onClick={() => setOpenKey(isOpen ? null : key)}
-                      className={`border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors ${isOpen ? "bg-gray-50" : ""}`}>
-                      <td className="py-3 px-4 font-medium text-gray-700 whitespace-nowrap">{style.icon} {w.portal}</td>
-                      <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{w.weekLabel}</td>
-                      <td className="py-3 px-4 text-right font-semibold whitespace-nowrap" style={{ color: style.color }}>{isChannel ? <>{fmt(w.totalUsers)}<DeltaBadge d={usersWow} /></> : "–"}</td>
-                      <td className="py-3 px-4 text-right text-gray-600 whitespace-nowrap">{isChannel ? <>{fmt(w.totalSessions)}<DeltaBadge d={sessWow} /></> : "–"}</td>
-                      <td className="py-3 px-4 text-right text-gray-600 whitespace-nowrap">{!isChannel ? <>{fmt(w.newMembers)}<DeltaBadge d={usersWow} /></> : "–"}</td>
-                      <td className="py-3 px-4 text-right text-gray-600 whitespace-nowrap">{!isChannel ? <>{fmt(w.emailDatabase)}<DeltaBadge d={emailWow} /></> : "–"}</td>
-                      <td className="py-3 px-4 text-center text-gray-300">{isOpen ? "▲" : "▼"}</td>
-                    </tr>
-                    {isOpen && (
-                      <tr className="bg-gray-50/60">
-                        <td colSpan={7} className="px-4 pb-4 pt-1 space-y-3">
-                          {isChannel ? (
-                            <>
-                              {/* Week over week — this week vs the week right before it */}
-                              <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                                <div className={`h-1 bg-gradient-to-r ${style.gradient}`} />
-                                <div className="px-3 pt-2.5 pb-1"><span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Week over Week</span>{!prevWeek && <span className="text-[11px] text-gray-300 ml-2">no earlier week to compare yet</span>}</div>
-                                {prevWeek && (
-                                  <table className="w-full text-sm">
-                                    <thead>
-                                      <tr className="text-left text-gray-400 border-b border-gray-100">
-                                        <th className="py-2 px-3 text-[11px] uppercase tracking-wide">Channel</th>
-                                        <th className="py-2 px-3 text-right text-[11px] uppercase tracking-wide">Users ({w.weekLabel})</th>
-                                        <th className="py-2 px-3 text-right text-[11px] uppercase tracking-wide text-gray-300">Users ({prevWeek.weekLabel})</th>
-                                        <th className="py-2 px-3 text-right text-[11px] uppercase tracking-wide">Sessions ({w.weekLabel})</th>
-                                        <th className="py-2 px-3 text-right text-[11px] uppercase tracking-wide text-gray-300">Sessions ({prevWeek.weekLabel})</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {w.channels.map((c, ci) => {
-                                        const pc = prevChannel(prevWeek, c.name);
-                                        const uD = pc ? delta(c.users, pc.users) : null;
-                                        const sD = pc ? delta(c.sessions, pc.sessions) : null;
-                                        return (
-                                          <tr key={ci} className="border-b border-gray-50 last:border-0">
-                                            <td className="py-2 px-3 font-medium text-gray-600">{c.name}</td>
-                                            <td className="py-2 px-3 text-right whitespace-nowrap" style={{ color: style.color }}>{fmt(c.users)}<DeltaBadge d={uD} /></td>
-                                            <td className="py-2 px-3 text-right text-gray-300">{pc ? fmt(pc.users) : "–"}</td>
-                                            <td className="py-2 px-3 text-right text-gray-600 whitespace-nowrap">{fmt(c.sessions)}<DeltaBadge d={sD} /></td>
-                                            <td className="py-2 px-3 text-right text-gray-300">{pc ? fmt(pc.sessions) : "–"}</td>
-                                          </tr>
-                                        );
-                                      })}
-                                      <tr className="bg-gray-50/70 font-semibold">
-                                        <td className="py-2 px-3 text-gray-700">Total</td>
-                                        <td className="py-2 px-3 text-right whitespace-nowrap" style={{ color: style.color }}>{fmt(w.totalUsers)}<DeltaBadge d={usersWow} /></td>
-                                        <td className="py-2 px-3 text-right text-gray-400">{fmt(prevWeek.totalUsers)}</td>
-                                        <td className="py-2 px-3 text-right text-gray-600 whitespace-nowrap">{fmt(w.totalSessions)}<DeltaBadge d={sessWow} /></td>
-                                        <td className="py-2 px-3 text-right text-gray-400">{fmt(prevWeek.totalSessions)}</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                )}
-                              </div>
 
-                              {/* Year over year — same week, a year apart, laid out exactly like the sheet's own comparison table */}
-                              {w.priorYearLabel && (
-                                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                                  <div className={`h-1 bg-gradient-to-r ${style.gradient}`} />
-                                  <div className="px-3 pt-2.5 pb-1"><span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Weekly Portal Traffic Report ({w.weekLabel.replace(` ${currYear}`, "")})</span></div>
-                                  <table className="w-full text-sm">
-                                    <thead>
-                                      <tr className="text-left text-gray-400 border-b border-gray-100">
-                                        <th className="py-2 px-3 text-[11px] uppercase tracking-wide" rowSpan={2}>Name</th>
-                                        <th className="py-2 px-3 text-center text-[11px] uppercase tracking-wide text-gray-300" colSpan={2}>{priorYear}</th>
-                                        <th className="py-2 px-3 text-center text-[11px] uppercase tracking-wide" colSpan={2}>{currYear}</th>
-                                      </tr>
-                                      <tr className="text-left text-gray-400 border-b border-gray-100">
-                                        <th className="py-1.5 px-3 text-right text-[11px] uppercase tracking-wide text-gray-300">Total Users</th>
-                                        <th className="py-1.5 px-3 text-right text-[11px] uppercase tracking-wide text-gray-300">Sessions</th>
-                                        <th className="py-1.5 px-3 text-right text-[11px] uppercase tracking-wide">Total Users</th>
-                                        <th className="py-1.5 px-3 text-right text-[11px] uppercase tracking-wide">Sessions</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {w.channels.map((c, ci) => (
-                                        <tr key={ci} className="border-b border-gray-50 last:border-0">
-                                          <td className="py-2 px-3 font-medium text-gray-600">{c.name}</td>
-                                          <td className="py-2 px-3 text-right text-gray-400">{c.priorUsers > 0 ? fmt(c.priorUsers) : "NA"}</td>
-                                          <td className="py-2 px-3 text-right text-gray-400">{c.priorSessions > 0 ? fmt(c.priorSessions) : "NA"}</td>
-                                          <td className="py-2 px-3 text-right" style={{ color: style.color }}>{fmt(c.users)}</td>
-                                          <td className="py-2 px-3 text-right text-gray-600">{fmt(c.sessions)}</td>
-                                        </tr>
-                                      ))}
-                                      <tr className="bg-gray-50/70 font-semibold">
-                                        <td className="py-2 px-3 text-gray-700">Total</td>
-                                        <td className="py-2 px-3 text-right text-gray-400">{w.priorYearTotalUsers > 0 ? fmt(w.priorYearTotalUsers) : "NA"}</td>
-                                        <td className="py-2 px-3 text-right text-gray-400">{w.priorYearTotalSessions > 0 ? fmt(w.priorYearTotalSessions) : "NA"}</td>
-                                        <td className="py-2 px-3 text-right" style={{ color: style.color }}>{fmt(w.totalUsers)}</td>
-                                        <td className="py-2 px-3 text-right text-gray-600">{fmt(w.totalSessions)}</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                              <div className={`h-1 bg-gradient-to-r ${style.gradient}`} />
-                              <div className="p-4 flex gap-6 flex-wrap">
-                                <div><p className="text-[11px] uppercase tracking-wide text-gray-400">New Members</p><p className="text-lg font-bold whitespace-nowrap" style={{ color: style.color }}>{fmt(w.newMembers)}<DeltaBadge d={usersWow} /></p>{prevWeek && <p className="text-[11px] text-gray-300">was {fmt(prevWeek.newMembers)} the week before</p>}</div>
-                                <div><p className="text-[11px] uppercase tracking-wide text-gray-400">Email Database</p><p className="text-lg font-bold whitespace-nowrap" style={{ color: style.color }}>{fmt(w.emailDatabase)}<DeltaBadge d={emailWow} /></p>{prevWeek && <p className="text-[11px] text-gray-300">was {fmt(prevWeek.emailDatabase)} the week before</p>}</div>
-                                <p className="text-xs text-gray-300 self-center">Engagement screenshots &amp; top posts are on the source sheet.</p>
-                              </div>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-              {weeks.length === 0 && <tr><td colSpan={7} className="text-center text-sm text-gray-300 py-6">No weeks found yet</td></tr>}
-            </tbody>
-          </table>
+          <div className="p-5">
+            {/* Headline stat tiles */}
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              {isChannel ? (
+                <>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Total Users</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-3xl font-bold" style={{ color: style.color }}>{fmt(w.totalUsers)}</span>
+                      <DeltaBadge d={prevWeek && delta(w.totalUsers, prevWeek.totalUsers)} size="lg" />
+                    </div>
+                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.totalUsers)} the week before</p>}
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Sessions</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-3xl font-bold text-gray-700">{fmt(w.totalSessions)}</span>
+                      <DeltaBadge d={prevWeek && delta(w.totalSessions, prevWeek.totalSessions)} size="lg" />
+                    </div>
+                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.totalSessions)} the week before</p>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">New Members</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-3xl font-bold" style={{ color: style.color }}>{fmt(w.newMembers)}</span>
+                      <DeltaBadge d={prevWeek && delta(w.newMembers, prevWeek.newMembers)} size="lg" />
+                    </div>
+                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.newMembers)} the week before</p>}
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Email Database</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-3xl font-bold text-gray-700">{fmt(w.emailDatabase)}</span>
+                      <DeltaBadge d={prevWeek && delta(w.emailDatabase, prevWeek.emailDatabase)} size="lg" />
+                    </div>
+                    {prevWeek && <p className="text-[11px] text-gray-400 mt-1">was {fmt(prevWeek.emailDatabase)} the week before</p>}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Channel breakdown — simple horizontal bars, easiest thing to scan at a glance */}
+            {isChannel && (
+              <div className="mb-2">
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-3">Where the traffic comes from</p>
+                <div className="space-y-3">
+                  {w.channels.map((c, ci) => {
+                    const share = w.totalUsers > 0 ? (c.users / w.totalUsers) * 100 : 0;
+                    return (
+                      <div key={ci}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="font-medium text-gray-600">{c.name}</span>
+                          <span className="text-gray-500">{fmt(c.users)} users · {fmt(c.sessions)} sessions <span className="text-gray-300">({share.toFixed(0)}%)</span></span>
+                        </div>
+                        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${Math.max(share, 2)}%`, background: style.color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Comparison toggle — last week vs same week last year, one clean table either way */}
+            {isChannel && (prevWeek || w.priorYearLabel) && (
+              <div className="mt-6 pt-5 border-t border-gray-100">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Compare</p>
+                  <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-xs font-medium">
+                    <button onClick={() => setCompareMode("week")} disabled={!prevWeek}
+                      className={`px-3 py-1.5 rounded-md transition-colors ${compareMode === "week" ? "bg-white shadow-sm text-gray-800" : "text-gray-400"} ${!prevWeek ? "opacity-40 cursor-not-allowed" : ""}`}>vs Last Week</button>
+                    <button onClick={() => setCompareMode("year")} disabled={!w.priorYearLabel}
+                      className={`px-3 py-1.5 rounded-md transition-colors ${compareMode === "year" ? "bg-white shadow-sm text-gray-800" : "text-gray-400"} ${!w.priorYearLabel ? "opacity-40 cursor-not-allowed" : ""}`}>vs Last Year</button>
+                  </div>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-400 border-b border-gray-100">
+                      <th className="py-2 text-[11px] uppercase tracking-wide">Channel</th>
+                      <th className="py-2 text-right text-[11px] uppercase tracking-wide">Users now</th>
+                      <th className="py-2 text-right text-[11px] uppercase tracking-wide text-gray-300">{compareMode === "week" ? "Users last week" : `Users ${w.priorYearLabel?.slice(-4) || ""}`}</th>
+                      <th className="py-2 text-right text-[11px] uppercase tracking-wide">Change</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {w.channels.map((c, ci) => {
+                      const priorVal = compareMode === "week"
+                        ? prevWeek?.channels?.find(pc => pc.name === c.name)?.users
+                        : c.priorUsers;
+                      const d = delta(c.users, priorVal);
+                      return (
+                        <tr key={ci} className="border-b border-gray-50 last:border-0">
+                          <td className="py-2 font-medium text-gray-600">{c.name}</td>
+                          <td className="py-2 text-right" style={{ color: style.color }}>{fmt(c.users)}</td>
+                          <td className="py-2 text-right text-gray-300">{priorVal > 0 ? fmt(priorVal) : (compareMode === "year" ? "NA" : "–")}</td>
+                          <td className="py-2 text-right"><DeltaBadge d={d} /></td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="bg-gray-50/70 font-semibold">
+                      <td className="py-2 text-gray-700">Total</td>
+                      <td className="py-2 text-right" style={{ color: style.color }}>{fmt(w.totalUsers)}</td>
+                      <td className="py-2 text-right text-gray-400">{compareMode === "week" ? (prevWeek ? fmt(prevWeek.totalUsers) : "–") : (w.priorYearTotalUsers > 0 ? fmt(w.priorYearTotalUsers) : "NA")}</td>
+                      <td className="py-2 text-right"><DeltaBadge d={compareMode === "week" ? (prevWeek && delta(w.totalUsers, prevWeek.totalUsers)) : delta(w.totalUsers, w.priorYearTotalUsers)} /></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {!isChannel && (
+              <p className="text-xs text-gray-300 pt-2 border-t border-gray-100">Engagement screenshots &amp; top posts are on the source sheet.</p>
+            )}
+          </div>
         </div>
       )}
     </>
