@@ -502,8 +502,6 @@ function ContentVideoTrackerView({ team, endpoint }) {
 function WebsiteTrafficView() {
   const [weeks, setWeeks] = useState(null);
   const [error, setError] = useState(null);
-  const [weekLabel, setWeekLabel] = useState(null);
-  const [fbWeekLabel, setFbWeekLabel] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -513,16 +511,20 @@ function WebsiteTrafficView() {
         if (cancelled) return;
         if (json.error) { setError(json.error); return; }
         setWeeks(json.weeks);
-        const channelWeeks = json.weeks.filter(w => Array.isArray(w.channels));
-        setWeekLabel(channelWeeks[0]?.weekLabel || null);
-        const fbWeeks = json.weeks.filter(w => w.portal === "FB Group");
-        setFbWeekLabel(fbWeeks[0]?.weekLabel || null);
       })
       .catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
   }, []);
 
-  const fmt = n => (n === null || n === undefined || n === 0) ? "-" : n.toLocaleString();
+  const fmt = n => (n === null || n === undefined) ? "-" : n.toLocaleString();
+  const delta = (curr, prior) => {
+    if (!prior) return null;
+    const pct = ((curr - prior) / prior) * 100;
+    return { pct, up: pct >= 0 };
+  };
+  const DeltaBadge = ({ d }) => !d ? null : (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${d.up ? "text-emerald-500" : "text-red-400"}`}>{d.up ? "▲" : "▼"}{Math.abs(d.pct).toFixed(0)}%</span>
+  );
 
   if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the traffic report: {error}</p>;
   if (!weeks) return (
@@ -531,101 +533,158 @@ function WebsiteTrafficView() {
     </div>
   );
 
-  const channelPortals = ["AfterSchool", "School Advisor"];
-  // AfterSchool and School Advisor share the same "Date : ..." week blocks in the sheet, so one
-  // dropdown drives both. FB Group runs on its own date blocks, so it gets its own dropdown.
-  const weekOptions = Array.from(new Set(weeks.filter(w => Array.isArray(w.channels)).map(w => w.weekLabel)));
-  const activeWeekLabel = weekLabel && weekOptions.includes(weekLabel) ? weekLabel : weekOptions[0];
-  const rowsForWeek = channelPortals.map(portal => ({
-    portal,
-    week: weeks.find(w => w.portal === portal && w.weekLabel === activeWeekLabel) || null,
-  }));
-  const priorYear = rowsForWeek.find(r => r.week?.priorYearLabel)?.week?.priorYearLabel?.slice(-4) || "";
-  const currYear = activeWeekLabel ? activeWeekLabel.slice(-4) : "";
-  const weekRangeNoYear = activeWeekLabel ? activeWeekLabel.replace(` ${currYear}`, "") : "";
+  const channelWeeks = weeks.filter(w => Array.isArray(w.channels));
+  const fbWeeks = weeks.filter(w => w.portal === "FB Group");
 
-  const fbWeekOptions = weeks.filter(w => w.portal === "FB Group").map(w => w.weekLabel);
-  const activeFbWeekLabel = fbWeekLabel && fbWeekOptions.includes(fbWeekLabel) ? fbWeekLabel : fbWeekOptions[0];
-  const fbWeek = weeks.find(w => w.portal === "FB Group" && w.weekLabel === activeFbWeekLabel) || null;
+  // One section per week label — AfterSchool and School Advisor share the same "Date : ..."
+  // blocks in the sheet, so they land in the same section automatically.
+  const byLabel = {};
+  channelWeeks.forEach(w => {
+    (byLabel[w.weekLabel] = byLabel[w.weekLabel] || { label: w.weekLabel, endDate: w.endDate, portals: {} }).portals[w.portal] = w;
+  });
+  const sections = Object.values(byLabel).sort((a, b) => (b.endDate || "").localeCompare(a.endDate || ""));
 
-  const th = "border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 text-center";
-  const thLeft = "border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 text-left";
-  const td = "border border-gray-200 px-3 py-1.5 text-sm text-gray-700 text-right";
-  const tdLeft = "border border-gray-200 px-3 py-1.5 text-sm text-gray-700 text-left";
+  // FB Group runs on its own weekly blocks, close to but not identical to the AFS/SA ones —
+  // attach whichever FB week ends closest to each section's end date (within ~10 days).
+  const fbSorted = [...fbWeeks].sort((a, b) => (a.endDate || "").localeCompare(b.endDate || ""));
+  sections.forEach(sec => {
+    let nearest = null, nearestDiff = Infinity;
+    fbSorted.forEach(fw => {
+      if (!fw.endDate || !sec.endDate) return;
+      const diff = Math.abs(new Date(fw.endDate) - new Date(sec.endDate));
+      if (diff < nearestDiff) { nearestDiff = diff; nearest = fw; }
+    });
+    sec.fb = nearestDiff <= 10 * 24 * 3600 * 1000 ? nearest : null;
+  });
+
+  // Chronological per-portal lists, for "vs the week before" badges.
+  const weeksByPortal = {};
+  channelWeeks.forEach(w => { (weeksByPortal[w.portal] = weeksByPortal[w.portal] || []).push(w); });
+  Object.values(weeksByPortal).forEach(arr => arr.sort((a, b) => (a.endDate || "").localeCompare(b.endDate || "")));
+  const prevOf = w => {
+    const arr = weeksByPortal[w.portal] || [];
+    const idx = arr.findIndex(x => x.weekLabel === w.weekLabel);
+    return idx > 0 ? arr[idx - 1] : null;
+  };
+  const prevFbOf = w => {
+    const idx = fbSorted.findIndex(x => x.weekLabel === w.weekLabel);
+    return idx > 0 ? fbSorted[idx - 1] : null;
+  };
+
+  const th = "border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] uppercase tracking-wide font-semibold text-gray-500 text-center";
+  const td = "border border-gray-100 px-3 py-1.5 text-sm text-gray-700 text-right";
+  const tdLeft = "border border-gray-100 px-3 py-1.5 text-sm text-gray-700 text-left";
+
+  const latest = sections[0];
+  const latestAfs = latest?.portals["AfterSchool"];
+  const latestSa = latest?.portals["School Advisor"];
+  const latestFb = latest?.fb;
 
   return (
     <>
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-        <h1 className="text-xl font-semibold">🌐 Website Traffic Report</h1>
-        {weekOptions.length > 1 && (
-          <select value={activeWeekLabel} onChange={e => setWeekLabel(e.target.value)}
-            className="text-sm px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700">
-            {weekOptions.map(wl => <option key={wl} value={wl}>{wl}</option>)}
-          </select>
-        )}
-      </div>
+      <h1 className="text-xl font-semibold mb-1">🌐 Website Traffic Report</h1>
+      <p className="text-sm text-gray-400 mb-5">Every week, every portal, on one page — no picking a week to see the numbers.</p>
 
-      {/* Same table as the sheet's own "Weekly Portal Traffic Report" — Portal / Name / Total
-          Users & Sessions for last year, Total Users & Sessions for this year. */}
-      <div className="overflow-x-auto mb-6">
-        <p className="text-sm font-semibold text-gray-700 mb-2">Weekly Portal Traffic Report ({weekRangeNoYear})</p>
-        <table className="border-collapse w-full max-w-3xl">
-          <thead>
-            <tr>
-              <th className={th} rowSpan={2}>Portal</th>
-              <th className={th} rowSpan={2}>Name</th>
-              <th className={th} colSpan={2}>{priorYear}</th>
-              <th className={th} colSpan={2}>{currYear}</th>
-            </tr>
-            <tr>
-              <th className={th}>Total Users</th>
-              <th className={th}>Sessions</th>
-              <th className={th}>Total Users</th>
-              <th className={th}>Sessions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rowsForWeek.map(({ portal, week: w }) => {
-              const shortName = portal === "AfterSchool" ? "AFS" : portal === "School Advisor" ? "SA" : portal;
-              if (!w) return (
-                <tr key={portal}><td className={tdLeft}>{shortName}</td><td className={tdLeft} colSpan={5}>No data for this week</td></tr>
-              );
-              return w.channels.map((c, ci) => (
-                <tr key={portal + ci}>
-                  {ci === 0 && <td className={tdLeft + " font-semibold"} rowSpan={w.channels.length}>{shortName}</td>}
-                  <td className={tdLeft}>{c.name}</td>
-                  <td className={td}>{fmt(c.priorUsers)}</td>
-                  <td className={td}>{fmt(c.priorSessions)}</td>
-                  <td className={td}>{fmt(c.users)}</td>
-                  <td className={td}>{fmt(c.sessions)}</td>
-                </tr>
-              ));
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* FB Group runs on its own weekly blocks in the sheet — New Members / Email Database,
-          no channel breakdown, so it gets its own small table rather than being forced into
-          the columns above. */}
-      <div className="overflow-x-auto">
-        <div className="flex items-center gap-3 mb-2">
-          <p className="text-sm font-semibold text-gray-700">Facebook Group Weekly Report</p>
-          {fbWeekOptions.length > 1 && (
-            <select value={activeFbWeekLabel} onChange={e => setFbWeekLabel(e.target.value)}
-              className="text-xs px-2 py-1 border border-gray-200 rounded-lg text-gray-600">
-              {fbWeekOptions.map(wl => <option key={wl} value={wl}>{wl}</option>)}
-            </select>
-          )}
+      {/* At a glance — the latest week's headline numbers, up top, no scrolling needed */}
+      {latest && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          {[
+            { name: "AfterSchool", w: latestAfs, color: "#0284c7", icon: "🏫" },
+            { name: "School Advisor", w: latestSa, color: "#7c3aed", icon: "🎓" },
+            { name: "FB Group", w: latestFb, color: "#4f46e5", icon: "👥" },
+          ].map(({ name, w, color, icon }) => {
+            const isChannel = w && Array.isArray(w.channels);
+            const headline = w ? (isChannel ? w.totalUsers : w.newMembers) : null;
+            const prior = w ? (isChannel ? prevOf(w)?.totalUsers : prevFbOf(w)?.newMembers) : null;
+            return (
+              <div key={name} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                <p className="text-xs font-semibold text-gray-400">{icon} {name}</p>
+                <p className="text-[10px] text-gray-300 mb-1">{w?.weekLabel || "no data yet"}</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold" style={{ color }}>{w ? fmt(headline) : "–"}</span>
+                  <DeltaBadge d={w && delta(headline, prior)} />
+                </div>
+                <p className="text-[10px] text-gray-400 mt-0.5">{isChannel || !w ? "Total Users" : "New Members"}</p>
+              </div>
+            );
+          })}
         </div>
-        {fbWeek ? (
-          <table className="border-collapse w-full max-w-md">
-            <tbody>
-              <tr><td className={thLeft}>New Members</td><td className={td}>{fmt(fbWeek.newMembers)}</td></tr>
-              <tr><td className={thLeft}>Email Database</td><td className={td}>{fmt(fbWeek.emailDatabase)}</td></tr>
-            </tbody>
-          </table>
-        ) : <p className="text-sm text-gray-300">No FB data found</p>}
+      )}
+
+      {/* Full history, every week stacked — exactly the sheet's own table shape, newest first */}
+      <div className="space-y-4">
+        {sections.map(sec => {
+          const priorYear = Object.values(sec.portals).find(w => w.priorYearLabel)?.priorYearLabel?.slice(-4) || "";
+          const currYear = sec.label.slice(-4);
+          return (
+            <div key={sec.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 bg-gray-900 text-white">
+                <span className="text-sm font-bold">Week of {sec.label}</span>
+              </div>
+              <div className="p-5">
+                <div className="overflow-x-auto">
+                  <table className="border-collapse w-full max-w-3xl">
+                    <thead>
+                      <tr>
+                        <th className={th} rowSpan={2}>Portal</th>
+                        <th className={th} rowSpan={2}>Name</th>
+                        {priorYear && <th className={th} colSpan={2}>{priorYear}</th>}
+                        <th className={th} colSpan={2}>{currYear}</th>
+                      </tr>
+                      <tr>
+                        {priorYear && <><th className={th}>Total Users</th><th className={th}>Sessions</th></>}
+                        <th className={th}>Total Users</th>
+                        <th className={th}>Sessions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {["AfterSchool", "School Advisor"].map(portal => {
+                        const w = sec.portals[portal];
+                        const shortName = portal === "AfterSchool" ? "AFS" : "SA";
+                        if (!w) return <tr key={portal}><td className={tdLeft}>{shortName}</td><td className={tdLeft} colSpan={priorYear ? 5 : 3}>No data for this week</td></tr>;
+                        return w.channels.map((c, ci) => (
+                          <tr key={portal + ci}>
+                            {ci === 0 && <td className={tdLeft + " font-semibold align-top"} rowSpan={w.channels.length}>{shortName}</td>}
+                            <td className={tdLeft}>{c.name}</td>
+                            {priorYear && <><td className={td}>{fmt(c.priorUsers > 0 ? c.priorUsers : null)}</td><td className={td}>{fmt(c.priorSessions > 0 ? c.priorSessions : null)}</td></>}
+                            <td className={td}>{fmt(c.users)}</td>
+                            <td className={td}>{fmt(c.sessions)}</td>
+                          </tr>
+                        ));
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* FB Group — its own stats plus a direct link to the screenshots, since those
+                    are pasted images the sheet API has no way to read out. */}
+                {sec.fb && (
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-6">
+                      <p className="text-xs font-semibold text-gray-500">👥 FB Group ({sec.fb.weekLabel})</p>
+                      <div>
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide mr-1">New Members</span>
+                        <span className="text-sm font-bold text-gray-700">{fmt(sec.fb.newMembers)}</span>
+                        <DeltaBadge d={delta(sec.fb.newMembers, prevFbOf(sec.fb)?.newMembers)} />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide mr-1">Email DB</span>
+                        <span className="text-sm font-bold text-gray-700">{fmt(sec.fb.emailDatabase)}</span>
+                        <DeltaBadge d={delta(sec.fb.emailDatabase, prevFbOf(sec.fb)?.emailDatabase)} />
+                      </div>
+                    </div>
+                    {sec.fb.sheetUrl && (
+                      <a href={sec.fb.sheetUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700 font-medium">
+                        📸 View engagement screenshots &amp; top posts in sheet ↗
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {sections.length === 0 && <p className="text-sm text-gray-300 text-center py-6">No weeks found yet</p>}
       </div>
     </>
   );
