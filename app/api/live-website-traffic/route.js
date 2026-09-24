@@ -182,7 +182,24 @@ export async function GET() {
       return a.portal.localeCompare(b.portal);
     });
 
-    return NextResponse.json({ weeks }, { headers: { "Cache-Control": "no-store" } });
+    // Zero weeks parsed almost always means the tab layout on the live sheet doesn't quite
+    // match what the parser expects (wrong column, different header wording) even though the
+    // connection and tab names resolved fine — so instead of returning a silent empty list,
+    // attach a look at exactly what's being read, to fix precisely rather than guess.
+    let debug;
+    if (weeks.length === 0) {
+      debug = {
+        resolvedTabs: [...CHANNEL_TABS.map(t => t.tabName), FB_TAB.tabName].map(name => ({
+          requested: name,
+          resolved: resolve(name),
+          gid: gidFor(name),
+          rowCount: rowsFor(name).length,
+          first10Rows: rowsFor(name).slice(0, 10),
+        })),
+      };
+    }
+
+    return NextResponse.json({ weeks, debug }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
