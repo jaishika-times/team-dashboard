@@ -25,6 +25,63 @@ function getAuth() {
   });
 }
 
+const MONTH_NAMES = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+// Each person's tab formats its Date column differently (a real Date cell renders as
+// "4/9/2026" or similar, a plain-text cell might just say "4 Sept" with no year) — so the
+// dropdown can't rely on sheet row order (people re-enter rows non-chronologically, newest
+// on top for some, oldest on top for others). This parses whatever shows up into a real,
+// sortable date, so the "which day am I looking at" dropdown lists them in true order.
+function parseAnyDate(text, refDate) {
+  if (!text) return null;
+  const t = String(text).trim();
+
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+
+  m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let [, a, b, y] = m;
+    a = parseInt(a, 10); b = parseInt(b, 10);
+    y = y.length === 2 ? 2000 + parseInt(y, 10) : parseInt(y, 10);
+    // Org locale is day-first (D/M/YYYY); fall back to month-first only when day-first is impossible.
+    let day = a, month = b;
+    if (a > 12 && b <= 12) { day = a; month = b; }
+    else if (b > 12 && a <= 12) { day = b; month = a; }
+    return new Date(Date.UTC(y, month - 1, day));
+  }
+
+  m = t.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,})\.?\s*,?\s*(\d{4})?$/);
+  if (m) {
+    const mon = MONTH_NAMES[m[2].slice(0, 3).toLowerCase()];
+    if (mon === undefined) return null;
+    const day = parseInt(m[1], 10);
+    let year = m[3] ? parseInt(m[3], 10) : null;
+    if (year === null) {
+      year = refDate.getUTCFullYear();
+      const candidate = new Date(Date.UTC(year, mon, day));
+      if (candidate.getTime() - refDate.getTime() > 60 * 24 * 3600 * 1000) year -= 1;
+    }
+    return new Date(Date.UTC(year, mon, day));
+  }
+
+  m = t.match(/^([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\,?\s*(\d{4})?$/);
+  if (m) {
+    const mon = MONTH_NAMES[m[1].slice(0, 3).toLowerCase()];
+    if (mon === undefined) return null;
+    const day = parseInt(m[2], 10);
+    let year = m[3] ? parseInt(m[3], 10) : null;
+    if (year === null) {
+      year = refDate.getUTCFullYear();
+      const candidate = new Date(Date.UTC(year, mon, day));
+      if (candidate.getTime() - refDate.getTime() > 60 * 24 * 3600 * 1000) year -= 1;
+    }
+    return new Date(Date.UTC(year, mon, day));
+  }
+
+  return null;
+}
+
 function findCol(header, keywords) {
   for (let i = 0; i < header.length; i++) {
     const h = (header[i] || "").toLowerCase();
@@ -82,7 +139,13 @@ function parsePersonTab(rows, personName) {
     if (!task && !description) continue; // fully blank row (an empty time slot)
     const hours = hoursCol >= 0 ? parseHours(row[hoursCol]) : 0;
     const remarks = remarksCol >= 0 ? (row[remarksCol] || "").trim() : "";
-    entries.push({ day: currentDay, date: currentDate, task, description, hours, remarks });
+    const parsedDate = parseAnyDate(currentDate, new Date());
+    entries.push({
+      day: currentDay,
+      date: currentDate,
+      dateKey: parsedDate ? parsedDate.toISOString().slice(0, 10) : null,
+      task, description, hours, remarks,
+    });
   }
   return { person: personName, entries };
 }
