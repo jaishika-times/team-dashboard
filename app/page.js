@@ -1502,8 +1502,6 @@ const COMP_LOGOS = {
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
                       {TEAMS.map(team => {
                         const members = allMems.filter(m => m.team === team);
-                        const th = members.reduce((s, m) => s + (dayData[m.name]?.hours || 0), 0);
-                        const taskCount = members.reduce((s, m) => s + (dayData[m.name]?.tasks?.length || 0), 0);
                         // CSE/Content/Video/Design can also be opened to their live tracker even on a
                         // day with no historical form entries — those track "now," not a picked date.
                         const hasLiveTracker = ["CSE", "Content", "Video", "Design", "HR", "Finance", "Knowledge"].includes(team);
@@ -1520,10 +1518,6 @@ const COMP_LOGOS = {
                                   <p className="text-sm font-bold">{team}</p>
                                   <p className="text-[11px] text-gray-400">{members.length ? `${members.length} members` : "No submissions yet"}</p>
                                 </div>
-                              </div>
-                              <div className="flex gap-4 pt-2 border-t border-gray-50">
-                                <div><span className="text-lg font-bold">{taskCount}</span><span className="text-[10px] text-gray-400 ml-1">tasks</span></div>
-                                <div><span className="text-lg font-bold">{th > 0 ? th.toFixed(1) : "0"}</span><span className="text-[10px] text-gray-400 ml-1">hrs</span></div>
                               </div>
                             </div>
                           </div>
