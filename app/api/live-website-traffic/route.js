@@ -37,6 +37,14 @@ function cell(row, i) {
   return (row[i] || "").toString().trim();
 }
 
+// The live sheet formats big numbers with thousands separators ("4,127"), and
+// parseFloat("4,127") stops at the comma and returns 4 — strip separators first.
+function num(text) {
+  const cleaned = String(text || "").replace(/,/g, "").trim();
+  const v = parseFloat(cleaned);
+  return isNaN(v) ? 0 : v;
+}
+
 // "Date : 6 Sep - 12 Sep 2026" -> { startLabel, endLabel, year, endDate }
 function parseDateHeader(text) {
   const m = text.match(/Date\s*:\s*(\d{1,2})\s+(\w{3})\w*\s*-\s*(\d{1,2})\s+(\w{3})\w*\s+(\d{4})/i);
@@ -65,10 +73,10 @@ function parseChannelTab(rows, portal) {
     while (scan < rows.length) {
       const label = cell(rows[scan], 1);
       if (!label) break;
-      const users = parseFloat(cell(rows[scan], 2)) || 0;
-      const sessions = parseFloat(cell(rows[scan], 3)) || 0;
-      const priorUsers = parseFloat(cell(rows[scan], 8)) || 0;
-      const priorSessions = parseFloat(cell(rows[scan], 9)) || 0;
+      const users = num(cell(rows[scan], 2));
+      const sessions = num(cell(rows[scan], 3));
+      const priorUsers = num(cell(rows[scan], 8));
+      const priorSessions = num(cell(rows[scan], 9));
       if (label.toLowerCase() === "total") {
         total = { users, sessions };
         priorTotal = { users: priorUsers, sessions: priorSessions };
@@ -115,8 +123,8 @@ function parseFbTab(rows) {
     if (!m) continue;
     const [, d1, mo1, d2, mo2] = m.map(Number);
     const { year, date: endDate } = guessYear(d2, mo2, now);
-    const newMembers = parseFloat(cell(rows[r + 2], 1)) || 0;
-    const emailDatabase = parseFloat(cell(rows[r + 3], 1)) || 0;
+    const newMembers = num(cell(rows[r + 2], 1));
+    const emailDatabase = num(cell(rows[r + 3], 1));
     weeks.push({
       portal: "FB Group",
       weekLabel: `${d1}/${mo1} - ${d2}/${mo2}/${year}`,
