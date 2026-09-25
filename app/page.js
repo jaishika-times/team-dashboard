@@ -2189,7 +2189,12 @@ const COMP_LOGOS = {
 
             async function deletePeriod(id) {
               if (!confirm("Delete this date range? The individual entries inside it stay on record — this only removes it from the dropdown.")) return;
-              await supabase.from("asset_periods").delete().eq("id", id);
+              // .delete() alone doesn't throw when a row-level-security policy silently
+              // filters out every row — it just "succeeds" having deleted nothing, so this
+              // checks that a row actually came back before treating it as done.
+              const { data, error } = await supabase.from("asset_periods").delete().eq("id", id).select();
+              if (error) { alert("Couldn't delete: " + error.message); return; }
+              if (!data || data.length === 0) { alert("Nothing was deleted — you may not have permission to delete date ranges."); return; }
               if (selectedPeriodId === id) setSelectedPeriodId(null);
               loadData();
             }
