@@ -4,23 +4,13 @@ import { google } from "googleapis";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// Weekly Website Traffic Report — one sheet, three tabs with two different layouts:
-//  - "AfterSchool" and "School Advisor": repeating blocks, each starting with a "Date : D Mon -
-//    D Mon YYYY" row (current period in columns B-D, the same week a year earlier in columns
-//    H-J), a header row, four Channel Group rows (Direct / Organic Search / AI Assistant /
-//    Organic Social), then a "Total" row. Blocks are separated by a blank row.
-//  - "FB Group": repeating blocks, each starting with a "Facebook Group Weekly Report" title,
-//    a "D/M - D/M" date-range row, a "New Members" row and an "Email Database" row (engagement
-//    screenshots and top-post sections after that aren't numeric, so they're left out of the
-//    sync — the sheet itself is the source for those).
-const SPREADSHEET_ID = "1llBrZCmoqrYN3zMKJO4kM8BTX2Q53K_y4tJW75CUaco";
-const CHANNEL_TABS = [
-  { tabName: "AfterSchool", portal: "AfterSchool" },
-  { tabName: "School Advisor", portal: "School Advisor" },
-];
-const FB_TAB = { tabName: "FB Group", portal: "FB Group" };
-
-const MONTH_INDEX = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+// One live sheet, one tab per Knowledge team member — Jon, Divya, Nic (a "template" tab also
+// exists for new joiners to copy, and is deliberately left out of PEOPLE below). Same shape
+// as CSE's tracker: Day / Date / Task / Description / Hours (or "Mins") / Remarks, but column
+// order and date formatting still vary per person, so columns are found by header keyword and
+// dates are parsed rather than trusted to be in a fixed format or sheet order.
+const SPREADSHEET_ID = "1em2UkWUSMLYI05H6zDcWAjMv87HxtALf3sSHSg7jF78";
+const PEOPLE = ["Jon", "Divya", "Nic"];
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -33,173 +23,162 @@ function getAuth() {
   });
 }
 
-function cell(row, i) {
-  return (row[i] || "").toString().trim();
-}
+const MONTH_NAMES = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 
-// The live sheet formats big numbers with thousands separators ("4,127"), and
-// parseFloat("4,127") stops at the comma and returns 4 — strip separators first.
-function num(text) {
-  const cleaned = String(text || "").replace(/,/g, "").trim();
-  const v = parseFloat(cleaned);
-  return isNaN(v) ? 0 : v;
-}
+// Each person's tab formats its Date column differently (a real Date cell renders as
+// "4/9/2026" or similar, a plain-text cell might just say "4 Sept" with no year) — so the
+// dropdown can't rely on sheet row order (people re-enter rows non-chronologically, newest
+// on top for some, oldest on top for others). This parses whatever shows up into a real,
+// sortable date, so the "which day am I looking at" dropdown lists them in true order.
+function parseAnyDate(text, refDate) {
+  if (!text) return null;
+  const t = String(text).trim();
 
-// "Date : 6 Sep - 12 Sep 2026" -> { startLabel, endLabel, year, endDate }
-function parseDateHeader(text) {
-  const m = text.match(/Date\s*:\s*(\d{1,2})\s+(\w{3})\w*\s*-\s*(\d{1,2})\s+(\w{3})\w*\s+(\d{4})/i);
-  if (!m) return null;
-  const [, d1, mon1, d2, mon2, year] = m;
-  const monIdx = MONTH_INDEX[mon2.slice(0, 1).toUpperCase() + mon2.slice(1, 3).toLowerCase()];
-  const endDate = monIdx !== undefined ? new Date(Date.UTC(parseInt(year, 10), monIdx, parseInt(d2, 10))) : null;
-  return { label: `${d1} ${mon1} - ${d2} ${mon2} ${year}`, year: parseInt(year, 10), endDate };
-}
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
 
-function parseChannelTab(rows, portal, gid) {
-  const weeks = [];
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r];
-    const dateText = cell(row, 2); // current-period date header lives in column C
-    if (!dateText.toLowerCase().startsWith("date")) continue;
-    const current = parseDateHeader(dateText);
-    if (!current) continue;
-    const priorText = cell(row, 8); // same week, prior year, column I
-    const prior = priorText ? parseDateHeader(priorText) : null;
+  m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let [, a, b, y] = m;
+    a = parseInt(a, 10); b = parseInt(b, 10);
+    y = y.length === 2 ? 2000 + parseInt(y, 10) : parseInt(y, 10);
+    // Org locale is day-first (D/M/YYYY); fall back to month-first only when day-first is impossible.
+    let day = a, month = b;
+    if (a > 12 && b <= 12) { day = a; month = b; }
+    else if (b > 12 && a <= 12) { day = b; month = a; }
+    return new Date(Date.UTC(y, month - 1, day));
+  }
 
-    // Header row is r+1, four channel rows follow, then a "Total" row.
-    const channels = [];
-    let total = null, priorTotal = null;
-    let scan = r + 2;
-    while (scan < rows.length) {
-      const label = cell(rows[scan], 1);
-      if (!label) break;
-      const users = num(cell(rows[scan], 2));
-      const sessions = num(cell(rows[scan], 3));
-      const priorUsers = num(cell(rows[scan], 8));
-      const priorSessions = num(cell(rows[scan], 9));
-      if (label.toLowerCase() === "total") {
-        total = { users, sessions };
-        priorTotal = { users: priorUsers, sessions: priorSessions };
-        scan++;
-        break;
-      }
-      channels.push({ name: label, users, sessions, priorUsers, priorSessions });
-      scan++;
+  m = t.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,})\.?\s*,?\s*(\d{4})?$/);
+  if (m) {
+    const mon = MONTH_NAMES[m[2].slice(0, 3).toLowerCase()];
+    if (mon === undefined) return null;
+    const day = parseInt(m[1], 10);
+    let year = m[3] ? parseInt(m[3], 10) : null;
+    if (year === null) {
+      year = refDate.getUTCFullYear();
+      const candidate = new Date(Date.UTC(year, mon, day));
+      if (candidate.getTime() - refDate.getTime() > 60 * 24 * 3600 * 1000) year -= 1;
     }
-    weeks.push({
-      portal,
-      weekLabel: current.label,
-      endDate: current.endDate ? current.endDate.toISOString().slice(0, 10) : null,
-      sheetUrl: gid !== undefined ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit#gid=${gid}&range=A${r + 1}` : null,
-      totalUsers: total?.users ?? 0,
-      totalSessions: total?.sessions ?? 0,
-      priorYearLabel: prior?.label || null,
-      priorYearTotalUsers: priorTotal?.users ?? 0,
-      priorYearTotalSessions: priorTotal?.sessions ?? 0,
-      channels,
-    });
-    r = scan - 1;
+    return new Date(Date.UTC(year, mon, day));
   }
-  return weeks;
+
+  m = t.match(/^([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\,?\s*(\d{4})?$/);
+  if (m) {
+    const mon = MONTH_NAMES[m[1].slice(0, 3).toLowerCase()];
+    if (mon === undefined) return null;
+    const day = parseInt(m[2], 10);
+    let year = m[3] ? parseInt(m[3], 10) : null;
+    if (year === null) {
+      year = refDate.getUTCFullYear();
+      const candidate = new Date(Date.UTC(year, mon, day));
+      if (candidate.getTime() - refDate.getTime() > 60 * 24 * 3600 * 1000) year -= 1;
+    }
+    return new Date(Date.UTC(year, mon, day));
+  }
+
+  return null;
 }
 
-function guessYear(day, month, refDate) {
-  let year = refDate.getUTCFullYear();
-  let candidate = new Date(Date.UTC(year, month - 1, day));
-  // If that date lands more than ~60 days in the future, it's almost certainly last year's week.
-  if (candidate.getTime() - refDate.getTime() > 60 * 24 * 3600 * 1000) {
-    year -= 1;
-    candidate = new Date(Date.UTC(year, month - 1, day));
+function findCol(header, keywords) {
+  for (let i = 0; i < header.length; i++) {
+    const h = (header[i] || "").toLowerCase();
+    if (keywords.some(k => h.includes(k))) return i;
   }
-  return { year, date: candidate };
+  return -1;
 }
 
-function parseFbTab(rows, gid) {
-  const weeks = [];
-  const now = new Date();
-  for (let r = 0; r < rows.length; r++) {
-    if (cell(rows[r], 0).toLowerCase() !== "facebook group weekly report") continue;
-    const rangeText = cell(rows[r + 1], 1);
-    const m = rangeText.match(/(\d{1,2})\/(\d{1,2})\s*-\s*(\d{1,2})\/(\d{1,2})/);
+// A plain number ("0.5") is already hours. Text like "30 mins" / "1 hours" / "30 mints"
+// (typo) is parsed by unit; a cell with several lines has each line's number summed.
+function parseHours(raw) {
+  if (raw === null || raw === undefined || raw === "") return 0;
+  const lines = String(raw).trim().split("\n").filter(l => l.trim());
+  let total = 0;
+  for (const line of lines) {
+    const m = line.match(/([\d.]+)\s*(hour|hr|min|mint)?/i);
     if (!m) continue;
-    const [, d1, mo1, d2, mo2] = m.map(Number);
-    const { year, date: endDate } = guessYear(d2, mo2, now);
-    const newMembers = num(cell(rows[r + 2], 1));
-    const emailDatabase = num(cell(rows[r + 3], 1));
-    // The screenshots (Engagement Screenshot, Active Members Screenshot, Top posts) are pasted
-    // images, not cell values or =IMAGE() formulas — the Sheets API has no way to read those
-    // out, so instead of trying to sync them, this links straight to where they sit in the
-    // sheet (row r+7, 1-indexed: title, date range, New Members, Email Database, blank,
-    // "Facebook Engagement" header, then the screenshot row itself).
-    const sheetUrl = gid !== undefined
-      ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit#gid=${gid}&range=A${r + 7}`
-      : null;
-    weeks.push({
-      portal: "FB Group",
-      weekLabel: `${d1}/${mo1} - ${d2}/${mo2}/${year}`,
-      endDate: endDate.toISOString().slice(0, 10),
-      newMembers,
-      emailDatabase,
-      sheetUrl,
-    });
-    r += 3;
+    const num = parseFloat(m[1]);
+    if (isNaN(num)) continue;
+    const unit = (m[2] || "").toLowerCase();
+    total += unit.startsWith("min") ? num / 60 : num;
   }
-  return weeks;
+  return Math.round(total * 100) / 100;
+}
+
+function parsePersonTab(rows, personName) {
+  // Header is whichever of the first 3 rows actually contains "task".
+  let headerIdx = -1;
+  for (let r = 0; r < Math.min(rows.length, 3); r++) {
+    if (rows[r].some(c => (c || "").toLowerCase().includes("task"))) { headerIdx = r; break; }
+  }
+  if (headerIdx === -1) return { person: personName, entries: [], debug: { issue: "no header row with 'task' found in first 3 rows", first3Rows: rows.slice(0, 3) } };
+
+  const header = rows[headerIdx];
+  const dayCol = findCol(header, ["day"]);
+  const dateCol = findCol(header, ["date"]);
+  const taskCol = findCol(header, ["task"]);
+  const descCol = findCol(header, ["description"]);
+  const hoursCol = findCol(header, ["hour", "min"]);
+  // A dedicated "Remarks" column is preferred; "Status" (Done/Progress/etc) is the fallback
+  // for tabs that don't have a separate remarks field.
+  let remarksCol = findCol(header, ["remark"]);
+  if (remarksCol === -1) remarksCol = findCol(header, ["status"]);
+
+  // Some tabs repeat the header row again further down (e.g. a new month's block). If it
+  // isn't skipped, "Day"/"Date"/"Task" land in the data as a garbage entry with an
+  // unparseable date. Detected generically: the row's Day/Date/Task cells match their own
+  // column headers verbatim.
+  const isHeaderRepeat = row => {
+    const checks = [dayCol, dateCol, taskCol].filter(c => c >= 0);
+    if (!checks.length) return false;
+    return checks.every(c => {
+      const v = (row[c] || "").trim().toLowerCase();
+      return v !== "" && v === (header[c] || "").trim().toLowerCase();
+    });
+  };
+
+  let currentDay = "", currentDate = "";
+  const entries = [];
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (isHeaderRepeat(row)) continue;
+    if (dayCol >= 0 && (row[dayCol] || "").trim()) currentDay = row[dayCol].trim();
+    if (dateCol >= 0 && (row[dateCol] || "").trim()) currentDate = row[dateCol].trim();
+    const task = taskCol >= 0 ? (row[taskCol] || "").trim() : "";
+    const description = descCol >= 0 ? (row[descCol] || "").trim() : "";
+    if (!task && !description) continue; // fully blank row (an empty time slot)
+    const hours = hoursCol >= 0 ? parseHours(row[hoursCol]) : 0;
+    const remarks = remarksCol >= 0 ? (row[remarksCol] || "").trim() : "";
+    const parsedDate = parseAnyDate(currentDate, new Date());
+    entries.push({
+      day: currentDay,
+      date: currentDate,
+      dateKey: parsedDate ? parsedDate.toISOString().slice(0, 10) : null,
+      task, description, hours, remarks,
+    });
+  }
+  return { person: personName, entries };
 }
 
 export async function GET() {
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
-
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties(title,sheetId)" });
-    const allProps = (meta.data.sheets || []).map(s => s.properties);
-    const allTitles = allProps.map(p => p.title);
-    const resolve = name => allTitles.find(t => t.trim().toLowerCase() === name.trim().toLowerCase()) || name;
-    const gidFor = name => allProps.find(p => p.title.trim().toLowerCase() === name.trim().toLowerCase())?.sheetId;
-
-    const wantedTabs = [...CHANNEL_TABS.map(t => t.tabName), FB_TAB.tabName].map(resolve);
     const res = await sheets.spreadsheets.get({
       spreadsheetId: SPREADSHEET_ID,
-      ranges: wantedTabs,
+      ranges: PEOPLE,
       fields: "sheets.properties.title,sheets.data.rowData.values(formattedValue)",
     });
     const sheetsData = res.data.sheets || [];
-    const rowsFor = title => {
-      const entry = sheetsData.find(s => s.properties.title === resolve(title));
-      const rowData = entry?.data?.[0]?.rowData || [];
-      return rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
-    };
 
-    let weeks = [];
-    for (const { tabName, portal } of CHANNEL_TABS) {
-      weeks = weeks.concat(parseChannelTab(rowsFor(tabName), portal, gidFor(tabName)));
-    }
-    weeks = weeks.concat(parseFbTab(rowsFor(FB_TAB.tabName), gidFor(FB_TAB.tabName)));
-
-    weeks.sort((a, b) => {
-      if (a.endDate && b.endDate && a.endDate !== b.endDate) return b.endDate.localeCompare(a.endDate);
-      return a.portal.localeCompare(b.portal);
+    const people = PEOPLE.map(name => {
+      const sheetEntry = sheetsData.find(s => s.properties.title === name);
+      const rowData = sheetEntry?.data?.[0]?.rowData || [];
+      const rows = rowData.map(r => (r.values || []).map(v => v.formattedValue || ""));
+      return parsePersonTab(rows, name);
     });
 
-    // Zero weeks parsed almost always means the tab layout on the live sheet doesn't quite
-    // match what the parser expects (wrong column, different header wording) even though the
-    // connection and tab names resolved fine — so instead of returning a silent empty list,
-    // attach a look at exactly what's being read, to fix precisely rather than guess.
-    let debug;
-    if (weeks.length === 0) {
-      debug = {
-        resolvedTabs: [...CHANNEL_TABS.map(t => t.tabName), FB_TAB.tabName].map(name => ({
-          requested: name,
-          resolved: resolve(name),
-          gid: gidFor(name),
-          rowCount: rowsFor(name).length,
-          first10Rows: rowsFor(name).slice(0, 10),
-        })),
-      };
-    }
-
-    return NextResponse.json({ weeks, debug }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ people }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
