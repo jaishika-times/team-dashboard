@@ -1528,7 +1528,9 @@ const COMP_LOGOS = {
                                 <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${TEAM_GRADIENTS[team] || "from-gray-400 to-gray-500"} flex items-center justify-center text-base`}>{TEAM_ICONS[team] || "📋"}</div>
                                 <div>
                                   <p className="text-sm font-bold">{team}</p>
-                                  <p className="text-[11px] text-gray-400">{members.length ? `${members.length} members` : "No submissions yet"}</p>
+                                  <p className="text-[11px] text-gray-400">
+                                    {members.length ? `${members.length} members` : hasLiveTracker ? "Live tracker" : "No submissions yet"}
+                                  </p>
                                 </div>
                               </div>
                             </div>
