@@ -12,8 +12,8 @@ export const revalidate = 0;
 // the free-text one, so hours don't need to be parsed from text like CSE's sheet did.
 const SPREADSHEET_ID = "1aInUZ19K0wd3sXn_NPXEIK0eD3gWak7PYM0QsjN-nUw";
 const CONTENT_PEOPLE = ["Rosie", "Jeremiah", "Mahal", "Ian"];
-const VIDEO_PEOPLE = ["Vanessa", "Nick", "Roshan", "Zul"];
-const DESIGN_PEOPLE = ["Marcus", "Fatanah", "Aiem"];
+const VIDEO_PEOPLE = ["Vanessa", "Roshan", "Zul"];
+const DESIGN_PEOPLE = ["Marcus", "Fatanah"];
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
