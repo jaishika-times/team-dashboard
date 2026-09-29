@@ -466,7 +466,7 @@ function ContentVideoTrackerView({ team, endpoint }) {
         if (cancelled) return;
         if (json.error) { setError(json.error); return; }
         setData(json.people);
-        const allDays = Array.from(new Set(json.people.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
+        const allDays = sortedDayKeys(json.people);
         setSelectedDay(allDays[allDays.length - 1] || null);
       })
       .catch(e => { if (!cancelled) setError(e.message); });
@@ -476,7 +476,7 @@ function ContentVideoTrackerView({ team, endpoint }) {
   if (error) return <p className="text-sm text-red-400 py-4">Couldn't load the {team} tracker: {error}</p>;
   if (!data) return <div className="flex items-center gap-2 py-4 text-xs text-gray-400"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading live tracker…</div>;
 
-  const allDays = Array.from(new Set(data.flatMap(p => p.entries.map(e => `${e.day}|${e.date}`))));
+  const allDays = sortedDayKeys(data);
   const activeDay = selectedDay || allDays[allDays.length - 1];
   const teamColor = TEAM_COLORS[team] || "#10b981";
   const teamGradient = TEAM_GRADIENTS[team] || "from-emerald-500 to-teal-500";
@@ -492,14 +492,14 @@ function ContentVideoTrackerView({ team, endpoint }) {
           {allDays.length > 0 && (
             <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
               className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-              {allDays.map(d => <option key={d} value={d}>{d.replace("|", " — ")}</option>)}
+              {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, data)}</option>)}
             </select>
           )}
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {data.map(({ person, entries }) => {
-          const dayEntries = entries.filter(e => `${e.day}|${e.date}` === activeDay);
+          const dayEntries = entries.filter(e => dayGroupKey(e) === activeDay);
           const total = dayEntries.reduce((s, e) => s + (e.hours || 0), 0);
           return (
             <div key={person} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
