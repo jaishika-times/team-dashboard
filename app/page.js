@@ -571,10 +571,17 @@ function ContentVideoTrackerView({ team, endpoint }) {
 // doesn't require opening each team's card one at a time. Pulls from all seven live endpoints
 // (CSE, Knowledge, Content, Video, Design, HR, Finance) in parallel and lets the person pick a
 // single day across all of them, same real-date grouping as each team's own view.
+const LATEST_PER_TEAM = "__latest__";
+
 function ProductivityAllTeamsExport() {
   const [allPeople, setAllPeople] = useState(null); // [{team, person, entries}], null = loading
   const [failedTeams, setFailedTeams] = useState([]);
-  const [selectedDay, setSelectedDay] = useState(null);
+  // Teams don't all log on the same cadence (CSE/Content log daily, Design or HR may lag by a
+  // few days) — picking a single shared "most recent" date meant most teams had nothing on
+  // that exact date and silently vanished from the export. Defaulting to "each team's own
+  // latest day" guarantees every team that has any live data shows up; the explicit day picker
+  // below is still there for pulling one specific shared date across teams.
+  const [selectedDay, setSelectedDay] = useState(LATEST_PER_TEAM);
 
   useEffect(() => {
     let cancelled = false;
@@ -596,8 +603,6 @@ function ProductivityAllTeamsExport() {
       setFailedTeams(results.filter(r => r.failed).map(r => r.team));
       const combined = results.filter(r => !r.failed).flatMap(r => r.people);
       setAllPeople(combined);
-      const allDays = sortedDayKeys(combined);
-      setSelectedDay(allDays[allDays.length - 1] || null);
     });
     return () => { cancelled = true; };
   }, []);
@@ -605,36 +610,48 @@ function ProductivityAllTeamsExport() {
   if (!allPeople) return <div className="flex items-center gap-2 py-3 text-xs text-gray-400 mb-2"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading all teams for daily export…</div>;
 
   const allDays = sortedDayKeys(allPeople);
-  const activeDay = selectedDay || allDays[allDays.length - 1];
-  const rows = allPeople.flatMap(({ team, person, entries }) =>
-    entries.filter(e => dayGroupKey(e) === activeDay).map(e => [
-      team, person, e.task || "",
+  const useLatestPerTeam = selectedDay === LATEST_PER_TEAM;
+
+  const rows = allPeople.flatMap(({ team, person, entries }) => {
+    if (!entries.length) return [];
+    // In "latest per team" mode, each person's own most recent logged day is used, so every
+    // team with any data shows up even if their most recent day differs from other teams'.
+    let dayKey;
+    if (useLatestPerTeam) {
+      const personDays = sortedDayKeys([{ entries }]);
+      dayKey = personDays[personDays.length - 1];
+    } else {
+      dayKey = selectedDay;
+    }
+    return entries.filter(e => dayGroupKey(e) === dayKey).map(e => [
+      team, person,
+      useLatestPerTeam ? dayGroupLabel(dayKey, allPeople) : undefined,
+      e.task || "",
       e.hours > 0 ? e.hours : "",
       [e.activityType, e.client, e.description, e.remarks, e.notes].filter(Boolean).join(" · "),
-    ])
-  );
+    ].filter(v => v !== undefined));
+  });
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 flex items-center justify-between flex-wrap gap-3">
       <div>
         <p className="text-sm font-bold">📥 All-Teams Daily Summary</p>
-        <p className="text-[11px] text-gray-400">Every live team's tasks and hours for one day, in a single file — no need to open each card</p>
+        <p className="text-[11px] text-gray-400">Every live team's tasks and hours, in a single file — no need to open each card</p>
         {failedTeams.length > 0 && <p className="text-[11px] text-amber-500 mt-0.5">Couldn't load: {failedTeams.join(", ")}</p>}
       </div>
       <div className="flex items-center gap-2">
-        {allDays.length > 0 && (
-          <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
-            className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-800 font-medium">
-            {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, allPeople)}</option>)}
-          </select>
-        )}
-        {activeDay && rows.length > 0 ? (
+        <select value={selectedDay} onChange={e => setSelectedDay(e.target.value)}
+          className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-800 font-medium">
+          <option value={LATEST_PER_TEAM}>Latest day per team</option>
+          {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, allPeople)} (all teams)</option>)}
+        </select>
+        {rows.length > 0 ? (
           <ExportMenu
-            filename={`All-Teams-Productivity-${activeDay.startsWith("raw:") ? "summary" : activeDay}`}
-            header={["Team", "Person", "Task", "Hours", "Details"]}
+            filename={`All-Teams-Productivity-${useLatestPerTeam ? "latest" : selectedDay.startsWith("raw:") ? "summary" : selectedDay}`}
+            header={useLatestPerTeam ? ["Team", "Person", "Date", "Task", "Hours", "Details"] : ["Team", "Person", "Task", "Hours", "Details"]}
             rows={rows}
           />
-        ) : activeDay ? <span className="text-xs text-gray-300 italic">No entries for this day</span> : null}
+        ) : <span className="text-xs text-gray-300 italic">No entries yet</span>}
       </div>
     </div>
   );
@@ -1939,6 +1956,30 @@ const COMP_LOGOS = {
               return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
             });
 
+            // Monthly report table: one column per week instead of cramming every week's
+            // numbers into a single comma-separated cell per person (unreadable once a month
+            // has 4-5 weeks) — Team | Name | W1 | W2 | ... | Month Avg.
+            function buildMonthlyPivot() {
+              const monthEntries = entries.filter(e => e.month === curMonth);
+              const weeksInMonth = Array.from(new Set(monthEntries.map(e => String(e.week)))).sort((a, b) => parseInt(a) - parseInt(b));
+              const byPerson = {};
+              monthEntries.forEach(e => {
+                const key = `${e.team}|${e.employee}`;
+                if (!byPerson[key]) byPerson[key] = { team: e.team, employee: e.employee, weeks: {} };
+                byPerson[key].weeks[String(e.week)] = e;
+              });
+              const rows = Object.values(byPerson).map(p => {
+                const pcts = Object.values(p.weeks).map(e => e.kpiPct).filter(v => v !== null && v !== undefined && !isNaN(v));
+                return { ...p, avgPct: pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null };
+              }).sort((a, b) => {
+                const ai = teamOrder.indexOf(a.team), bi = teamOrder.indexOf(b.team);
+                return ((ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)) || a.employee.localeCompare(b.employee);
+              });
+              return { weeksInMonth, rows };
+            }
+            const monthlyPivot = kpiViewMode === "monthly" ? buildMonthlyPivot() : null;
+            const pctColorFor = pct => pct === null ? "#d1d5db" : pct >= 90 ? "#16a34a" : pct < 70 ? "#dc2626" : "#d97706";
+
             return (
               <>
                 <h1 className="text-xl font-semibold mb-1">Weekly KPI</h1>
@@ -2162,12 +2203,63 @@ const COMP_LOGOS = {
                         </button>
                       </div>
                     )}
-                    {kpiTeams.length > 0 && showKpiReport && (
+                    {kpiTeams.length > 0 && showKpiReport && kpiViewMode === "monthly" && (
                       <div className="mt-2 bg-white rounded-xl border border-gray-100 overflow-hidden">
                         <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                          <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth}{kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}</h3>
+                          <h3 className="text-sm font-semibold">Monthly KPI Progress Report - {curMonth} — one column per week</h3>
                           <ExportMenu
-                            filename={`KPI Progress Report - ${curMonth}${kpiViewMode === "weekly" ? ` W${curWeek}` : " (Month)"}`}
+                            filename={`KPI Progress Report - ${curMonth} (Month)`}
+                            header={["Team", "Name", ...monthlyPivot.weeksInMonth.map(w => `W${w}`), "Month Avg"]}
+                            rows={monthlyPivot.rows.map(p => [
+                              p.team, p.employee,
+                              ...monthlyPivot.weeksInMonth.map(w => {
+                                const we = p.weeks[w];
+                                const pct = we && we.kpiPct !== null && we.kpiPct !== undefined && !isNaN(we.kpiPct) ? Math.round(we.kpiPct * 100) + "%" : "";
+                                return pct;
+                              }),
+                              p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "",
+                            ])}
+                          />
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-100">
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
+                                {monthlyPivot.weeksInMonth.map(w => (
+                                  <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
+                                ))}
+                                <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Month Avg</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {monthlyPivot.rows.map((p, i) => (
+                                <tr key={p.team + p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
+                                  <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
+                                  <td className="px-4 py-2.5 font-medium">{p.employee}</td>
+                                  {monthlyPivot.weeksInMonth.map(w => {
+                                    const we = p.weeks[w];
+                                    const pct = we && we.kpiPct !== null && we.kpiPct !== undefined && !isNaN(we.kpiPct) ? Math.round(we.kpiPct * 100) : null;
+                                    return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(pct) }}>{pct !== null ? pct + "%" : "—"}</td>;
+                                  })}
+                                  <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(p.avgPct !== null ? Math.round(p.avgPct * 100) : null) }}>
+                                    {p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="px-5 py-2.5 text-[11px] text-gray-400 border-t border-gray-50">Open a team above to see each week's individual tasks, targets, and links.</p>
+                      </div>
+                    )}
+                    {kpiTeams.length > 0 && showKpiReport && kpiViewMode === "weekly" && (
+                      <div className="mt-2 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                          <h3 className="text-sm font-semibold">Weekly Team KPI Progress Report - {curMonth} W{curWeek}</h3>
+                          <ExportMenu
+                            filename={`KPI Progress Report - ${curMonth} W${curWeek}`}
                             header={["Team", "Name", "Total Target / Task", "Estimated Time", "Time Produced", "Completed", "Progress", "Links"]}
                             rows={kpiTeams.flatMap(team => byTeam[team].map(e => {
                               const pct = e.kpiPct !== null ? Math.round(e.kpiPct * 100) + "%" : "";
