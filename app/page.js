@@ -2433,9 +2433,23 @@ const COMP_LOGOS = {
                       <div className="mt-2 space-y-5">
                         {/* Individual Weekly Progress */}
                         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                          <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
-                            <h3 className="text-base font-bold">Monthly Team KPI Progress Report — {curMonth}</h3>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Weeks covered: {monthlyReport.weeksInMonth.map(w => `W${w}`).join(", ")}</p>
+                          <div className="px-5 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                            <div>
+                              <h3 className="text-base font-bold">Monthly Team KPI Progress Report — {curMonth}</h3>
+                              <p className="text-[11px] text-gray-400 mt-0.5">Weeks covered: {monthlyReport.weeksInMonth.map(w => `W${w}`).join(", ")}</p>
+                            </div>
+                            <ExportMenu
+                              filename={`KPI Progress Report - ${curMonth} (Month)`}
+                              header={["Team", "Name", ...monthlyReport.weeksInMonth.map(w => `W${w}`), "Monthly Avg"]}
+                              rows={monthlyReport.people.map(p => [
+                                p.team, p.employee,
+                                ...monthlyReport.weeksInMonth.map(w => {
+                                  const e = p.weeks[w];
+                                  return e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) + "%" : "";
+                                }),
+                                p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "",
+                              ])}
+                            />
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -2447,12 +2461,10 @@ const COMP_LOGOS = {
                                     <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
                                   ))}
                                   <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg</th>
-                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {monthlyReport.people.map((p, i) => {
-                                  const sc = statusColorFor(p.status);
                                   const avgDisplay = p.avgPct !== null ? Math.round(p.avgPct * 100) : null;
                                   return (
                                     <tr key={p.team + p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
@@ -2464,28 +2476,11 @@ const COMP_LOGOS = {
                                         return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(pct) }}>{pct !== null ? pct + "%" : "—"}</td>;
                                       })}
                                       <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(avgDisplay) }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
-                                      <td className="px-4 py-2.5"><span className={`text-[10px] font-medium px-2 py-0.5 rounded whitespace-nowrap ${sc.bg} ${sc.text}`}>{p.status}</span></td>
                                     </tr>
                                   );
                                 })}
                               </tbody>
                             </table>
-                          </div>
-                          <div className="px-5 py-2.5 border-t border-gray-50 flex items-center justify-between gap-3 flex-wrap">
-                            <p className="text-[11px] text-gray-400">Design is scored on time used vs. estimate (lower = better); all other teams on task completion (higher = better).</p>
-                            <ExportMenu
-                              filename={`KPI Progress Report - ${curMonth} (Month)`}
-                              header={["Team", "Name", ...monthlyReport.weeksInMonth.map(w => `W${w}`), "Monthly Avg", "Status"]}
-                              rows={monthlyReport.people.map(p => [
-                                p.team, p.employee,
-                                ...monthlyReport.weeksInMonth.map(w => {
-                                  const e = p.weeks[w];
-                                  return e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) + "%" : "";
-                                }),
-                                p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "",
-                                p.status,
-                              ])}
-                            />
                           </div>
                         </div>
 
@@ -2494,7 +2489,7 @@ const COMP_LOGOS = {
                           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                             <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
                               <h3 className="text-sm font-semibold">Design Team — Time Efficiency Detail</h3>
-                              <p className="text-[11px] text-gray-400 mt-0.5">Estimated vs. actual time per week — a lower "time used" % means the task finished under the estimate</p>
+                              <p className="text-[11px] text-gray-400 mt-0.5">Time used % per week — lower means the task finished under the estimate</p>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full text-sm">
@@ -2502,31 +2497,23 @@ const COMP_LOGOS = {
                                   <tr className="bg-gray-50 border-b border-gray-100">
                                     <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
                                     {monthlyReport.weeksInMonth.map(w => (
-                                      <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w} Est / Actual</th>
+                                      <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
                                     ))}
-                                    <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg Time Used</th>
-                                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Verdict</th>
+                                    <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {monthlyReport.people.filter(p => p.team === "Design").map((p, i) => {
                                     const avgDisplay = p.avgPct !== null ? Math.round(p.avgPct * 100) : null;
-                                    const sc = statusColorFor(p.status);
                                     return (
                                       <tr key={p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
                                         <td className="px-4 py-2.5 font-medium">{p.employee}</td>
                                         {monthlyReport.weeksInMonth.map(w => {
                                           const e = p.weeks[w];
                                           const pct = e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) : null;
-                                          return (
-                                            <td key={w} className="px-4 py-2.5 text-right text-gray-500">
-                                              <div>{e ? `${e.estTime || "—"}h / ${e.producedTime || "—"}h` : "—"}</div>
-                                              <div className="font-bold" style={{ color: pct !== null ? (pct > 100 ? "#dc2626" : pct < 80 ? "#16a34a" : "#d97706") : "#d1d5db" }}>{pct !== null ? pct + "%" : "—"}</div>
-                                            </td>
-                                          );
+                                          return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pct !== null ? (pct > 100 ? "#dc2626" : pct < 80 ? "#16a34a" : "#d97706") : "#d1d5db" }}>{pct !== null ? pct + "%" : "—"}</td>;
                                         })}
                                         <td className="px-4 py-2.5 text-right font-bold" style={{ color: avgDisplay !== null ? (avgDisplay > 100 ? "#dc2626" : avgDisplay < 80 ? "#16a34a" : "#d97706") : "#d1d5db" }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
-                                        <td className="px-4 py-2.5"><span className={`text-[10px] font-medium px-2 py-0.5 rounded whitespace-nowrap ${sc.bg} ${sc.text}`}>{p.status}</span></td>
                                       </tr>
                                     );
                                   })}
