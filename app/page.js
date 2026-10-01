@@ -657,6 +657,140 @@ function ProductivityAllTeamsExport() {
   );
 }
 
+// "Week 1" of a month starts the Monday on/before the 1st and runs through that Friday; every
+// 7 days after that anchor Monday is the next week. Computed purely from the calendar, so it
+// never needs updating from month to month — plug in any date and it resolves itself.
+function weekOfMonth(dateKey) {
+  const d = new Date(dateKey + "T00:00:00Z");
+  const firstOfMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  const firstDow = firstOfMonth.getUTCDay(); // 0=Sun..6=Sat
+  const backToMonday = (firstDow + 6) % 7; // days to step back from the 1st to reach its Monday
+  const anchorMonday = new Date(firstOfMonth);
+  anchorMonday.setUTCDate(anchorMonday.getUTCDate() - backToMonday);
+  const diffDays = Math.round((d - anchorMonday) / (24 * 3600 * 1000));
+  return Math.floor(diffDays / 7) + 1;
+}
+function weeksInMonthCount(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // last calendar day of month m
+  return weekOfMonth(`${monthKey}-${String(lastDay).padStart(2, "0")}`);
+}
+
+// Monthly hours summary for every live team — Team | Person | W1 | W2 | ... | Month Total —
+// built straight from each team's real logged dates, same seven live endpoints as the
+// all-teams daily export, just bucketed by week-of-month instead of by single day.
+function ProductivityMonthlySummary() {
+  const [allPeople, setAllPeople] = useState(null);
+  const [failedTeams, setFailedTeams] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sources = [
+      { team: "CSE", url: "/api/live-cse-timesheet" },
+      { team: "Knowledge", url: "/api/live-knowledge-tracker" },
+      { team: "Content", url: "/api/live-content-video-tracker?team=Content" },
+      { team: "Video", url: "/api/live-content-video-tracker?team=Video" },
+      { team: "Design", url: "/api/live-content-video-tracker?team=Design" },
+      { team: "HR", url: "/api/live-hr?team=HR" },
+      { team: "Finance", url: "/api/live-hr?team=Finance" },
+    ];
+    Promise.all(sources.map(({ team, url }) =>
+      fetch(url, { cache: "no-store" }).then(r => r.json())
+        .then(json => json.error ? { team, failed: true } : { team, people: (json.people || []).map(p => ({ team, ...p })) })
+        .catch(() => ({ team, failed: true }))
+    )).then(results => {
+      if (cancelled) return;
+      setFailedTeams(results.filter(r => r.failed).map(r => r.team));
+      const combined = results.filter(r => !r.failed).flatMap(r => r.people);
+      setAllPeople(combined);
+      const months = new Set();
+      combined.forEach(p => p.entries.forEach(e => { if (e.dateKey) months.add(e.dateKey.slice(0, 7)); }));
+      const sortedMonths = Array.from(months).sort();
+      setSelectedMonth(sortedMonths[sortedMonths.length - 1] || null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!allPeople) return <div className="flex items-center gap-2 py-3 text-xs text-gray-400 mb-2"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading monthly summary…</div>;
+
+  const monthsAvailable = Array.from(new Set(allPeople.flatMap(p => p.entries.filter(e => e.dateKey).map(e => e.dateKey.slice(0, 7))))).sort();
+  const monthKey = selectedMonth || monthsAvailable[monthsAvailable.length - 1];
+  const numWeeks = monthKey ? weeksInMonthCount(monthKey) : 0;
+  const weekNums = Array.from({ length: numWeeks }, (_, i) => i + 1);
+
+  const byPerson = {};
+  if (monthKey) {
+    allPeople.forEach(({ team, person, entries }) => {
+      entries.forEach(e => {
+        if (!e.dateKey || e.dateKey.slice(0, 7) !== monthKey) return;
+        const wk = weekOfMonth(e.dateKey);
+        const key = `${team}|${person}`;
+        if (!byPerson[key]) byPerson[key] = { team, person, weeks: {} };
+        byPerson[key].weeks[wk] = (byPerson[key].weeks[wk] || 0) + (e.hours || 0);
+      });
+    });
+  }
+  const teamOrder = ["CSE", "Knowledge", "Content", "Video", "Design", "HR", "Finance"];
+  const rows = Object.values(byPerson).sort((a, b) =>
+    (teamOrder.indexOf(a.team) - teamOrder.indexOf(b.team)) || a.person.localeCompare(b.person)
+  );
+  const monthTotal = p => weekNums.reduce((s, w) => s + (p.weeks[w] || 0), 0);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-5">
+      <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-sm font-bold">🗓️ Monthly Hours Summary</p>
+          <p className="text-[11px] text-gray-400">Hours by week — Week 1 is the Mon–Fri containing the 1st, every 7 days after that</p>
+          {failedTeams.length > 0 && <p className="text-[11px] text-amber-500 mt-0.5">Couldn't load: {failedTeams.join(", ")}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          {monthsAvailable.length > 0 && (
+            <select value={monthKey || ""} onChange={e => setSelectedMonth(e.target.value)}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-800 font-medium">
+              {monthsAvailable.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+          )}
+          {rows.length > 0 && (
+            <ExportMenu
+              filename={`Monthly-Hours-Summary-${monthKey || "summary"}`}
+              header={["Team", "Person", ...weekNums.map(w => `W${w}`), "Month Total"]}
+              rows={rows.map(p => [p.team, p.person, ...weekNums.map(w => (p.weeks[w] || 0) > 0 ? (p.weeks[w] || 0).toFixed(2) : ""), monthTotal(p).toFixed(2)])}
+            />
+          )}
+        </div>
+      </div>
+      {rows.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Person</th>
+                {weekNums.map(w => <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>)}
+                <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Month Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p, i) => (
+                <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                  <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
+                  <td className="px-4 py-2.5 font-medium">{p.person}</td>
+                  {weekNums.map(w => (
+                    <td key={w} className="px-4 py-2.5 text-right text-gray-600">{p.weeks[w] ? p.weeks[w].toFixed(2) + "h" : "—"}</td>
+                  ))}
+                  <td className="px-4 py-2.5 text-right font-bold text-gray-800">{monthTotal(p).toFixed(2)}h</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="text-sm text-gray-300 italic px-5 py-4">No entries for {monthKey ? monthLabel(monthKey) : "this month"}</p>}
+    </div>
+  );
+}
+
 // Weekly Website Traffic Report — a summary table (one row per portal per week) that expands,
 // per row, into the channel-by-channel breakdown ("how it comes") straight from the sheet.
 function WebsiteTrafficView() {
@@ -1623,6 +1757,7 @@ const COMP_LOGOS = {
                 <p className="text-sm text-gray-400 mb-5">Daily tasks, live from Google Sheet</p>
 
                 <ProductivityAllTeamsExport />
+                <ProductivityMonthlySummary />
 
                 {prodData ? (
                   <>
