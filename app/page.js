@@ -2446,7 +2446,7 @@ const COMP_LOGOS = {
                             </div>
                             <ExportMenu
                               filename={`KPI Progress Report - ${curMonth} (Month)`}
-                              header={["Team", "Name", ...monthlyReport.weeksInMonth.map(w => `W${w}`), "Monthly Avg"]}
+                              header={["Team", "Name", ...monthlyReport.weeksInMonth.map(w => `W${w}`), "Monthly Avg", "Expectation"]}
                               rows={monthlyReport.people.map(p => [
                                 p.team, p.employee,
                                 ...monthlyReport.weeksInMonth.map(w => {
@@ -2454,6 +2454,7 @@ const COMP_LOGOS = {
                                   return e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) + "%" : "";
                                 }),
                                 p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "",
+                                p.status,
                               ])}
                             />
                           </div>
@@ -2467,11 +2468,13 @@ const COMP_LOGOS = {
                                     <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
                                   ))}
                                   <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg</th>
+                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Expectation</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {monthlyReport.people.map((p, i) => {
                                   const avgDisplay = p.avgPct !== null ? Math.round(p.avgPct * 100) : null;
+                                  const sc = statusColorFor(p.status);
                                   return (
                                     <tr key={p.team + p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
                                       <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
@@ -2482,11 +2485,15 @@ const COMP_LOGOS = {
                                         return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorForTeam(pct, p.team) }}>{pct !== null ? pct + "%" : "—"}</td>;
                                       })}
                                       <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorForTeam(avgDisplay, p.team) }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
+                                      <td className="px-4 py-2.5"><span className={`text-[10px] font-medium px-2 py-0.5 rounded whitespace-nowrap ${sc.bg} ${sc.text}`}>{p.status}</span></td>
                                     </tr>
                                   );
                                 })}
                               </tbody>
                             </table>
+                          </div>
+                          <div className="px-5 py-2.5 border-t border-gray-50">
+                            <p className="text-[11px] text-gray-400">Note for Design: scoring is inverted — since the goal is finishing under the estimated time, a LOWER time-used % is the better outcome, so Design's Expectation and colors run the opposite direction from every other team.</p>
                           </div>
                         </div>
 
