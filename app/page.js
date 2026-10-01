@@ -2170,8 +2170,7 @@ const COMP_LOGOS = {
                 return ((ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)) || a.employee.localeCompare(b.employee);
               });
 
-              // Team Monthly Summary — a plain-language Trend label derived only from each
-              // team's own week-over-week averages, direction-aware per metric type.
+              // Team Monthly Summary — scores only, no label text.
               const teamSummaries = kpiTeams.map(team => {
                 const members = people.filter(p => p.team === team);
                 const weekAvgs = weeksInMonth.map(w => {
@@ -2180,30 +2179,12 @@ const COMP_LOGOS = {
                 });
                 const withAvg = members.filter(p => p.avgPct !== null);
                 const monthlyAvg = withAvg.length ? Math.round((withAvg.reduce((s, p) => s + p.avgPct, 0) / withAvg.length) * 100) : null;
-                const presentVals = weekAvgs.filter(v => v !== null);
-                let trend = "Not enough data";
-                if (presentVals.length >= 2) {
-                  if (isDesign(team)) {
-                    trend = monthlyAvg === null ? trend : monthlyAvg < 80 ? "Efficient overall" : monthlyAvg <= 100 ? "Meeting estimates" : "Needs review";
-                  } else {
-                    const first = presentVals[0], last = presentVals[presentVals.length - 1];
-                    const delta = last - first;
-                    const flatEarly = presentVals.length >= 3 && presentVals.slice(0, -1).every(v => Math.abs(v - first) <= 10);
-                    if (presentVals.length >= 3 && flatEarly && last < first - 15) trend = `Strong with Week ${weeksInMonth[presentVals.length - 1]} dip`;
-                    else if (delta <= -25) trend = "Declining sharply";
-                    else if (delta <= -10) trend = "Declining";
-                    else if (delta >= 25) trend = "Strong growth";
-                    else if (delta >= 10) trend = "Improving";
-                    else if (monthlyAvg !== null && monthlyAvg >= 80) trend = "Consistently strong";
-                    else if (monthlyAvg !== null && monthlyAvg < 50) trend = "Needs attention";
-                    else trend = "Steady";
-                  }
-                }
-                return { team, memberCount: members.length, metricLabel: isDesign(team) ? "Time Used (lower = better)" : "Completion (higher = better)", weekAvgs, monthlyAvg, trend };
+                return { team, weekAvgs, monthlyAvg };
               });
 
               // Key Observations — ranked by a normalized "goodness" score (0-100, higher always
               // better) so Design and completion-based teams can be compared on the same list.
+              // Scores only, no narrative text.
               const ranked = people.filter(p => p.avgPct !== null).map(p => {
                 const pctDisplay = Math.round(p.avgPct * 100);
                 const goodness = isDesign(p.team) ? Math.max(0, 100 - pctDisplay) : pctDisplay;
@@ -2211,47 +2192,15 @@ const COMP_LOGOS = {
               });
               const flagged = ranked.filter(p => p.status === "Needs Review" || p.status === "Below Expectation");
               const clean = ranked.filter(p => p.status !== "Needs Review" && p.status !== "Below Expectation");
-              const designClean = clean.filter(p => isDesign(p.team));
-              const bestDesignPct = designClean.length ? Math.min(...designClean.map(p => p.pctDisplay)) : null;
 
-              const topPerformers = clean.sort((a, b) => b.goodness - a.goodness).slice(0, 3).map(p => {
-                if (isDesign(p.team)) {
-                  const tag = p.pctDisplay === bestDesignPct ? " (most efficient designer)" : "";
-                  return `${p.employee} — ${p.pctDisplay}% time used${tag}`;
-                }
-                const vals = p.weeksPresent.map(w => Math.round(p.weeks[w].kpiPct * 100));
-                const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-                const stdev = vals.length > 1 ? Math.sqrt(vals.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / vals.length) : 99;
-                return `${p.employee} — ${p.pctDisplay}% completion${stdev < 10 ? " (consistent)" : ""}`;
-              });
+              const topPerformers = clean.sort((a, b) => b.goodness - a.goodness).slice(0, 3).map(p => ({
+                employee: p.employee, team: p.team, pctDisplay: p.pctDisplay,
+              }));
+              const needsAttention = flagged.sort((a, b) => a.goodness - b.goodness).slice(0, 5).map(p => ({
+                employee: p.employee, team: p.team, pctDisplay: p.pctDisplay,
+              }));
 
-              const needsAttention = flagged.sort((a, b) => a.goodness - b.goodness).slice(0, 5).map(p => {
-                const reasons = [];
-                if (isDesign(p.team)) {
-                  if (p.overrunWeek) reasons.push(`overran estimate W${p.overrunWeek} (${Math.round(p.weeks[p.overrunWeek].kpiPct * 100)}%)`);
-                  if (p.zeroWeek) reasons.push(`zero output W${p.zeroWeek}`);
-                } else {
-                  const lowWeek = p.weeksPresent.find(w => Math.round(p.weeks[w].kpiPct * 100) < 30);
-                  if (lowWeek) reasons.push(`${Math.round(p.weeks[lowWeek].kpiPct * 100)}% in W${lowWeek} (lowest)`);
-                  for (let i = 1; i < p.weeksPresent.length; i++) {
-                    const prevW = p.weeksPresent[i - 1], w = p.weeksPresent[i];
-                    const prevVal = Math.round(p.weeks[prevW].kpiPct * 100), val = Math.round(p.weeks[w].kpiPct * 100);
-                    if (prevVal - val > 40) { reasons.push(`dropped sharply in W${w}`); break; }
-                  }
-                }
-                if (!reasons.length) reasons.push(`${p.pctDisplay}% monthly average, below target`);
-                return `${p.employee} (${p.team}) — ${reasons.slice(0, 2).join("; ")}`;
-              });
-
-              const notes = [];
-              people.forEach(p => {
-                if (p.weeksPresent.length > 0 && p.weeksPresent.length < weeksInMonth.length) {
-                  notes.push(`${p.employee}'s average is based on ${p.weeksPresent.length} of ${weeksInMonth.length} week${weeksInMonth.length === 1 ? "" : "s"} of data.`);
-                }
-              });
-              notes.push("Design is scored on time used vs. estimate — a lower % means finishing under the estimated time, so lower is better; all other teams are scored on task completion %, where higher is better.");
-
-              return { weeksInMonth, people, teamSummaries, topPerformers, needsAttention, notes };
+              return { weeksInMonth, people, teamSummaries, topPerformers, needsAttention };
             }
             const monthlyReport = kpiViewMode === "monthly" ? buildMonthlyReport() : null;
             const pctColorFor = pct => pct === null ? "#d1d5db" : pct >= 90 ? "#16a34a" : pct < 70 ? "#dc2626" : "#d97706";
@@ -2597,24 +2546,18 @@ const COMP_LOGOS = {
                               <thead>
                                 <tr className="bg-gray-50 border-b border-gray-100">
                                   <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
-                                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Members</th>
-                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Metric</th>
                                   {monthlyReport.weeksInMonth.map(w => (
-                                    <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w} Avg</th>
+                                    <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
                                   ))}
                                   <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg</th>
-                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Trend</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {monthlyReport.teamSummaries.map((t, i) => (
                                   <tr key={t.team + i} className="border-b border-gray-50 hover:bg-gray-50">
                                     <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[t.team] || "#888" }}>{t.team}</span></td>
-                                    <td className="px-4 py-2.5 text-right text-gray-500">{t.memberCount}</td>
-                                    <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{t.metricLabel}</td>
                                     {t.weekAvgs.map((v, wi) => <td key={wi} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(v) }}>{v !== null ? v + "%" : "—"}</td>)}
                                     <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(t.monthlyAvg) }}>{t.monthlyAvg !== null ? t.monthlyAvg + "%" : "—"}</td>
-                                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">{t.trend}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -2630,7 +2573,7 @@ const COMP_LOGOS = {
                               <p className="text-[11px] font-semibold text-green-600 uppercase tracking-wide mb-2">🏆 Top Performers</p>
                               {monthlyReport.topPerformers.length > 0 ? (
                                 <ul className="space-y-1.5">
-                                  {monthlyReport.topPerformers.map((t, i) => <li key={i} className="text-xs text-gray-600">{i + 1}. {t}</li>)}
+                                  {monthlyReport.topPerformers.map((t, i) => <li key={i} className="text-xs text-gray-600">{i + 1}. {t.employee} — {t.pctDisplay}%</li>)}
                                 </ul>
                               ) : <p className="text-xs text-gray-300">Not enough data yet</p>}
                             </div>
@@ -2638,16 +2581,10 @@ const COMP_LOGOS = {
                               <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wide mb-2">⚠️ Needs Attention</p>
                               {monthlyReport.needsAttention.length > 0 ? (
                                 <ul className="space-y-1.5">
-                                  {monthlyReport.needsAttention.map((t, i) => <li key={i} className="text-xs text-gray-600">{t}</li>)}
+                                  {monthlyReport.needsAttention.map((t, i) => <li key={i} className="text-xs text-gray-600">{t.employee} ({t.team}) — {t.pctDisplay}%</li>)}
                                 </ul>
                               ) : <p className="text-xs text-gray-300">No flagged entries this month</p>}
                             </div>
-                          </div>
-                          <div className="mt-4 pt-4 border-t border-gray-50">
-                            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Notes</p>
-                            <ul className="space-y-1">
-                              {monthlyReport.notes.map((n, i) => <li key={i} className="text-[11px] text-gray-400">• {n}</li>)}
-                            </ul>
                           </div>
                         </div>
                       </div>
