@@ -571,91 +571,6 @@ function ContentVideoTrackerView({ team, endpoint }) {
 // doesn't require opening each team's card one at a time. Pulls from all seven live endpoints
 // (CSE, Knowledge, Content, Video, Design, HR, Finance) in parallel and lets the person pick a
 // single day across all of them, same real-date grouping as each team's own view.
-const LATEST_PER_TEAM = "__latest__";
-
-function ProductivityAllTeamsExport() {
-  const [allPeople, setAllPeople] = useState(null); // [{team, person, entries}], null = loading
-  const [failedTeams, setFailedTeams] = useState([]);
-  // Teams don't all log on the same cadence (CSE/Content log daily, Design or HR may lag by a
-  // few days) — picking a single shared "most recent" date meant most teams had nothing on
-  // that exact date and silently vanished from the export. Defaulting to "each team's own
-  // latest day" guarantees every team that has any live data shows up; the explicit day picker
-  // below is still there for pulling one specific shared date across teams.
-  const [selectedDay, setSelectedDay] = useState(LATEST_PER_TEAM);
-
-  useEffect(() => {
-    let cancelled = false;
-    const sources = [
-      { team: "CSE", url: "/api/live-cse-timesheet" },
-      { team: "Knowledge", url: "/api/live-knowledge-tracker" },
-      { team: "Content", url: "/api/live-content-video-tracker?team=Content" },
-      { team: "Video", url: "/api/live-content-video-tracker?team=Video" },
-      { team: "Design", url: "/api/live-content-video-tracker?team=Design" },
-      { team: "HR", url: "/api/live-hr?team=HR" },
-      { team: "Finance", url: "/api/live-hr?team=Finance" },
-    ];
-    Promise.all(sources.map(({ team, url }) =>
-      fetch(url, { cache: "no-store" }).then(r => r.json())
-        .then(json => json.error ? { team, failed: true } : { team, people: (json.people || []).map(p => ({ team, ...p })) })
-        .catch(() => ({ team, failed: true }))
-    )).then(results => {
-      if (cancelled) return;
-      setFailedTeams(results.filter(r => r.failed).map(r => r.team));
-      const combined = results.filter(r => !r.failed).flatMap(r => r.people);
-      setAllPeople(combined);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  if (!allPeople) return <div className="flex items-center gap-2 py-3 text-xs text-gray-400 mb-2"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading all teams for daily export…</div>;
-
-  const allDays = sortedDayKeys(allPeople);
-  const useLatestPerTeam = selectedDay === LATEST_PER_TEAM;
-
-  const rows = allPeople.flatMap(({ team, person, entries }) => {
-    if (!entries.length) return [];
-    // In "latest per team" mode, each person's own most recent logged day is used, so every
-    // team with any data shows up even if their most recent day differs from other teams'.
-    let dayKey;
-    if (useLatestPerTeam) {
-      const personDays = sortedDayKeys([{ entries }]);
-      dayKey = personDays[personDays.length - 1];
-    } else {
-      dayKey = selectedDay;
-    }
-    return entries.filter(e => dayGroupKey(e) === dayKey).map(e => [
-      team, person,
-      useLatestPerTeam ? dayGroupLabel(dayKey, allPeople) : undefined,
-      e.task || "",
-      e.hours > 0 ? e.hours : "",
-      [e.activityType, e.client, e.description, e.remarks, e.notes].filter(Boolean).join(" · "),
-    ].filter(v => v !== undefined));
-  });
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 flex items-center justify-between flex-wrap gap-3">
-      <div>
-        <p className="text-sm font-bold">📥 All-Teams Daily Summary</p>
-        <p className="text-[11px] text-gray-400">Every live team's tasks and hours, in a single file — no need to open each card</p>
-        {failedTeams.length > 0 && <p className="text-[11px] text-amber-500 mt-0.5">Couldn't load: {failedTeams.join(", ")}</p>}
-      </div>
-      <div className="flex items-center gap-2">
-        <select value={selectedDay} onChange={e => setSelectedDay(e.target.value)}
-          className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-800 font-medium">
-          <option value={LATEST_PER_TEAM}>Latest day per team</option>
-          {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, allPeople)} (all teams)</option>)}
-        </select>
-        {rows.length > 0 ? (
-          <ExportMenu
-            filename={`All-Teams-Productivity-${useLatestPerTeam ? "latest" : selectedDay.startsWith("raw:") ? "summary" : selectedDay}`}
-            header={useLatestPerTeam ? ["Team", "Person", "Date", "Task", "Hours", "Details"] : ["Team", "Person", "Task", "Hours", "Details"]}
-            rows={rows}
-          />
-        ) : <span className="text-xs text-gray-300 italic">No entries yet</span>}
-      </div>
-    </div>
-  );
-}
 
 // "Week 1" of a month starts the Monday on/before the 1st and runs through that Friday; every
 // 7 days after that anchor Monday is the next week. Computed purely from the calendar, so it
@@ -679,10 +594,14 @@ function weeksInMonthCount(monthKey) {
 // Monthly hours summary for every live team — Team | Person | W1 | W2 | ... | Month Total —
 // built straight from each team's real logged dates, same seven live endpoints as the
 // all-teams daily export, just bucketed by week-of-month instead of by single day.
+const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+
 function ProductivityMonthlySummary() {
   const [allPeople, setAllPeople] = useState(null);
   const [failedTeams, setFailedTeams] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(null);
+  const [viewMode, setViewMode] = useState("monthly"); // "monthly" | "weekly"
+  const [selectedWeek, setSelectedWeek] = useState(null); // null = auto (most recent week with data)
 
   useEffect(() => {
     let cancelled = false;
@@ -718,46 +637,88 @@ function ProductivityMonthlySummary() {
   const monthKey = selectedMonth || monthsAvailable[monthsAvailable.length - 1];
   const numWeeks = monthKey ? weeksInMonthCount(monthKey) : 0;
   const weekNums = Array.from({ length: numWeeks }, (_, i) => i + 1);
-
-  const byPerson = {};
-  if (monthKey) {
-    allPeople.forEach(({ team, person, entries }) => {
-      entries.forEach(e => {
-        if (!e.dateKey || e.dateKey.slice(0, 7) !== monthKey) return;
-        const wk = weekOfMonth(e.dateKey);
-        const key = `${team}|${person}`;
-        if (!byPerson[key]) byPerson[key] = { team, person, weeks: {} };
-        byPerson[key].weeks[wk] = (byPerson[key].weeks[wk] || 0) + (e.hours || 0);
-      });
-    });
-  }
   const teamOrder = ["CSE", "Knowledge", "Content", "Video", "Design", "HR", "Finance"];
-  const rows = Object.values(byPerson).sort((a, b) =>
+
+  const monthEntries = monthKey ? allPeople.flatMap(({ team, person, entries }) => entries.filter(e => e.dateKey && e.dateKey.slice(0, 7) === monthKey).map(e => ({ team, person, ...e }))) : [];
+  // "Most recent week with data" rather than just the month's last calendar week, so switching
+  // into Weekly view lands on whichever week people have actually been logging, not an empty tail.
+  const latestDateInMonth = monthEntries.length ? monthEntries.map(e => e.dateKey).sort().slice(-1)[0] : null;
+  const defaultWeek = latestDateInMonth ? weekOfMonth(latestDateInMonth) : (weekNums[weekNums.length - 1] || 1);
+  const activeWeek = selectedWeek || defaultWeek;
+
+  // Monthly pivot: Team | Person | W1 | W2 | ... | Month Total
+  const byPersonMonth = {};
+  monthEntries.forEach(e => {
+    const key = `${e.team}|${e.person}`;
+    if (!byPersonMonth[key]) byPersonMonth[key] = { team: e.team, person: e.person, weeks: {} };
+    const wk = weekOfMonth(e.dateKey);
+    byPersonMonth[key].weeks[wk] = (byPersonMonth[key].weeks[wk] || 0) + (e.hours || 0);
+  });
+  const monthRows = Object.values(byPersonMonth).sort((a, b) =>
     (teamOrder.indexOf(a.team) - teamOrder.indexOf(b.team)) || a.person.localeCompare(b.person)
   );
   const monthTotal = p => weekNums.reduce((s, w) => s + (p.weeks[w] || 0), 0);
+
+  // Weekly day-by-day: Team | Person | Mon | Tue | Wed | Thu | Fri, for the selected week only.
+  const byPersonWeek = {};
+  monthEntries.filter(e => weekOfMonth(e.dateKey) === activeWeek).forEach(e => {
+    const dow = new Date(e.dateKey + "T00:00:00Z").getUTCDay(); // 0 Sun..6 Sat
+    if (dow < 1 || dow > 5) return; // week runs Mon-Fri only
+    const label = DOW_LABELS[dow - 1];
+    const key = `${e.team}|${e.person}`;
+    if (!byPersonWeek[key]) byPersonWeek[key] = { team: e.team, person: e.person, days: {} };
+    byPersonWeek[key].days[label] = (byPersonWeek[key].days[label] || 0) + (e.hours || 0);
+  });
+  const weekRows = Object.values(byPersonWeek).sort((a, b) =>
+    (teamOrder.indexOf(a.team) - teamOrder.indexOf(b.team)) || a.person.localeCompare(b.person)
+  );
+  const weekTotal = p => DOW_LABELS.reduce((s, d) => s + (p.days[d] || 0), 0);
+
+  const rows = viewMode === "monthly" ? monthRows : weekRows;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-5">
       <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <p className="text-sm font-bold">🗓️ Monthly Hours Summary</p>
-          <p className="text-[11px] text-gray-400">Hours by week — Week 1 is the Mon–Fri containing the 1st, every 7 days after that</p>
+          <p className="text-sm font-bold">🗓️ {viewMode === "monthly" ? "Monthly" : "Weekly"} Hours Summary</p>
+          <p className="text-[11px] text-gray-400">
+            {viewMode === "monthly"
+              ? "Hours by week — Week 1 is the Mon–Fri containing the 1st, every 7 days after that"
+              : `Day-by-day hours for Week ${activeWeek} (Mon–Fri)`}
+          </p>
           {failedTeams.length > 0 && <p className="text-[11px] text-amber-500 mt-0.5">Couldn't load: {failedTeams.join(", ")}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <button onClick={() => setViewMode("monthly")} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === "monthly" ? "bg-white shadow-sm" : "text-gray-500"}`}>Monthly</button>
+            <button onClick={() => setViewMode("weekly")} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === "weekly" ? "bg-white shadow-sm" : "text-gray-500"}`}>Weekly</button>
+          </div>
           {monthsAvailable.length > 0 && (
-            <select value={monthKey || ""} onChange={e => setSelectedMonth(e.target.value)}
+            <select value={monthKey || ""} onChange={e => { setSelectedMonth(e.target.value); setSelectedWeek(null); }}
               className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-800 font-medium">
               {monthsAvailable.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
           )}
+          {viewMode === "weekly" && weekNums.length > 0 && (
+            <select value={activeWeek} onChange={e => setSelectedWeek(parseInt(e.target.value, 10))}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-800 font-medium">
+              {weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}
+            </select>
+          )}
           {rows.length > 0 && (
-            <ExportMenu
-              filename={`Monthly-Hours-Summary-${monthKey || "summary"}`}
-              header={["Team", "Person", ...weekNums.map(w => `W${w}`), "Month Total"]}
-              rows={rows.map(p => [p.team, p.person, ...weekNums.map(w => (p.weeks[w] || 0) > 0 ? (p.weeks[w] || 0).toFixed(2) : ""), monthTotal(p).toFixed(2)])}
-            />
+            viewMode === "monthly" ? (
+              <ExportMenu
+                filename={`Monthly-Hours-Summary-${monthKey || "summary"}`}
+                header={["Team", "Person", ...weekNums.map(w => `W${w}`), "Month Total"]}
+                rows={monthRows.map(p => [p.team, p.person, ...weekNums.map(w => (p.weeks[w] || 0) > 0 ? (p.weeks[w] || 0).toFixed(2) : ""), monthTotal(p).toFixed(2)])}
+              />
+            ) : (
+              <ExportMenu
+                filename={`Weekly-Hours-Summary-${monthKey || "summary"}-W${activeWeek}`}
+                header={["Team", "Person", ...DOW_LABELS, "Week Total"]}
+                rows={weekRows.map(p => [p.team, p.person, ...DOW_LABELS.map(d => (p.days[d] || 0) > 0 ? (p.days[d] || 0).toFixed(2) : ""), weekTotal(p).toFixed(2)])}
+              />
+            )
           )}
         </div>
       </div>
@@ -768,12 +729,14 @@ function ProductivityMonthlySummary() {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
                 <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Person</th>
-                {weekNums.map(w => <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>)}
-                <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Month Total</th>
+                {viewMode === "monthly"
+                  ? weekNums.map(w => <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>)
+                  : DOW_LABELS.map(d => <th key={d} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">{d}</th>)}
+                <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">{viewMode === "monthly" ? "Month Total" : "Week Total"}</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((p, i) => (
+              {viewMode === "monthly" ? monthRows.map((p, i) => (
                 <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                   <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
                   <td className="px-4 py-2.5 font-medium">{p.person}</td>
@@ -782,11 +745,20 @@ function ProductivityMonthlySummary() {
                   ))}
                   <td className="px-4 py-2.5 text-right font-bold text-gray-800">{monthTotal(p).toFixed(2)}h</td>
                 </tr>
+              )) : weekRows.map((p, i) => (
+                <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                  <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
+                  <td className="px-4 py-2.5 font-medium">{p.person}</td>
+                  {DOW_LABELS.map(d => (
+                    <td key={d} className="px-4 py-2.5 text-right text-gray-600">{p.days[d] ? p.days[d].toFixed(2) + "h" : "—"}</td>
+                  ))}
+                  <td className="px-4 py-2.5 text-right font-bold text-gray-800">{weekTotal(p).toFixed(2)}h</td>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
-      ) : <p className="text-sm text-gray-300 italic px-5 py-4">No entries for {monthKey ? monthLabel(monthKey) : "this month"}</p>}
+      ) : <p className="text-sm text-gray-300 italic px-5 py-4">No entries for {viewMode === "monthly" ? (monthKey ? monthLabel(monthKey) : "this month") : `Week ${activeWeek}`}</p>}
     </div>
   );
 }
@@ -1756,7 +1728,6 @@ const COMP_LOGOS = {
                 <h1 className="text-xl font-semibold mb-1">Productivity</h1>
                 <p className="text-sm text-gray-400 mb-5">Daily tasks, live from Google Sheet</p>
 
-                <ProductivityAllTeamsExport />
                 <ProductivityMonthlySummary />
 
                 {prodData ? (
