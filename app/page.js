@@ -2125,8 +2125,8 @@ const COMP_LOGOS = {
             });
 
             // Monthly KPI Progress Report: a multi-section report (Individual Weekly Progress,
-            // a Design-specific Time Efficiency Detail, a Team Monthly Summary, and auto-generated
-            // Key Observations) built purely from the numbers already in `entries` — no manual
+            // a Team Monthly Summary, and auto-generated Key Observations) built purely from the
+            // numbers already in `entries` — no manual
             // narrative input. Design's metric runs the opposite direction from every other team:
             // a LOWER "time used" % is the good outcome there (finishing under the estimated
             // time), so its status/ranking logic is inverted while every other team keeps the
@@ -2490,44 +2490,6 @@ const COMP_LOGOS = {
                           </div>
                         </div>
 
-                        {/* Design Time Efficiency Detail */}
-                        {monthlyReport.people.some(p => p.team === "Design") && (
-                          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                            <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
-                              <h3 className="text-sm font-semibold">Design Team — Time Efficiency Detail</h3>
-                              <p className="text-[11px] text-gray-400 mt-0.5">Time used % per week — lower means the task finished under the estimate</p>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="bg-gray-50 border-b border-gray-100">
-                                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
-                                    {monthlyReport.weeksInMonth.map(w => (
-                                      <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
-                                    ))}
-                                    <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {monthlyReport.people.filter(p => p.team === "Design").map((p, i) => {
-                                    const avgDisplay = p.avgPct !== null ? Math.round(p.avgPct * 100) : null;
-                                    return (
-                                      <tr key={p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
-                                        <td className="px-4 py-2.5 font-medium">{p.employee}</td>
-                                        {monthlyReport.weeksInMonth.map(w => {
-                                          const e = p.weeks[w];
-                                          const pct = e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) : null;
-                                          return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pct !== null ? (pct > 100 ? "#dc2626" : pct < 80 ? "#16a34a" : "#d97706") : "#d1d5db" }}>{pct !== null ? pct + "%" : "—"}</td>;
-                                        })}
-                                        <td className="px-4 py-2.5 text-right font-bold" style={{ color: avgDisplay !== null ? (avgDisplay > 100 ? "#dc2626" : avgDisplay < 80 ? "#16a34a" : "#d97706") : "#d1d5db" }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
 
                         {/* Team Monthly Summary */}
                         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
