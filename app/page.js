@@ -375,6 +375,9 @@ function TeamTimesheetView({ endpoint, teamLabel, gradient, accent }) {
 
   const allDays = sortedDayKeys(data);
   const activeDay = selectedDay || allDays[allDays.length - 1];
+  const daySummaryRows = data.flatMap(({ person, entries }) =>
+    entries.filter(e => dayGroupKey(e) === activeDay).map(e => [person, e.task, e.description, e.hours, e.remarks])
+  );
 
   return (
     <div>
@@ -384,12 +387,21 @@ function TeamTimesheetView({ endpoint, teamLabel, gradient, accent }) {
             <span className="text-base font-bold">⏱️ Live Timesheet</span>
             <p className="text-[11px] text-white/70 mt-0.5">Day-by-day, task-by-task, straight from the team's sheet</p>
           </div>
-          {allDays.length > 0 && (
-            <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
-              className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-              {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, data)}</option>)}
-            </select>
-          )}
+          <div className="flex items-center gap-2">
+            {allDays.length > 0 && (
+              <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, data)}</option>)}
+              </select>
+            )}
+            {activeDay && daySummaryRows.length > 0 && (
+              <ExportMenu
+                filename={`${teamLabel}-Productivity-${activeDay.startsWith("raw:") ? "summary" : activeDay}`}
+                header={["Person", "Task", "Description", "Hours", "Remarks"]}
+                rows={daySummaryRows}
+              />
+            )}
+          </div>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -480,6 +492,9 @@ function ContentVideoTrackerView({ team, endpoint }) {
   const activeDay = selectedDay || allDays[allDays.length - 1];
   const teamColor = TEAM_COLORS[team] || "#10b981";
   const teamGradient = TEAM_GRADIENTS[team] || "from-emerald-500 to-teal-500";
+  const daySummaryRows = data.flatMap(({ person, entries }) =>
+    entries.filter(e => dayGroupKey(e) === activeDay).map(e => [person, e.task, e.activityType, e.client, e.hours, e.notes])
+  );
 
   return (
     <div>
@@ -489,12 +504,21 @@ function ContentVideoTrackerView({ team, endpoint }) {
             <span className="text-base font-bold">{TEAM_ICONS[team] || "✍️"} Live {team} Tracker</span>
             <p className="text-[11px] text-white/70 mt-0.5">Day-by-day, task-by-task, straight from the team's sheet</p>
           </div>
-          {allDays.length > 0 && (
-            <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
-              className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
-              {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, data)}</option>)}
-            </select>
-          )}
+          <div className="flex items-center gap-2">
+            {allDays.length > 0 && (
+              <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg text-gray-800 font-medium">
+                {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, data)}</option>)}
+              </select>
+            )}
+            {activeDay && daySummaryRows.length > 0 && (
+              <ExportMenu
+                filename={`${team}-Productivity-${activeDay.startsWith("raw:") ? "summary" : activeDay}`}
+                header={["Person", "Task", "Activity Type", "Client", "Hours", "Notes"]}
+                rows={daySummaryRows}
+              />
+            )}
+          </div>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
