@@ -567,6 +567,79 @@ function ContentVideoTrackerView({ team, endpoint }) {
   );
 }
 
+// One combined download for every live-tracked team at once, so getting the day's summary
+// doesn't require opening each team's card one at a time. Pulls from all seven live endpoints
+// (CSE, Knowledge, Content, Video, Design, HR, Finance) in parallel and lets the person pick a
+// single day across all of them, same real-date grouping as each team's own view.
+function ProductivityAllTeamsExport() {
+  const [allPeople, setAllPeople] = useState(null); // [{team, person, entries}], null = loading
+  const [failedTeams, setFailedTeams] = useState([]);
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sources = [
+      { team: "CSE", url: "/api/live-cse-timesheet" },
+      { team: "Knowledge", url: "/api/live-knowledge-tracker" },
+      { team: "Content", url: "/api/live-content-video-tracker?team=Content" },
+      { team: "Video", url: "/api/live-content-video-tracker?team=Video" },
+      { team: "Design", url: "/api/live-content-video-tracker?team=Design" },
+      { team: "HR", url: "/api/live-hr?team=HR" },
+      { team: "Finance", url: "/api/live-hr?team=Finance" },
+    ];
+    Promise.all(sources.map(({ team, url }) =>
+      fetch(url, { cache: "no-store" }).then(r => r.json())
+        .then(json => json.error ? { team, failed: true } : { team, people: (json.people || []).map(p => ({ team, ...p })) })
+        .catch(() => ({ team, failed: true }))
+    )).then(results => {
+      if (cancelled) return;
+      setFailedTeams(results.filter(r => r.failed).map(r => r.team));
+      const combined = results.filter(r => !r.failed).flatMap(r => r.people);
+      setAllPeople(combined);
+      const allDays = sortedDayKeys(combined);
+      setSelectedDay(allDays[allDays.length - 1] || null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!allPeople) return <div className="flex items-center gap-2 py-3 text-xs text-gray-400 mb-2"><span className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></span>Loading all teams for daily export…</div>;
+
+  const allDays = sortedDayKeys(allPeople);
+  const activeDay = selectedDay || allDays[allDays.length - 1];
+  const rows = allPeople.flatMap(({ team, person, entries }) =>
+    entries.filter(e => dayGroupKey(e) === activeDay).map(e => [
+      team, person, e.task || "",
+      e.hours > 0 ? e.hours : "",
+      [e.activityType, e.client, e.description, e.remarks, e.notes].filter(Boolean).join(" · "),
+    ])
+  );
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <p className="text-sm font-bold">📥 All-Teams Daily Summary</p>
+        <p className="text-[11px] text-gray-400">Every live team's tasks and hours for one day, in a single file — no need to open each card</p>
+        {failedTeams.length > 0 && <p className="text-[11px] text-amber-500 mt-0.5">Couldn't load: {failedTeams.join(", ")}</p>}
+      </div>
+      <div className="flex items-center gap-2">
+        {allDays.length > 0 && (
+          <select value={activeDay || ""} onChange={e => setSelectedDay(e.target.value)}
+            className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-800 font-medium">
+            {allDays.map(d => <option key={d} value={d}>{dayGroupLabel(d, allPeople)}</option>)}
+          </select>
+        )}
+        {activeDay && rows.length > 0 ? (
+          <ExportMenu
+            filename={`All-Teams-Productivity-${activeDay.startsWith("raw:") ? "summary" : activeDay}`}
+            header={["Team", "Person", "Task", "Hours", "Details"]}
+            rows={rows}
+          />
+        ) : activeDay ? <span className="text-xs text-gray-300 italic">No entries for this day</span> : null}
+      </div>
+    </div>
+  );
+}
+
 // Weekly Website Traffic Report — a summary table (one row per portal per week) that expands,
 // per row, into the channel-by-channel breakdown ("how it comes") straight from the sheet.
 function WebsiteTrafficView() {
@@ -1531,6 +1604,8 @@ const COMP_LOGOS = {
               <>
                 <h1 className="text-xl font-semibold mb-1">Productivity</h1>
                 <p className="text-sm text-gray-400 mb-5">Daily tasks, live from Google Sheet</p>
+
+                <ProductivityAllTeamsExport />
 
                 {prodData ? (
                   <>
