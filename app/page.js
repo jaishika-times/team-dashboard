@@ -590,6 +590,17 @@ function weeksInMonthCount(monthKey) {
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate(); // last calendar day of month m
   return weekOfMonth(`${monthKey}-${String(lastDay).padStart(2, "0")}`);
 }
+// The Monday that starts a given week-of-month, so the weekly table can show each column's
+// actual date (e.g. "Mon 7 Sep") instead of just the bare weekday name.
+function weekStartDate(monthKey, weekNum) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const firstOfMonth = new Date(Date.UTC(y, m - 1, 1));
+  const firstDow = firstOfMonth.getUTCDay();
+  const backToMonday = (firstDow + 6) % 7;
+  const anchor = new Date(firstOfMonth);
+  anchor.setUTCDate(anchor.getUTCDate() - backToMonday + (weekNum - 1) * 7);
+  return anchor; // Monday of that week
+}
 
 // Monthly hours summary for every live team — Team | Person | W1 | W2 | ... | Month Total —
 // built straight from each team's real logged dates, same seven live endpoints as the
@@ -602,6 +613,7 @@ function ProductivityMonthlySummary() {
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [viewMode, setViewMode] = useState("monthly"); // "monthly" | "weekly"
   const [selectedWeek, setSelectedWeek] = useState(null); // null = auto (most recent week with data)
+  const [showWeeklyTable, setShowWeeklyTable] = useState(false); // weekly table stays tucked behind a button until asked for
 
   useEffect(() => {
     let cancelled = false;
@@ -674,6 +686,15 @@ function ProductivityMonthlySummary() {
   );
   const weekTotal = p => DOW_LABELS.reduce((s, d) => s + (p.days[d] || 0), 0);
 
+  // Actual calendar date for each Mon-Fri column of the active week, e.g. "7 Sep".
+  const weekMonday = monthKey ? weekStartDate(monthKey, activeWeek) : null;
+  const weekDateLabels = DOW_LABELS.map((_, i) => {
+    if (!weekMonday) return "";
+    const d = new Date(weekMonday);
+    d.setUTCDate(d.getUTCDate() + i);
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  });
+
   const rows = viewMode === "monthly" ? monthRows : weekRows;
 
   return (
@@ -715,50 +736,80 @@ function ProductivityMonthlySummary() {
             ) : (
               <ExportMenu
                 filename={`Weekly-Hours-Summary-${monthKey || "summary"}-W${activeWeek}`}
-                header={["Team", "Person", ...DOW_LABELS, "Week Total"]}
+                header={["Team", "Person", ...DOW_LABELS.map((d, i) => `${d} ${weekDateLabels[i]}`), "Week Total"]}
                 rows={weekRows.map(p => [p.team, p.person, ...DOW_LABELS.map(d => (p.days[d] || 0) > 0 ? (p.days[d] || 0).toFixed(2) : ""), weekTotal(p).toFixed(2)])}
               />
             )
           )}
+          {viewMode === "weekly" && (
+            <button onClick={() => setShowWeeklyTable(v => !v)}
+              className="text-xs font-medium text-gray-500 hover:text-gray-800 border border-gray-200 px-3 py-1.5 rounded-lg">
+              {showWeeklyTable ? "Hide table" : `Show Week ${activeWeek} table`}
+            </button>
+          )}
         </div>
       </div>
-      {rows.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
-                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Person</th>
-                {viewMode === "monthly"
-                  ? weekNums.map(w => <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>)
-                  : DOW_LABELS.map(d => <th key={d} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">{d}</th>)}
-                <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">{viewMode === "monthly" ? "Month Total" : "Week Total"}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {viewMode === "monthly" ? monthRows.map((p, i) => (
-                <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
-                  <td className="px-4 py-2.5 font-medium">{p.person}</td>
-                  {weekNums.map(w => (
-                    <td key={w} className="px-4 py-2.5 text-right text-gray-600">{p.weeks[w] ? p.weeks[w].toFixed(2) + "h" : "—"}</td>
-                  ))}
-                  <td className="px-4 py-2.5 text-right font-bold text-gray-800">{monthTotal(p).toFixed(2)}h</td>
+      {viewMode === "monthly" ? (
+        monthRows.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Person</th>
+                  {weekNums.map(w => <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>)}
+                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Month Total</th>
                 </tr>
-              )) : weekRows.map((p, i) => (
-                <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
-                  <td className="px-4 py-2.5 font-medium">{p.person}</td>
-                  {DOW_LABELS.map(d => (
-                    <td key={d} className="px-4 py-2.5 text-right text-gray-600">{p.days[d] ? p.days[d].toFixed(2) + "h" : "—"}</td>
+              </thead>
+              <tbody>
+                {monthRows.map((p, i) => (
+                  <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                    <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
+                    <td className="px-4 py-2.5 font-medium">{p.person}</td>
+                    {weekNums.map(w => (
+                      <td key={w} className="px-4 py-2.5 text-right text-gray-600">{p.weeks[w] ? p.weeks[w].toFixed(2) + "h" : "—"}</td>
+                    ))}
+                    <td className="px-4 py-2.5 text-right font-bold text-gray-800">{monthTotal(p).toFixed(2)}h</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="text-sm text-gray-300 italic px-5 py-4">No entries for {monthKey ? monthLabel(monthKey) : "this month"}</p>
+      ) : showWeeklyTable ? (
+        weekRows.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Person</th>
+                  {DOW_LABELS.map((d, i) => (
+                    <th key={d} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">
+                      {d}<div className="text-[9px] normal-case font-normal text-gray-300">{weekDateLabels[i]}</div>
+                    </th>
                   ))}
-                  <td className="px-4 py-2.5 text-right font-bold text-gray-800">{weekTotal(p).toFixed(2)}h</td>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Week Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : <p className="text-sm text-gray-300 italic px-5 py-4">No entries for {viewMode === "monthly" ? (monthKey ? monthLabel(monthKey) : "this month") : `Week ${activeWeek}`}</p>}
+              </thead>
+              <tbody>
+                {weekRows.map((p, i) => (
+                  <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                    <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
+                    <td className="px-4 py-2.5 font-medium">{p.person}</td>
+                    {DOW_LABELS.map(d => (
+                      <td key={d} className="px-4 py-2.5 text-right text-gray-600">{p.days[d] ? p.days[d].toFixed(2) + "h" : "—"}</td>
+                    ))}
+                    <td className="px-4 py-2.5 text-right font-bold text-gray-800">{weekTotal(p).toFixed(2)}h</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="text-sm text-gray-300 italic px-5 py-4">No entries for Week {activeWeek}</p>
+      ) : (
+        <p className="text-xs text-gray-300 px-5 py-4">Click "Show Week {activeWeek} table" above to view it, or use Download to export directly.</p>
+      )}
     </div>
   );
 }
