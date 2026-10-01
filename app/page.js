@@ -2204,6 +2204,12 @@ const COMP_LOGOS = {
             }
             const monthlyReport = kpiViewMode === "monthly" ? buildMonthlyReport() : null;
             const pctColorFor = pct => pct === null ? "#d1d5db" : pct >= 90 ? "#16a34a" : pct < 70 ? "#dc2626" : "#d97706";
+            // Design runs the opposite direction — a lower time-used % is the good outcome — so
+            // its color thresholds flip (same thresholds already used in the Time Efficiency Detail
+            // table: red above 100%, green under 80%, amber in between).
+            const pctColorForTeam = (pct, team) => team === "Design"
+              ? (pct === null ? "#d1d5db" : pct > 100 ? "#dc2626" : pct < 80 ? "#16a34a" : "#d97706")
+              : pctColorFor(pct);
             const statusColorFor = status => status === "Exceeding Expectation" ? { bg: "bg-green-50", text: "text-green-600" } : status === "Meeting Expectation" ? { bg: "bg-amber-50", text: "text-amber-600" } : status === "No Data" ? { bg: "bg-gray-50", text: "text-gray-400" } : { bg: "bg-red-50", text: "text-red-500" };
 
             return (
@@ -2473,9 +2479,9 @@ const COMP_LOGOS = {
                                       {monthlyReport.weeksInMonth.map(w => {
                                         const e = p.weeks[w];
                                         const pct = e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) : null;
-                                        return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(pct) }}>{pct !== null ? pct + "%" : "—"}</td>;
+                                        return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorForTeam(pct, p.team) }}>{pct !== null ? pct + "%" : "—"}</td>;
                                       })}
-                                      <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(avgDisplay) }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
+                                      <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorForTeam(avgDisplay, p.team) }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
                                     </tr>
                                   );
                                 })}
@@ -2543,8 +2549,8 @@ const COMP_LOGOS = {
                                 {monthlyReport.teamSummaries.map((t, i) => (
                                   <tr key={t.team + i} className="border-b border-gray-50 hover:bg-gray-50">
                                     <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[t.team] || "#888" }}>{t.team}</span></td>
-                                    {t.weekAvgs.map((v, wi) => <td key={wi} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(v) }}>{v !== null ? v + "%" : "—"}</td>)}
-                                    <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(t.monthlyAvg) }}>{t.monthlyAvg !== null ? t.monthlyAvg + "%" : "—"}</td>
+                                    {t.weekAvgs.map((v, wi) => <td key={wi} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorForTeam(v, t.team) }}>{v !== null ? v + "%" : "—"}</td>)}
+                                    <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorForTeam(t.monthlyAvg, t.team) }}>{t.monthlyAvg !== null ? t.monthlyAvg + "%" : "—"}</td>
                                   </tr>
                                 ))}
                               </tbody>
