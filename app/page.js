@@ -712,7 +712,7 @@ function ProductivityMonthlySummary() {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex bg-gray-100 rounded-lg p-0.5">
             <button onClick={() => setViewMode("monthly")} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === "monthly" ? "bg-white shadow-sm" : "text-gray-500"}`}>Monthly</button>
-            <button onClick={() => setViewMode("weekly")} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === "weekly" ? "bg-white shadow-sm" : "text-gray-500"}`}>Weekly</button>
+            <button onClick={() => setViewMode("weekly")} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === "weekly" ? "bg-white shadow-sm" : "text-gray-500"}`}>Weekly Total Hours</button>
           </div>
           {monthsAvailable.length > 0 && (
             <select value={monthKey || ""} onChange={e => { setSelectedMonth(e.target.value); setSelectedWeek(null); }}
