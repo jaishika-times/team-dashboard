@@ -2124,29 +2124,138 @@ const COMP_LOGOS = {
               return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
             });
 
-            // Monthly report table: one column per week instead of cramming every week's
-            // numbers into a single comma-separated cell per person (unreadable once a month
-            // has 4-5 weeks) — Team | Name | W1 | W2 | ... | Month Avg.
-            function buildMonthlyPivot() {
+            // Monthly KPI Progress Report: a multi-section report (Individual Weekly Progress,
+            // a Design-specific Time Efficiency Detail, a Team Monthly Summary, and auto-generated
+            // Key Observations) built purely from the numbers already in `entries` — no manual
+            // narrative input. Design's metric runs the opposite direction from every other team:
+            // a LOWER "time used" % is the good outcome there (finishing under the estimated
+            // time), so its status/ranking logic is inverted while every other team keeps the
+            // normal higher-is-better reading.
+            function buildMonthlyReport() {
               const monthEntries = entries.filter(e => e.month === curMonth);
               const weeksInMonth = Array.from(new Set(monthEntries.map(e => String(e.week)))).sort((a, b) => parseInt(a) - parseInt(b));
+
               const byPerson = {};
               monthEntries.forEach(e => {
                 const key = `${e.team}|${e.employee}`;
                 if (!byPerson[key]) byPerson[key] = { team: e.team, employee: e.employee, weeks: {} };
                 byPerson[key].weeks[String(e.week)] = e;
               });
-              const rows = Object.values(byPerson).map(p => {
-                const pcts = Object.values(p.weeks).map(e => e.kpiPct).filter(v => v !== null && v !== undefined && !isNaN(v));
-                return { ...p, avgPct: pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null };
+
+              const isDesign = team => team === "Design";
+
+              function statusFor(team, weeks) {
+                const pcts = weeksInMonth.map(w => weeks[w] && weeks[w].kpiPct).filter(v => v !== null && v !== undefined && !isNaN(v));
+                if (!pcts.length) return { status: "No Data", avgPct: null };
+                const avg = pcts.reduce((a, b) => a + b, 0) / pcts.length;
+                const avgRounded = Math.round(avg * 100);
+                if (isDesign(team)) {
+                  const overrunWeek = weeksInMonth.find(w => weeks[w] && weeks[w].kpiPct !== null && weeks[w].kpiPct !== undefined && !isNaN(weeks[w].kpiPct) && Math.round(weeks[w].kpiPct * 100) > 100);
+                  const zeroWeek = weeksInMonth.find(w => { const e = weeks[w]; return e && parseFloat(e.estTime) > 0 && (!e.producedTime || parseFloat(e.producedTime) === 0); });
+                  if (overrunWeek || zeroWeek) return { status: "Below Expectation", avgPct: avg, overrunWeek, zeroWeek };
+                  if (avgRounded < 80) return { status: "Exceeding Expectation", avgPct: avg };
+                  return { status: "Meeting Expectation", avgPct: avg };
+                }
+                if (avgRounded < 65) return { status: "Needs Review", avgPct: avg };
+                if (avgRounded < 80) return { status: "Meeting Expectation", avgPct: avg };
+                return { status: "Exceeding Expectation", avgPct: avg };
+              }
+
+              const people = Object.values(byPerson).map(p => {
+                const s = statusFor(p.team, p.weeks);
+                const weeksPresent = weeksInMonth.filter(w => p.weeks[w] && p.weeks[w].kpiPct !== null && p.weeks[w].kpiPct !== undefined && !isNaN(p.weeks[w].kpiPct));
+                return { ...p, ...s, weeksPresent };
               }).sort((a, b) => {
                 const ai = teamOrder.indexOf(a.team), bi = teamOrder.indexOf(b.team);
                 return ((ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)) || a.employee.localeCompare(b.employee);
               });
-              return { weeksInMonth, rows };
+
+              // Team Monthly Summary — a plain-language Trend label derived only from each
+              // team's own week-over-week averages, direction-aware per metric type.
+              const teamSummaries = kpiTeams.map(team => {
+                const members = people.filter(p => p.team === team);
+                const weekAvgs = weeksInMonth.map(w => {
+                  const vals = members.map(p => p.weeks[w] && p.weeks[w].kpiPct).filter(v => v !== null && v !== undefined && !isNaN(v));
+                  return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) : null;
+                });
+                const withAvg = members.filter(p => p.avgPct !== null);
+                const monthlyAvg = withAvg.length ? Math.round((withAvg.reduce((s, p) => s + p.avgPct, 0) / withAvg.length) * 100) : null;
+                const presentVals = weekAvgs.filter(v => v !== null);
+                let trend = "Not enough data";
+                if (presentVals.length >= 2) {
+                  if (isDesign(team)) {
+                    trend = monthlyAvg === null ? trend : monthlyAvg < 80 ? "Efficient overall" : monthlyAvg <= 100 ? "Meeting estimates" : "Needs review";
+                  } else {
+                    const first = presentVals[0], last = presentVals[presentVals.length - 1];
+                    const delta = last - first;
+                    const flatEarly = presentVals.length >= 3 && presentVals.slice(0, -1).every(v => Math.abs(v - first) <= 10);
+                    if (presentVals.length >= 3 && flatEarly && last < first - 15) trend = `Strong with Week ${weeksInMonth[presentVals.length - 1]} dip`;
+                    else if (delta <= -25) trend = "Declining sharply";
+                    else if (delta <= -10) trend = "Declining";
+                    else if (delta >= 25) trend = "Strong growth";
+                    else if (delta >= 10) trend = "Improving";
+                    else if (monthlyAvg !== null && monthlyAvg >= 80) trend = "Consistently strong";
+                    else if (monthlyAvg !== null && monthlyAvg < 50) trend = "Needs attention";
+                    else trend = "Steady";
+                  }
+                }
+                return { team, memberCount: members.length, metricLabel: isDesign(team) ? "Time Used (lower = better)" : "Completion (higher = better)", weekAvgs, monthlyAvg, trend };
+              });
+
+              // Key Observations — ranked by a normalized "goodness" score (0-100, higher always
+              // better) so Design and completion-based teams can be compared on the same list.
+              const ranked = people.filter(p => p.avgPct !== null).map(p => {
+                const pctDisplay = Math.round(p.avgPct * 100);
+                const goodness = isDesign(p.team) ? Math.max(0, 100 - pctDisplay) : pctDisplay;
+                return { ...p, pctDisplay, goodness };
+              });
+              const flagged = ranked.filter(p => p.status === "Needs Review" || p.status === "Below Expectation");
+              const clean = ranked.filter(p => p.status !== "Needs Review" && p.status !== "Below Expectation");
+              const designClean = clean.filter(p => isDesign(p.team));
+              const bestDesignPct = designClean.length ? Math.min(...designClean.map(p => p.pctDisplay)) : null;
+
+              const topPerformers = clean.sort((a, b) => b.goodness - a.goodness).slice(0, 3).map(p => {
+                if (isDesign(p.team)) {
+                  const tag = p.pctDisplay === bestDesignPct ? " (most efficient designer)" : "";
+                  return `${p.employee} — ${p.pctDisplay}% time used${tag}`;
+                }
+                const vals = p.weeksPresent.map(w => Math.round(p.weeks[w].kpiPct * 100));
+                const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+                const stdev = vals.length > 1 ? Math.sqrt(vals.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / vals.length) : 99;
+                return `${p.employee} — ${p.pctDisplay}% completion${stdev < 10 ? " (consistent)" : ""}`;
+              });
+
+              const needsAttention = flagged.sort((a, b) => a.goodness - b.goodness).slice(0, 5).map(p => {
+                const reasons = [];
+                if (isDesign(p.team)) {
+                  if (p.overrunWeek) reasons.push(`overran estimate W${p.overrunWeek} (${Math.round(p.weeks[p.overrunWeek].kpiPct * 100)}%)`);
+                  if (p.zeroWeek) reasons.push(`zero output W${p.zeroWeek}`);
+                } else {
+                  const lowWeek = p.weeksPresent.find(w => Math.round(p.weeks[w].kpiPct * 100) < 30);
+                  if (lowWeek) reasons.push(`${Math.round(p.weeks[lowWeek].kpiPct * 100)}% in W${lowWeek} (lowest)`);
+                  for (let i = 1; i < p.weeksPresent.length; i++) {
+                    const prevW = p.weeksPresent[i - 1], w = p.weeksPresent[i];
+                    const prevVal = Math.round(p.weeks[prevW].kpiPct * 100), val = Math.round(p.weeks[w].kpiPct * 100);
+                    if (prevVal - val > 40) { reasons.push(`dropped sharply in W${w}`); break; }
+                  }
+                }
+                if (!reasons.length) reasons.push(`${p.pctDisplay}% monthly average, below target`);
+                return `${p.employee} (${p.team}) — ${reasons.slice(0, 2).join("; ")}`;
+              });
+
+              const notes = [];
+              people.forEach(p => {
+                if (p.weeksPresent.length > 0 && p.weeksPresent.length < weeksInMonth.length) {
+                  notes.push(`${p.employee}'s average is based on ${p.weeksPresent.length} of ${weeksInMonth.length} week${weeksInMonth.length === 1 ? "" : "s"} of data.`);
+                }
+              });
+              notes.push("Design is scored on time used vs. estimate — a lower % means finishing under the estimated time, so lower is better; all other teams are scored on task completion %, where higher is better.");
+
+              return { weeksInMonth, people, teamSummaries, topPerformers, needsAttention, notes };
             }
-            const monthlyPivot = kpiViewMode === "monthly" ? buildMonthlyPivot() : null;
+            const monthlyReport = kpiViewMode === "monthly" ? buildMonthlyReport() : null;
             const pctColorFor = pct => pct === null ? "#d1d5db" : pct >= 90 ? "#16a34a" : pct < 70 ? "#dc2626" : "#d97706";
+            const statusColorFor = status => status === "Exceeding Expectation" ? { bg: "bg-green-50", text: "text-green-600" } : status === "Meeting Expectation" ? { bg: "bg-amber-50", text: "text-amber-600" } : status === "No Data" ? { bg: "bg-gray-50", text: "text-gray-400" } : { bg: "bg-red-50", text: "text-red-500" };
 
             return (
               <>
@@ -2371,55 +2480,176 @@ const COMP_LOGOS = {
                         </button>
                       </div>
                     )}
-                    {kpiTeams.length > 0 && showKpiReport && kpiViewMode === "monthly" && (
-                      <div className="mt-2 bg-white rounded-xl border border-gray-100 overflow-hidden">
-                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                          <h3 className="text-sm font-semibold">Monthly KPI Progress Report - {curMonth} — one column per week</h3>
-                          <ExportMenu
-                            filename={`KPI Progress Report - ${curMonth} (Month)`}
-                            header={["Team", "Name", ...monthlyPivot.weeksInMonth.map(w => `W${w}`), "Month Avg"]}
-                            rows={monthlyPivot.rows.map(p => [
-                              p.team, p.employee,
-                              ...monthlyPivot.weeksInMonth.map(w => {
-                                const we = p.weeks[w];
-                                const pct = we && we.kpiPct !== null && we.kpiPct !== undefined && !isNaN(we.kpiPct) ? Math.round(we.kpiPct * 100) + "%" : "";
-                                return pct;
-                              }),
-                              p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "",
-                            ])}
-                          />
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-gray-50 border-b border-gray-100">
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
-                                {monthlyPivot.weeksInMonth.map(w => (
-                                  <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
-                                ))}
-                                <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Month Avg</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {monthlyPivot.rows.map((p, i) => (
-                                <tr key={p.team + p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
-                                  <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
-                                  <td className="px-4 py-2.5 font-medium">{p.employee}</td>
-                                  {monthlyPivot.weeksInMonth.map(w => {
-                                    const we = p.weeks[w];
-                                    const pct = we && we.kpiPct !== null && we.kpiPct !== undefined && !isNaN(we.kpiPct) ? Math.round(we.kpiPct * 100) : null;
-                                    return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(pct) }}>{pct !== null ? pct + "%" : "—"}</td>;
-                                  })}
-                                  <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(p.avgPct !== null ? Math.round(p.avgPct * 100) : null) }}>
-                                    {p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "—"}
-                                  </td>
+                    {kpiTeams.length > 0 && showKpiReport && kpiViewMode === "monthly" && monthlyReport && (
+                      <div className="mt-2 space-y-5">
+                        {/* Individual Weekly Progress */}
+                        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                          <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
+                            <h3 className="text-base font-bold">Monthly Team KPI Progress Report — {curMonth}</h3>
+                            <p className="text-[11px] text-gray-400 mt-0.5">Weeks covered: {monthlyReport.weeksInMonth.map(w => `W${w}`).join(", ")}</p>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-gray-50 border-b border-gray-100">
+                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
+                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
+                                  {monthlyReport.weeksInMonth.map(w => (
+                                    <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w}</th>
+                                  ))}
+                                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg</th>
+                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Status</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody>
+                                {monthlyReport.people.map((p, i) => {
+                                  const sc = statusColorFor(p.status);
+                                  const avgDisplay = p.avgPct !== null ? Math.round(p.avgPct * 100) : null;
+                                  return (
+                                    <tr key={p.team + p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
+                                      <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
+                                      <td className="px-4 py-2.5 font-medium">{p.employee}</td>
+                                      {monthlyReport.weeksInMonth.map(w => {
+                                        const e = p.weeks[w];
+                                        const pct = e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) : null;
+                                        return <td key={w} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(pct) }}>{pct !== null ? pct + "%" : "—"}</td>;
+                                      })}
+                                      <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(avgDisplay) }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
+                                      <td className="px-4 py-2.5"><span className={`text-[10px] font-medium px-2 py-0.5 rounded whitespace-nowrap ${sc.bg} ${sc.text}`}>{p.status}</span></td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="px-5 py-2.5 border-t border-gray-50 flex items-center justify-between gap-3 flex-wrap">
+                            <p className="text-[11px] text-gray-400">Design is scored on time used vs. estimate (lower = better); all other teams on task completion (higher = better).</p>
+                            <ExportMenu
+                              filename={`KPI Progress Report - ${curMonth} (Month)`}
+                              header={["Team", "Name", ...monthlyReport.weeksInMonth.map(w => `W${w}`), "Monthly Avg", "Status"]}
+                              rows={monthlyReport.people.map(p => [
+                                p.team, p.employee,
+                                ...monthlyReport.weeksInMonth.map(w => {
+                                  const e = p.weeks[w];
+                                  return e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) + "%" : "";
+                                }),
+                                p.avgPct !== null ? Math.round(p.avgPct * 100) + "%" : "",
+                                p.status,
+                              ])}
+                            />
+                          </div>
                         </div>
-                        <p className="px-5 py-2.5 text-[11px] text-gray-400 border-t border-gray-50">Open a team above to see each week's individual tasks, targets, and links.</p>
+
+                        {/* Design Time Efficiency Detail */}
+                        {monthlyReport.people.some(p => p.team === "Design") && (
+                          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                            <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                              <h3 className="text-sm font-semibold">Design Team — Time Efficiency Detail</h3>
+                              <p className="text-[11px] text-gray-400 mt-0.5">Estimated vs. actual time per week — a lower "time used" % means the task finished under the estimate</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-gray-50 border-b border-gray-100">
+                                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Name</th>
+                                    {monthlyReport.weeksInMonth.map(w => (
+                                      <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w} Est / Actual</th>
+                                    ))}
+                                    <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg Time Used</th>
+                                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Verdict</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {monthlyReport.people.filter(p => p.team === "Design").map((p, i) => {
+                                    const avgDisplay = p.avgPct !== null ? Math.round(p.avgPct * 100) : null;
+                                    const sc = statusColorFor(p.status);
+                                    return (
+                                      <tr key={p.employee + i} className="border-b border-gray-50 hover:bg-gray-50">
+                                        <td className="px-4 py-2.5 font-medium">{p.employee}</td>
+                                        {monthlyReport.weeksInMonth.map(w => {
+                                          const e = p.weeks[w];
+                                          const pct = e && e.kpiPct !== null && e.kpiPct !== undefined && !isNaN(e.kpiPct) ? Math.round(e.kpiPct * 100) : null;
+                                          return (
+                                            <td key={w} className="px-4 py-2.5 text-right text-gray-500">
+                                              <div>{e ? `${e.estTime || "—"}h / ${e.producedTime || "—"}h` : "—"}</div>
+                                              <div className="font-bold" style={{ color: pct !== null ? (pct > 100 ? "#dc2626" : pct < 80 ? "#16a34a" : "#d97706") : "#d1d5db" }}>{pct !== null ? pct + "%" : "—"}</div>
+                                            </td>
+                                          );
+                                        })}
+                                        <td className="px-4 py-2.5 text-right font-bold" style={{ color: avgDisplay !== null ? (avgDisplay > 100 ? "#dc2626" : avgDisplay < 80 ? "#16a34a" : "#d97706") : "#d1d5db" }}>{avgDisplay !== null ? avgDisplay + "%" : "—"}</td>
+                                        <td className="px-4 py-2.5"><span className={`text-[10px] font-medium px-2 py-0.5 rounded whitespace-nowrap ${sc.bg} ${sc.text}`}>{p.status}</span></td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Team Monthly Summary */}
+                        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                          <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                            <h3 className="text-sm font-semibold">Team Monthly Summary</h3>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-gray-50 border-b border-gray-100">
+                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Team</th>
+                                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Members</th>
+                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Metric</th>
+                                  {monthlyReport.weeksInMonth.map(w => (
+                                    <th key={w} className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">W{w} Avg</th>
+                                  ))}
+                                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Monthly Avg</th>
+                                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase">Trend</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {monthlyReport.teamSummaries.map((t, i) => (
+                                  <tr key={t.team + i} className="border-b border-gray-50 hover:bg-gray-50">
+                                    <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[t.team] || "#888" }}>{t.team}</span></td>
+                                    <td className="px-4 py-2.5 text-right text-gray-500">{t.memberCount}</td>
+                                    <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{t.metricLabel}</td>
+                                    {t.weekAvgs.map((v, wi) => <td key={wi} className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(v) }}>{v !== null ? v + "%" : "—"}</td>)}
+                                    <td className="px-4 py-2.5 text-right font-bold" style={{ color: pctColorFor(t.monthlyAvg) }}>{t.monthlyAvg !== null ? t.monthlyAvg + "%" : "—"}</td>
+                                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">{t.trend}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Key Observations */}
+                        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden p-5">
+                          <h3 className="text-sm font-semibold mb-3">Key Observations</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                              <p className="text-[11px] font-semibold text-green-600 uppercase tracking-wide mb-2">🏆 Top Performers</p>
+                              {monthlyReport.topPerformers.length > 0 ? (
+                                <ul className="space-y-1.5">
+                                  {monthlyReport.topPerformers.map((t, i) => <li key={i} className="text-xs text-gray-600">{i + 1}. {t}</li>)}
+                                </ul>
+                              ) : <p className="text-xs text-gray-300">Not enough data yet</p>}
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wide mb-2">⚠️ Needs Attention</p>
+                              {monthlyReport.needsAttention.length > 0 ? (
+                                <ul className="space-y-1.5">
+                                  {monthlyReport.needsAttention.map((t, i) => <li key={i} className="text-xs text-gray-600">{t}</li>)}
+                                </ul>
+                              ) : <p className="text-xs text-gray-300">No flagged entries this month</p>}
+                            </div>
+                          </div>
+                          <div className="mt-4 pt-4 border-t border-gray-50">
+                            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Notes</p>
+                            <ul className="space-y-1">
+                              {monthlyReport.notes.map((n, i) => <li key={i} className="text-[11px] text-gray-400">• {n}</li>)}
+                            </ul>
+                          </div>
+                        </div>
                       </div>
                     )}
                     {kpiTeams.length > 0 && showKpiReport && kpiViewMode === "weekly" && (
