@@ -638,7 +638,13 @@ function ProductivityMonthlySummary() {
       const months = new Set();
       combined.forEach(p => p.entries.forEach(e => { if (e.dateKey) months.add(e.dateKey.slice(0, 7)); }));
       const sortedMonths = Array.from(months).sort();
-      setSelectedMonth(sortedMonths[sortedMonths.length - 1] || null);
+      // Some sheets have pre-filled template rows for weeks that haven't happened yet, so
+      // "the latest month with any data" can land on a future month that looks empty of real
+      // work. Default to the real current month when it has data; only fall back to the
+      // latest future month on record if nothing up to today exists yet.
+      const todayMonthKey = new Date().toISOString().slice(0, 7);
+      const notFuture = sortedMonths.filter(m => m <= todayMonthKey);
+      setSelectedMonth((notFuture.length ? notFuture[notFuture.length - 1] : sortedMonths[sortedMonths.length - 1]) || null);
     });
     return () => { cancelled = true; };
   }, []);
@@ -653,8 +659,13 @@ function ProductivityMonthlySummary() {
 
   const monthEntries = monthKey ? allPeople.flatMap(({ team, person, entries }) => entries.filter(e => e.dateKey && e.dateKey.slice(0, 7) === monthKey).map(e => ({ team, person, ...e }))) : [];
   // "Most recent week with data" rather than just the month's last calendar week, so switching
-  // into Weekly view lands on whichever week people have actually been logging, not an empty tail.
-  const latestDateInMonth = monthEntries.length ? monthEntries.map(e => e.dateKey).sort().slice(-1)[0] : null;
+  // into Weekly view lands on whichever week people have actually been logging, not an empty
+  // tail — and never a pre-filled future week from a sheet's template rows, by preferring the
+  // latest date that isn't after today.
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const datesInMonth = monthEntries.map(e => e.dateKey).sort();
+  const notFutureDates = datesInMonth.filter(d => d <= todayKey);
+  const latestDateInMonth = (notFutureDates.length ? notFutureDates : datesInMonth).slice(-1)[0] || null;
   const defaultWeek = latestDateInMonth ? weekOfMonth(latestDateInMonth) : (weekNums[weekNums.length - 1] || 1);
   const activeWeek = selectedWeek || defaultWeek;
 
