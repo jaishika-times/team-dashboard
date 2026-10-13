@@ -607,6 +607,19 @@ function weekStartDate(monthKey, weekNum) {
 // all-teams daily export, just bucketed by week-of-month instead of by single day.
 const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
+// A leave day shows up in the live trackers as a short standalone marker in the task/
+// description/notes/remarks cell ("AL", "On AL", "Annual Leave", etc) rather than real task
+// text with logged hours — matched as the whole cell, not a substring, so a real task that
+// happens to mention leave in passing doesn't get mistaken for one.
+function detectLeaveType(e) {
+  const text = [e.task, e.description, e.notes, e.remarks].filter(Boolean).join(" ").trim().toLowerCase().replace(/[().]/g, "").trim();
+  if (!text) return null;
+  if (/^(al|on al|annual leave)$/.test(text)) return "AL";
+  if (/^(sl|on sl|sick leave)$/.test(text)) return "SL";
+  if (/^(el|on el|emergency leave)$/.test(text)) return "EL";
+  return null;
+}
+
 function ProductivityMonthlySummary() {
   const [allPeople, setAllPeople] = useState(null);
   const [failedTeams, setFailedTeams] = useState([]);
@@ -689,13 +702,21 @@ function ProductivityMonthlySummary() {
     if (dow < 1 || dow > 5) return; // week runs Mon-Fri only
     const label = DOW_LABELS[dow - 1];
     const key = `${e.team}|${e.person}`;
-    if (!byPersonWeek[key]) byPersonWeek[key] = { team: e.team, person: e.person, days: {} };
+    if (!byPersonWeek[key]) byPersonWeek[key] = { team: e.team, person: e.person, days: {}, leaveDays: {} };
     byPersonWeek[key].days[label] = (byPersonWeek[key].days[label] || 0) + (e.hours || 0);
+    const lt = detectLeaveType(e);
+    if (lt && !byPersonWeek[key].leaveDays[label]) byPersonWeek[key].leaveDays[label] = lt;
   });
   const weekRows = Object.values(byPersonWeek).sort((a, b) =>
     (teamOrder.indexOf(a.team) - teamOrder.indexOf(b.team)) || a.person.localeCompare(b.person)
   );
   const weekTotal = p => DOW_LABELS.reduce((s, d) => s + (p.days[d] || 0), 0);
+  const leaveCounts = p => DOW_LABELS.reduce((acc, d) => {
+    const lt = p.leaveDays[d];
+    if (lt === "AL" || lt === "EL") acc.alEl++;
+    else if (lt === "SL") acc.sl++;
+    return acc;
+  }, { alEl: 0, sl: 0 });
 
   // Actual calendar date for each Mon-Fri column of the active week, e.g. "7 Sep".
   const weekMonday = monthKey ? weekStartDate(monthKey, activeWeek) : null;
@@ -747,8 +768,11 @@ function ProductivityMonthlySummary() {
             ) : (
               <ExportMenu
                 filename={`Weekly-Hours-Summary-${monthKey || "summary"}-W${activeWeek}`}
-                header={["Team", "Person", ...DOW_LABELS.map((d, i) => `${d} ${weekDateLabels[i]}`), "Week Total"]}
-                rows={weekRows.map(p => [p.team, p.person, ...DOW_LABELS.map(d => (p.days[d] || 0) > 0 ? (p.days[d] || 0).toFixed(2) : ""), weekTotal(p).toFixed(2)])}
+                header={["Team", "Person", ...DOW_LABELS.map((d, i) => `${d} ${weekDateLabels[i]}`), "Week Total", "Number of AL/EL", "Number of SL"]}
+                rows={weekRows.map(p => {
+                  const lc = leaveCounts(p);
+                  return [p.team, p.person, ...DOW_LABELS.map(d => (p.days[d] || 0) > 0 ? (p.days[d] || 0).toFixed(2) : (p.leaveDays[d] || "")), weekTotal(p).toFixed(2), lc.alEl, lc.sl];
+                })}
               />
             )
           )}
@@ -801,19 +825,32 @@ function ProductivityMonthlySummary() {
                     </th>
                   ))}
                   <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Week Total</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Number of AL/EL</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 uppercase">Number of SL</th>
                 </tr>
               </thead>
               <tbody>
-                {weekRows.map((p, i) => (
-                  <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                    <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
-                    <td className="px-4 py-2.5 font-medium">{p.person}</td>
-                    {DOW_LABELS.map(d => (
-                      <td key={d} className="px-4 py-2.5 text-right text-gray-600">{p.days[d] ? p.days[d].toFixed(2) + "h" : "—"}</td>
-                    ))}
-                    <td className="px-4 py-2.5 text-right font-bold text-gray-800">{weekTotal(p).toFixed(2)}h</td>
-                  </tr>
-                ))}
+                {weekRows.map((p, i) => {
+                  const lc = leaveCounts(p);
+                  return (
+                    <tr key={p.team + p.person + i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                      <td className="px-4 py-2.5"><span className="text-xs px-2 py-0.5 rounded text-white whitespace-nowrap" style={{ background: TEAM_COLORS[p.team] || "#888" }}>{p.team}</span></td>
+                      <td className="px-4 py-2.5 font-medium">{p.person}</td>
+                      {DOW_LABELS.map(d => {
+                        const hrs = p.days[d] || 0;
+                        const lt = p.leaveDays[d];
+                        return (
+                          <td key={d} className="px-4 py-2.5 text-right text-gray-600">
+                            {hrs > 0 ? hrs.toFixed(2) + "h" : lt ? <span className="font-bold text-amber-600">{lt}</span> : "—"}
+                          </td>
+                        );
+                      })}
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-800">{weekTotal(p).toFixed(2)}h</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-600">{lc.alEl}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-600">{lc.sl}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
