@@ -624,6 +624,7 @@ function ProductivityMonthlySummary() {
       { team: "Content", url: "/api/live-content-video-tracker?team=Content" },
       { team: "Video", url: "/api/live-content-video-tracker?team=Video" },
       { team: "Design", url: "/api/live-content-video-tracker?team=Design" },
+      { team: "Social", url: "/api/live-content-video-tracker?team=Social" },
       { team: "HR", url: "/api/live-hr?team=HR" },
       { team: "Finance", url: "/api/live-hr?team=Finance" },
     ];
@@ -659,7 +660,7 @@ function ProductivityMonthlySummary() {
   const monthKey = selectedMonth || monthsAvailable[monthsAvailable.length - 1];
   const numWeeks = monthKey ? weeksInMonthCount(monthKey) : 0;
   const weekNums = Array.from({ length: numWeeks }, (_, i) => i + 1);
-  const teamOrder = ["CSE", "Knowledge", "Content", "Video", "Design", "HR", "Finance"];
+  const teamOrder = ["CSE", "Knowledge", "Content", "Video", "Design", "Social", "HR", "Finance"];
 
   const monthEntries = monthKey ? allPeople.flatMap(({ team, person, entries }) => entries.filter(e => e.dateKey && e.dateKey.slice(0, 7) === monthKey).map(e => ({ team, person, ...e }))) : [];
   // "Most recent week with data" rather than just the month's last calendar week, so switching
@@ -697,14 +698,40 @@ function ProductivityMonthlySummary() {
 
   // AL/SL/EL come from the Attendance tab's own leave log (leave_records), not the live
   // trackers — those don't carry leave markers, they just have no row for that person that day.
-  const leaveLookup = {};
-  leaveRecords.forEach(r => {
-    if (!r.person_name || !r.date) return;
-    leaveLookup[`${r.person_name.trim().toLowerCase()}|${r.date}`] = { type: r.leave_type, duration: r.duration };
-  });
+  // The Attendance "+ Update Leave" person picker is sourced from the attendance biometric
+  // sheet's own names, not the live tracker's "person" field, so the two can spell the same
+  // person differently (a full name vs. a first name, different capitalization). An exact
+  // string match silently drops every leave record whose name doesn't line up character-for-
+  // character — matching on the first name-word (or either name containing the other) instead
+  // means "Marcus" still finds "Marcus Lee", and a nickname still finds a longer sheet name.
+  const namesMatch = (a, b) => {
+    const x = (a || "").trim().toLowerCase();
+    const y = (b || "").trim().toLowerCase();
+    if (!x || !y) return false;
+    if (x === y || x.includes(y) || y.includes(x)) return true;
+    return x.split(/\s+/)[0] === y.split(/\s+/)[0];
+  };
+  const findLeave = (personName, date) => leaveRecords.find(r => r.date === date && namesMatch(r.person_name, personName));
 
   // Weekly day-by-day: Team | Person | Mon | Tue | Wed | Thu | Fri, for the selected week only.
+  // Seeded from the FULL known roster (every person any live tracker route has a tab for),
+  // not just people who logged hours this week — otherwise someone on leave the entire week
+  // (zero tracker rows, since a full leave day simply has no row) vanishes from the table
+  // instead of showing up with their leave marked. Restricted to people who either have some
+  // tracker activity this month, or a leave record landing on one of this week's 5 dates, so
+  // an unrelated/empty month doesn't list the entire roster with blank dashes.
+  const monthActiveKeys = new Set(monthEntries.map(e => `${e.team}|${e.person}`));
+  const weekLeaveKeys = new Set();
+  allPeople.forEach(p => {
+    if (weekDates.some(date => date && findLeave(p.person, date))) weekLeaveKeys.add(`${p.team}|${p.person}`);
+  });
   const byPersonWeek = {};
+  allPeople.forEach(p => {
+    const key = `${p.team}|${p.person}`;
+    if (monthActiveKeys.has(key) || weekLeaveKeys.has(key)) {
+      byPersonWeek[key] = { team: p.team, person: p.person, days: {}, leaveDays: {} };
+    }
+  });
   monthEntries.filter(e => weekOfMonth(e.dateKey) === activeWeek).forEach(e => {
     const dow = new Date(e.dateKey + "T00:00:00Z").getUTCDay(); // 0 Sun..6 Sat
     if (dow < 1 || dow > 5) return; // week runs Mon-Fri only
@@ -716,12 +743,11 @@ function ProductivityMonthlySummary() {
   // Leave is checked per calendar day against leave_records directly, independent of whether
   // the live tracker has any row that day — a full leave day usually has no tracker row at all.
   Object.values(byPersonWeek).forEach(row => {
-    const personKey = row.person.trim().toLowerCase();
     DOW_LABELS.forEach((label, i) => {
       const date = weekDates[i];
       if (!date) return;
-      const rec = leaveLookup[`${personKey}|${date}`];
-      if (rec) row.leaveDays[label] = rec;
+      const rec = findLeave(row.person, date);
+      if (rec) row.leaveDays[label] = { type: rec.leave_type, duration: rec.duration };
     });
   });
   const weekRows = Object.values(byPersonWeek).sort((a, b) =>
@@ -789,9 +815,12 @@ function ProductivityMonthlySummary() {
                 rows={weekRows.map(p => {
                   const lc = leaveCounts(p);
                   return [p.team, p.person, ...DOW_LABELS.map(d => {
-                    if ((p.days[d] || 0) > 0) return (p.days[d] || 0).toFixed(2);
+                    const hrs = p.days[d] || 0;
                     const rec = p.leaveDays[d];
-                    return rec ? rec.type + (rec.duration !== "full" ? " (½)" : "") : "";
+                    const leaveLabel = rec ? rec.type + (rec.duration !== "full" ? " (½)" : "") : "";
+                    if (hrs > 0 && leaveLabel) return `${hrs.toFixed(2)} + ${leaveLabel}`;
+                    if (hrs > 0) return hrs.toFixed(2);
+                    return leaveLabel;
                   }), weekTotal(p).toFixed(2), lc.alEl, lc.sl];
                 })}
               />
@@ -860,9 +889,10 @@ function ProductivityMonthlySummary() {
                       {DOW_LABELS.map(d => {
                         const hrs = p.days[d] || 0;
                         const rec = p.leaveDays[d];
+                        const leaveTag = rec && <span className="font-bold text-amber-600">{rec.type}{rec.duration !== "full" ? " ½" : ""}</span>;
                         return (
                           <td key={d} className="px-4 py-2.5 text-right text-gray-600">
-                            {hrs > 0 ? hrs.toFixed(2) + "h" : rec ? <span className="font-bold text-amber-600">{rec.type}{rec.duration !== "full" ? " ½" : ""}</span> : "—"}
+                            {hrs > 0 && rec ? <>{hrs.toFixed(2)}h <span className="text-gray-300">·</span> {leaveTag}</> : hrs > 0 ? hrs.toFixed(2) + "h" : rec ? leaveTag : "—"}
                           </td>
                         );
                       })}
@@ -1858,7 +1888,7 @@ const COMP_LOGOS = {
                         const members = allMems.filter(m => m.team === team);
                         // CSE/Content/Video/Design can also be opened to their live tracker even on a
                         // day with no historical form entries — those track "now," not a picked date.
-                        const hasLiveTracker = ["CSE", "Content", "Video", "Design", "HR", "Finance", "Knowledge"].includes(team);
+                        const hasLiveTracker = ["CSE", "Content", "Video", "Design", "Social", "HR", "Finance", "Knowledge"].includes(team);
                         const isClickable = members.length > 0 || hasLiveTracker;
                         const isSelected = selectedProdTeam === team;
                         return (
@@ -1893,7 +1923,7 @@ const COMP_LOGOS = {
                           <CSETimesheetView />
                         ) : selectedProdTeam === "Knowledge" ? (
                           <KnowledgeTimesheetView />
-                        ) : selectedProdTeam === "Content" || selectedProdTeam === "Video" || selectedProdTeam === "Design" ? (
+                        ) : selectedProdTeam === "Content" || selectedProdTeam === "Video" || selectedProdTeam === "Design" || selectedProdTeam === "Social" ? (
                           <ContentVideoTrackerView team={selectedProdTeam} />
                         ) : selectedProdTeam === "HR" || selectedProdTeam === "Finance" ? (
                           <ContentVideoTrackerView team={selectedProdTeam} endpoint="/api/live-hr" />
