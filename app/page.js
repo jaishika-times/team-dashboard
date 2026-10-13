@@ -607,19 +607,6 @@ function weekStartDate(monthKey, weekNum) {
 // all-teams daily export, just bucketed by week-of-month instead of by single day.
 const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
-// A leave day shows up in the live trackers as a short standalone marker in the task/
-// description/notes/remarks cell ("AL", "On AL", "Annual Leave", etc) rather than real task
-// text with logged hours — matched as the whole cell, not a substring, so a real task that
-// happens to mention leave in passing doesn't get mistaken for one.
-function detectLeaveType(e) {
-  const text = [e.task, e.description, e.notes, e.remarks].filter(Boolean).join(" ").trim().toLowerCase().replace(/[().]/g, "").trim();
-  if (!text) return null;
-  if (/^(al|on al|annual leave)$/.test(text)) return "AL";
-  if (/^(sl|on sl|sick leave)$/.test(text)) return "SL";
-  if (/^(el|on el|emergency leave)$/.test(text)) return "EL";
-  return null;
-}
-
 function ProductivityMonthlySummary() {
   const [allPeople, setAllPeople] = useState(null);
   const [failedTeams, setFailedTeams] = useState([]);
@@ -627,6 +614,7 @@ function ProductivityMonthlySummary() {
   const [viewMode, setViewMode] = useState("monthly"); // "monthly" | "weekly"
   const [selectedWeek, setSelectedWeek] = useState(null); // null = auto (most recent week with data)
   const [showWeeklyTable, setShowWeeklyTable] = useState(false); // weekly table stays tucked behind a button until asked for
+  const [leaveRecords, setLeaveRecords] = useState([]); // from the Attendance tab's own leave log — the authoritative source for AL/SL/EL, not the live trackers
 
   useEffect(() => {
     let cancelled = false;
@@ -658,6 +646,9 @@ function ProductivityMonthlySummary() {
       const todayMonthKey = new Date().toISOString().slice(0, 7);
       const notFuture = sortedMonths.filter(m => m <= todayMonthKey);
       setSelectedMonth((notFuture.length ? notFuture[notFuture.length - 1] : sortedMonths[sortedMonths.length - 1]) || null);
+    });
+    supabase.from("leave_records").select("person_name,date,leave_type,duration").then(({ data }) => {
+      if (!cancelled && data) setLeaveRecords(data);
     });
     return () => { cancelled = true; };
   }, []);
@@ -695,6 +686,23 @@ function ProductivityMonthlySummary() {
   );
   const monthTotal = p => weekNums.reduce((s, w) => s + (p.weeks[w] || 0), 0);
 
+  // Actual calendar date for each Mon-Fri column of the active week, e.g. "7 Sep".
+  const weekMonday = monthKey ? weekStartDate(monthKey, activeWeek) : null;
+  const weekDates = DOW_LABELS.map((_, i) => {
+    if (!weekMonday) return null;
+    const d = new Date(weekMonday);
+    d.setUTCDate(d.getUTCDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+
+  // AL/SL/EL come from the Attendance tab's own leave log (leave_records), not the live
+  // trackers — those don't carry leave markers, they just have no row for that person that day.
+  const leaveLookup = {};
+  leaveRecords.forEach(r => {
+    if (!r.person_name || !r.date) return;
+    leaveLookup[`${r.person_name.trim().toLowerCase()}|${r.date}`] = { type: r.leave_type, duration: r.duration };
+  });
+
   // Weekly day-by-day: Team | Person | Mon | Tue | Wed | Thu | Fri, for the selected week only.
   const byPersonWeek = {};
   monthEntries.filter(e => weekOfMonth(e.dateKey) === activeWeek).forEach(e => {
@@ -704,22 +712,31 @@ function ProductivityMonthlySummary() {
     const key = `${e.team}|${e.person}`;
     if (!byPersonWeek[key]) byPersonWeek[key] = { team: e.team, person: e.person, days: {}, leaveDays: {} };
     byPersonWeek[key].days[label] = (byPersonWeek[key].days[label] || 0) + (e.hours || 0);
-    const lt = detectLeaveType(e);
-    if (lt && !byPersonWeek[key].leaveDays[label]) byPersonWeek[key].leaveDays[label] = lt;
+  });
+  // Leave is checked per calendar day against leave_records directly, independent of whether
+  // the live tracker has any row that day — a full leave day usually has no tracker row at all.
+  Object.values(byPersonWeek).forEach(row => {
+    const personKey = row.person.trim().toLowerCase();
+    DOW_LABELS.forEach((label, i) => {
+      const date = weekDates[i];
+      if (!date) return;
+      const rec = leaveLookup[`${personKey}|${date}`];
+      if (rec) row.leaveDays[label] = rec;
+    });
   });
   const weekRows = Object.values(byPersonWeek).sort((a, b) =>
     (teamOrder.indexOf(a.team) - teamOrder.indexOf(b.team)) || a.person.localeCompare(b.person)
   );
   const weekTotal = p => DOW_LABELS.reduce((s, d) => s + (p.days[d] || 0), 0);
   const leaveCounts = p => DOW_LABELS.reduce((acc, d) => {
-    const lt = p.leaveDays[d];
-    if (lt === "AL" || lt === "EL") acc.alEl++;
-    else if (lt === "SL") acc.sl++;
+    const rec = p.leaveDays[d];
+    if (!rec) return acc;
+    const amount = rec.duration === "full" ? 1 : 0.5;
+    if (rec.type === "AL" || rec.type === "EL") acc.alEl += amount;
+    else if (rec.type === "SL") acc.sl += amount;
     return acc;
   }, { alEl: 0, sl: 0 });
 
-  // Actual calendar date for each Mon-Fri column of the active week, e.g. "7 Sep".
-  const weekMonday = monthKey ? weekStartDate(monthKey, activeWeek) : null;
   const weekDateLabels = DOW_LABELS.map((_, i) => {
     if (!weekMonday) return "";
     const d = new Date(weekMonday);
@@ -771,7 +788,11 @@ function ProductivityMonthlySummary() {
                 header={["Team", "Person", ...DOW_LABELS.map((d, i) => `${d} ${weekDateLabels[i]}`), "Week Total", "Number of AL/EL", "Number of SL"]}
                 rows={weekRows.map(p => {
                   const lc = leaveCounts(p);
-                  return [p.team, p.person, ...DOW_LABELS.map(d => (p.days[d] || 0) > 0 ? (p.days[d] || 0).toFixed(2) : (p.leaveDays[d] || "")), weekTotal(p).toFixed(2), lc.alEl, lc.sl];
+                  return [p.team, p.person, ...DOW_LABELS.map(d => {
+                    if ((p.days[d] || 0) > 0) return (p.days[d] || 0).toFixed(2);
+                    const rec = p.leaveDays[d];
+                    return rec ? rec.type + (rec.duration !== "full" ? " (½)" : "") : "";
+                  }), weekTotal(p).toFixed(2), lc.alEl, lc.sl];
                 })}
               />
             )
@@ -838,10 +859,10 @@ function ProductivityMonthlySummary() {
                       <td className="px-4 py-2.5 font-medium">{p.person}</td>
                       {DOW_LABELS.map(d => {
                         const hrs = p.days[d] || 0;
-                        const lt = p.leaveDays[d];
+                        const rec = p.leaveDays[d];
                         return (
                           <td key={d} className="px-4 py-2.5 text-right text-gray-600">
-                            {hrs > 0 ? hrs.toFixed(2) + "h" : lt ? <span className="font-bold text-amber-600">{lt}</span> : "—"}
+                            {hrs > 0 ? hrs.toFixed(2) + "h" : rec ? <span className="font-bold text-amber-600">{rec.type}{rec.duration !== "full" ? " ½" : ""}</span> : "—"}
                           </td>
                         );
                       })}
