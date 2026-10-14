@@ -1,0 +1,156 @@
+import { NextResponse } from "next/server";
+
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRKzI6WQ7U5alPB6y-jkqXulGF7CiszpwlvQKPVhPsEHuQ4NGkiTkS7SMjFQOkeC8gPZLOfLFM8vF5d/pub?gid=1899061287&single=true&output=csv";
+
+const LEAVE_RE = /^(sl|el|al|ul|rl|wfh|mc|on al|on leave|sick leave|birthday leave|half.?day|emergency leave|not updated|on mc|annual leave|-|0)$/i;
+
+const teamMap = {
+  marcus:"Design",aiem:"Design",fatanah:"Design",
+  nich:"Video",zul:"Video",roshan:"Video",vanessa:"Video",
+  maha:"Content",jeremiah:"Content",rosie:"Content",
+  jeng:"Knowledge",divya:"Knowledge",jon:"Knowledge",rahul:"Knowledge",
+  yash:"Social",
+  shiman:"CSE",jev:"CSE",mika:"CSE",naz:"CSE",
+  luc:"Sales",dinesh:"Finance"
+};
+
+// Pulls Task Name / Description / Hours out of a free-typed line, regardless of what order
+// the person entered them in or which separator they used — this is the "auto sort" fix so
+// glitchy manual entries (hours first, semicolons instead of commas, "2 hrs" instead of "2")
+// still land in the right fields instead of getting mangled.
+function parseTasks(raw) {
+  if (!raw || raw === "NaN") return { tasks: [], hours: 0, leave: null };
+  const s = String(raw).trim();
+  if (!s || s === "-" || s === "0") return { tasks: [], hours: 0, leave: null };
+  if (LEAVE_RE.test(s.replace(/\(.*?\)/g, "").trim())) return { tasks: [], hours: 0, leave: s.toUpperCase().replace(/^ON /, "") };
+  if (/(leave|LEAVE TODAY)/i.test(s) && s.length < 60) return { tasks: [], hours: 0, leave: s };
+
+  const lines = s.split(/\n/).map(l => l.trim()).filter(l => l);
+  const tasks = []; let total = 0;
+  for (let line of lines) {
+    if (LEAVE_RE.test(line.replace(/\(.*?\)/g, "").trim())) continue;
+    line = line.replace(/^\d+[\.\)]\s*/, "").replace(/^[\-\u2022\uFEFF]\s*/, "");
+    if (!line || line.length < 3) continue;
+
+    // Accept comma, tab, semicolon or pipe as a field separator — whichever the person used.
+    const parts = line.split(/[,\t;|]+/).map(p => p.trim()).filter(p => p);
+
+    // Find the hours value wherever it sits (start, middle, or end), accepting "2", "2h",
+    // "2hr", "2hrs", "2 hours".
+    let hrs = 0, hrsIdx = -1;
+    for (let idx = 0; idx < parts.length; idx++) {
+      const m = parts[idx].match(/^(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)?$/i);
+      if (m) { const n = parseFloat(m[1]); if (n > 0 && n <= 24) { hrs = n; hrsIdx = idx; break; } }
+    }
+    const rest = hrsIdx === -1 ? parts : parts.filter((_, i) => i !== hrsIdx);
+
+    let project = "", desc = "";
+    if (rest.length >= 2) { project = rest[0]; desc = rest.slice(1).join(", "); }
+    else if (rest.length === 1) { project = rest[0]; }
+    else { project = line; }
+
+    tasks.push({ project: project.substring(0, 80), desc: desc.substring(0, 200), hrs });
+    total += hrs;
+  }
+  return { tasks, hours: Math.round(total * 100) / 100, leave: null };
+}
+
+function parseCSV(text) {
+  const rows = [];
+  let current = [];
+  let inQuotes = false;
+  let field = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') { field += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === ',' && !inQuotes) {
+      current.push(field); field = "";
+    } else if (ch === '\n' && !inQuotes) {
+      current.push(field); field = "";
+      rows.push(current); current = [];
+    } else if (ch === '\r' && !inQuotes) {
+      // skip
+    } else {
+      field += ch;
+    }
+  }
+  if (field || current.length) { current.push(field); rows.push(current); }
+  return rows;
+}
+
+export async function GET() {
+  try {
+    const res = await fetch(CSV_URL, { next: { revalidate: 60 } });
+    if (!res.ok) throw new Error("Failed to fetch sheet");
+    const text = await res.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) throw new Error("No data");
+
+    const header = rows[0];
+    const colMap = {};
+    const dupCols = {};
+
+    for (let c = 1; c < header.length; c++) {
+      const h = String(header[c] || "");
+      const m = h.match(/^(.+?)['\u2019]s\s+Tasks/i);
+      if (m) {
+        // Strip any trailing "(Company Name)" tag some form sections add, so the same
+        // person isn't treated as two different people just because their column header
+        // differs slightly between sections.
+        const name = m[1].trim().replace(/\s*\(.*?\)\s*$/, "").trim();
+        const pri = Object.keys(colMap).find(k => colMap[k].name.toLowerCase() === name.toLowerCase());
+        if (pri) {
+          // Same person already has a primary column — whether this is a numbered overflow
+          // column ("Jon's Tasks 2") or a genuine second column for them elsewhere in the
+          // form (e.g. duplicated under another company's section), fold it into the same
+          // one person instead of creating a second, separate entry.
+          dupCols[c] = parseInt(pri);
+        } else {
+          colMap[c] = { name, team: teamMap[name.toLowerCase()] || "Other" };
+        }
+      }
+    }
+
+    const data = {};
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row[0]) continue;
+      let dateStr;
+      const ts = String(row[0]);
+      const dm = ts.match(/(\d{4})-(\d{2})-(\d{2})/);
+      if (dm) dateStr = dm[0];
+      else { const dAlt = ts.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (dAlt) dateStr = `${dAlt[3]}-${dAlt[1].padStart(2,"0")}-${dAlt[2].padStart(2,"0")}`; }
+      if (!dateStr) { const d = new Date(ts); if (!isNaN(d)) dateStr = d.toISOString().split("T")[0]; }
+      if (!dateStr) continue;
+      if (!data[dateStr]) data[dateStr] = {};
+
+      // Combine a person's primary column with any overflow "Name's Tasks 2" columns
+      // that belong to THIS SAME row/submission before deciding what to do with it.
+      const rowResults = {};
+      const combineIntoRow = (col, info) => {
+        const raw = row[col]; if (!raw) return;
+        const p = parseTasks(raw); if (p.tasks.length === 0 && !p.leave) return;
+        const ex = rowResults[info.name];
+        if (ex) { if (p.leave && !ex.leave) ex.leave = p.leave; ex.tasks = ex.tasks.concat(p.tasks); ex.hours = Math.round((ex.hours + p.hours) * 100) / 100; }
+        else rowResults[info.name] = { tasks: p.tasks, hours: p.hours, leave: p.leave, team: info.team };
+      };
+      Object.keys(colMap).forEach(cs => combineIntoRow(parseInt(cs), colMap[parseInt(cs)]));
+      Object.keys(dupCols).forEach(ds => { const pc = dupCols[parseInt(ds)]; if (colMap[pc]) combineIntoRow(parseInt(ds), colMap[pc]); });
+
+      // A later row for the same date + person is treated as a corrected resubmission —
+      // it REPLACES the earlier entry rather than being added on top of it. Previously this
+      // summed hours across resubmissions, which was doubling/tripling totals whenever
+      // someone edited or resubmitted the form for a day already logged.
+      Object.keys(rowResults).forEach(name => { data[dateStr][name] = rowResults[name]; });
+    }
+
+    const dates = Object.keys(data).sort().reverse();
+    const members = Object.values(colMap);
+
+    return NextResponse.json({ data, dates, members });
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
